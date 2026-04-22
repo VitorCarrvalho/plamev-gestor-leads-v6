@@ -8,9 +8,8 @@ WORKDIR /app
 # Copiar manifesto raiz e configurações
 COPY package.json package-lock.json ./
 COPY tsconfig.json ./
-
-# Copiar workspaces necessários
 COPY packages/shared ./packages/shared
+COPY infra ./infra
 COPY services/crm-service ./services/crm-service
 
 # Instalar dependências de todos os workspaces referenciados

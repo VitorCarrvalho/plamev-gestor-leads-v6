@@ -2,7 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
 import path from 'path';
-import { testar } from './config/db';
+import { pool, testar } from './config/db';
+import { runMigrations } from '../../../infra/migrate';
 import analisarRouter from './routes/analisar';
 
 config({ path: path.join(__dirname, '../../.env') });
@@ -27,7 +28,17 @@ app.use('/api/analisar', analisarRouter);
 
 const PORT = process.env.PORT || 3004;
 
-app.listen(PORT, async () => {
-  console.log(`[ANALYTICS] 🚀 Iniciado na porta ${PORT}`);
-  await testar();
-});
+async function bootstrap() {
+  try {
+    await runMigrations(pool);
+    await testar();
+    app.listen(PORT, () => {
+      console.log(`[ANALYTICS] 🚀 Iniciado na porta ${PORT}`);
+    });
+  } catch (err: any) {
+    console.error('[ANALYTICS] ❌ Falha no bootstrap:', err.message);
+    process.exit(1);
+  }
+}
+
+bootstrap();

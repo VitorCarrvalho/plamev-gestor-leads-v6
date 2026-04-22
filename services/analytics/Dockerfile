@@ -6,6 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY tsconfig.json ./
 COPY packages/shared ./packages/shared
+COPY infra ./infra
 COPY services/analytics ./services/analytics
 
 RUN npm install

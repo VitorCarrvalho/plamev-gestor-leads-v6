@@ -21,6 +21,7 @@ COPY --from=builder /app/services/agent-ai/package*.json services/agent-ai/
 COPY --from=builder /app/packages/shared/dist packages/shared/dist
 COPY --from=builder /app/services/agent-ai/dist services/agent-ai/dist
 COPY --from=builder /app/services/agent-ai/vault services/agent-ai/vault
+COPY --from=builder /app/infra ./infra
 COPY --from=builder /app/node_modules ./node_modules
 EXPOSE 3001
 CMD ["npm", "start", "-w", "services/agent-ai"]

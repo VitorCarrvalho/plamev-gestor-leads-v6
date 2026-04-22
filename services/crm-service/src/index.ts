@@ -2,7 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
 import path from 'path';
-import { testar } from './config/db';
+import { pool, testar } from './config/db';
+import { runMigrations } from '../../../infra/migrate';
 import { listarConversas, buscarConversa, buscarMensagens, buscarStats } from './repositories/conversations.repository';
 
 config({ path: path.join(__dirname, '../../.env') });
@@ -68,7 +69,20 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
 
 const PORT = process.env.PORT || 3002;
 
-app.listen(PORT, async () => {
-  console.log(`[CRM-SERVICE] 🚀 Iniciado na porta ${PORT}`);
-  await testar();
-});
+async function bootstrap() {
+  try {
+    // 1. Rodar migrations automaticamente no startup
+    await runMigrations(pool);
+    // 2. Verificar conexão com o banco
+    await testar();
+    // 3. Subir o servidor HTTP
+    app.listen(PORT, () => {
+      console.log(`[CRM-SERVICE] 🚀 Iniciado na porta ${PORT}`);
+    });
+  } catch (err: any) {
+    console.error('[CRM-SERVICE] ❌ Falha no bootstrap:', err.message);
+    process.exit(1); // Falha no deploy Railway = serviço não sobe
+  }
+}
+
+bootstrap();
