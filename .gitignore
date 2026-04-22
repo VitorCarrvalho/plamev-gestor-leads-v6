@@ -1,0 +1,46 @@
+# ──────────────────────────────────────────────
+# Secrets — NUNCA commitar estes arquivos
+# ──────────────────────────────────────────────
+.env
+.env.local
+.env.production
+.env*.local
+
+# Dependências
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+**/dist/
+build/
+**/build/
+.next/
+
+# TypeScript
+*.tsbuildinfo
+**/tsconfig.tsbuildinfo
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/settings.json
+.idea/
+*.swp
+
+# Railway
+.railway/
+
+# Docker
+.dockerignore
+
+# Teste
+coverage/
+**/coverage/

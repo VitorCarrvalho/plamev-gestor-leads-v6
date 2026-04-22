@@ -1,0 +1,27 @@
+{
+  "name": "plamev-gestor-leads-v6",
+  "version": "1.0.0",
+  "description": "Plamev SaaS — Monorepo de microserviços para gestão de leads com IA",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "docker compose -f infra/docker-compose.yml up",
+    "dev:gateway": "npm run dev -w services/gateway",
+    "dev:agent-ai": "npm run dev -w services/agent-ai",
+    "dev:channel": "npm run dev -w services/channel-service",
+    "dev:crm": "npm run dev -w services/crm-service",
+    "dev:analytics": "npm run dev -w services/analytics",
+    "dev:frontend": "npm run dev -w services/frontend",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "migrate": "node infra/scripts/migrate.js"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  }
+}

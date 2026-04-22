@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clínicas Plamev na sua região</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border-bottom: 1px solid #1e3a5f;
+      padding: 20px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header img { width: 40px; height: 40px; border-radius: 50%; }
+    .header-title { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; }
+    .header-sub { font-size: .75rem; color: #64748b; margin-top: 2px; }
+
+    /* Container */
+    .container { max-width: 640px; margin: 0 auto; padding: 28px 20px; }
+
+    /* Busca */
+    .busca-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .busca-titulo { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+    .busca-sub { font-size: .82rem; color: #94a3b8; margin-bottom: 18px; line-height: 1.5; }
+
+    .input-row { display: flex; gap: 10px; }
+    .cep-input {
+      flex: 1;
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 2px solid #334155;
+      background: #0f172a;
+      color: #f1f5f9;
+      font-size: 1rem;
+      letter-spacing: 2px;
+      transition: border-color .2s;
+      outline: none;
+    }
+    .cep-input:focus { border-color: #22c55e; }
+    .btn-buscar {
+      padding: 14px 22px;
+      border-radius: 10px;
+      border: none;
+      background: #22c55e;
+      color: #fff;
+      font-weight: 700;
+      font-size: .95rem;
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+      white-space: nowrap;
+    }
+    .btn-buscar:active { transform: scale(.97); }
+    .btn-buscar:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+
+    /* Resultado */
+    .resultado { display: none; }
+
+    .resultado-header {
+      background: #14532d;
+      border: 1px solid #22c55e44;
+      border-radius: 14px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .resultado-header .ico { font-size: 2rem; }
+    .resultado-header .info .total { font-size: 1rem; font-weight: 700; color: #4ade80; }
+    .resultado-header .info .cidade { font-size: .8rem; color: #86efac; margin-top: 3px; }
+
+    .clinica-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 16px 18px;
+      margin-bottom: 12px;
+      transition: border-color .2s;
+    }
+    .clinica-card:hover { border-color: #22c55e66; }
+    .clinica-num {
+      display: inline-block;
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      font-size: .72rem;
+      font-weight: 700;
+      text-align: center;
+      line-height: 24px;
+      margin-right: 8px;
+      flex-shrink: 0;
+    }
+    .clinica-nome { font-weight: 700; font-size: .95rem; display: flex; align-items: center; margin-bottom: 8px; }
+    .badge-distancia {
+      margin-left: auto;
+      font-size: .7rem;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 20px;
+      padding: 2px 10px;
+      color: #94a3b8;
+      white-space: nowrap;
+    }
+    .clinica-info { font-size: .8rem; color: #94a3b8; line-height: 1.8; }
+    .clinica-info span { display: block; }
+
+    /* Sem resultado */
+    .sem-resultado {
+      display: none;
+      text-align: center;
+      padding: 40px 20px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 14px;
+    }
+    .sem-resultado .ico { font-size: 3rem; margin-bottom: 12px; }
+    .sem-resultado p { color: #94a3b8; font-size: .9rem; line-height: 1.6; }
+
+    /* Loading */
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 40px;
+      color: #64748b;
+      font-size: .9rem;
+    }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #334155;
+      border-top-color: #22c55e;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Erro */
+    .erro { display: none; background: #7f1d1d22; border: 1px solid #991b1b44; border-radius: 12px; padding: 16px 20px; color: #fca5a5; font-size: .85rem; margin-bottom: 16px; }
+
+    /* Rodapé */
+    .rodape {
+      margin-top: 32px;
+      text-align: center;
+      font-size: .75rem;
+      color: #334155;
+      line-height: 1.8;
+    }
+    .rodape a { color: #22c55e; text-decoration: none; }
+
+    /* Cores dos números */
+    .n1 { background: #0c4a6e; color: #38bdf8; }
+    .n2 { background: #1e1b4b; color: #818cf8; }
+    .n3 { background: #431407; color: #fb923c; }
+    .nx { background: #1e293b; color: #64748b; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-title">🐾 Plamev — Rede Credenciada</div>
+    <div class="header-sub">Encontre clínicas veterinárias na sua região</div>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="busca-card">
+    <div class="busca-titulo">Buscar clínicas pelo CEP</div>
+    <div class="busca-sub">Digite seu CEP e veja todas as clínicas credenciadas Plamev num raio de 40km. Rede vistoriada pelo CRMV.</div>
+    <div class="input-row">
+      <input id="cepInput" class="cep-input" type="tel" placeholder="00000-000" maxlength="9" />
+      <button id="btnBuscar" class="btn-buscar" onclick="buscar()">🔍 Buscar</button>
+    </div>
+  </div>
+
+  <div id="erro" class="erro"></div>
+  <div id="loading" class="loading"><div class="spinner"></div>Buscando clínicas na sua região...</div>
+  <div id="resultado" class="resultado"></div>
+  <div id="semResultado" class="sem-resultado">
+    <div class="ico">😔</div>
+    <p>Ainda não temos cobertura nessa região.<br>Estamos expandindo! Em breve chegaremos até você.<br><br>Fale com a Mari pra entrar na lista de espera 💛</p>
+  </div>
+
+  <div class="rodape">
+    <a href="https://plamev.com.br" target="_blank">plamev.com.br</a> · Rede vistoriada pelo CRMV<br>
+    Plano de saúde pet · Sem coparticipação · Emergência em 15 dias
+  </div>
+
+</div>
+
+<script>
+  // Formatar CEP enquanto digita
+  document.getElementById('cepInput').addEventListener('input', function(e) {
+    let v = e.target.value.replace(/\D/g,'');
+    if (v.length > 5) v = v.slice(0,5) + '-' + v.slice(5,8);
+    e.target.value = v;
+    if (v.replace(/\D/g,'').length === 8) buscar();
+  });
+
+  document.getElementById('cepInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') buscar();
+  });
+
+  // Checar CEP na URL (?cep=xxxxx)
+  window.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const cepUrl = params.get('cep');
+    if (cepUrl) {
+      const c = cepUrl.replace(/\D/g,'');
+      if (c.length === 8) {
+        document.getElementById('cepInput').value = c.slice(0,5) + '-' + c.slice(5);
+        buscar(c);
+      }
+    }
+  });
+
+  async function buscar(cepForce) {
+    const raw  = cepForce || document.getElementById('cepInput').value.replace(/\D/g,'');
+    if (raw.length < 8) return;
+
+    // UI
+    document.getElementById('erro').style.display = 'none';
+    document.getElementById('resultado').style.display = 'none';
+    document.getElementById('semResultado').style.display = 'none';
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('btnBuscar').disabled = true;
+
+    try {
+      const resp = await fetch(`/api/clinicas?cep=${raw}`);
+      const data = await resp.json();
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('btnBuscar').disabled = false;
+
+      if (!data.ok || !data.total || data.total === 0) {
+        document.getElementById('semResultado').style.display = 'block';
+        return;
+      }
+
+      renderizar(data);
+    } catch(e) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('btnBuscar').disabled = false;
+      const el = document.getElementById('erro');
+      el.textContent = 'Não foi possível conectar. Tente novamente.';
+      el.style.display = 'block';
+    }
+  }
+
+  function renderizar(data) {
+    const cores = ['n1','n2','n3'];
+    let html = `
+      <div class="resultado-header">
+        <div class="ico">🏥</div>
+        <div class="info">
+          <div class="total">${data.total} clínica${data.total !== 1 ? 's' : ''} credenciada${data.total !== 1 ? 's' : ''} encontrada${data.total !== 1 ? 's' : ''}</div>
+          <div class="cidade">📍 ${data.cidade || ''}${data.estado ? ' — ' + data.estado : ''} · raio ${data.raio || 40}km</div>
+        </div>
+      </div>
+    `;
+
+    data.clinicas.forEach((c, i) => {
+      const cor = cores[i] || 'nx';
+      html += `
+        <div class="clinica-card">
+          <div class="clinica-nome">
+            <span class="clinica-num ${cor}">${i+1}</span>
+            ${c.nome || 'Clínica'}
+            ${c.distancia ? `<span class="badge-distancia">📏 ${c.distancia}</span>` : ''}
+          </div>
+          <div class="clinica-info">
+            ${c.endereco ? `<span>📍 ${c.endereco}</span>` : ''}
+            ${c.telefone ? `<span>📞 ${c.telefone}</span>` : ''}
+          </div>
+        </div>
+      `;
+    });
+
+    const el = document.getElementById('resultado');
+    el.innerHTML = html;
+    el.style.display = 'block';
+  }
+</script>
+</body>
+</html>
