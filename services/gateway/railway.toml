@@ -1,0 +1,11 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+watchPatterns = ["src/**", "package.json", "../../packages/shared/**"]
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+numReplicas = 1
+sleepApplication = false
+healthcheckPath = "/health"
+healthcheckTimeout = 100

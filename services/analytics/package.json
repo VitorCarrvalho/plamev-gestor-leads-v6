@@ -1,13 +1,26 @@
 {
-  "name": "analytics",
+  "name": "@plamev/analytics",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Serviço de Métricas e Relatórios",
+  "main": "dist/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsup src/index.ts",
+    "start": "node dist/index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs"
+  "dependencies": {
+    "@plamev/shared": "*",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pg": "^8.11.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/pg": "^8.11.5",
+    "ts-node-dev": "^2.0.0",
+    "tsup": "^8.0.2",
+    "typescript": "^5.4.5"
+  }
 }
