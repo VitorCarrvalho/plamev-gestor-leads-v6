@@ -43,7 +43,7 @@ app.get(['/api/conversations', '/api/conversas'], async (req, res) => {
   }
 });
 
-app.get('/api/conversations/stats', async (req, res) => {
+app.get(['/api/conversations/stats', '/api/stats'], async (req, res) => {
   try {
     const orgId = req.headers['x-org-id'] as string;
     const stats = await buscarStats(orgId);
