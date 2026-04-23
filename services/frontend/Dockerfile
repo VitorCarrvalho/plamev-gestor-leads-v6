@@ -21,7 +21,8 @@ RUN npm install -g serve
 
 COPY --from=builder /app/services/frontend/dist ./dist
 
-EXPOSE 8080
+EXPOSE 3000
 
-# Serve the static files. Railway will provide the PORT env var.
-CMD ["sh", "-c", "serve -s dist -l ${PORT:-8080}"]
+# Serve the static files. Railway will provide the PORT env var, 
+# but we default to 3000 as configured in Railway Custom Domain.
+CMD ["sh", "-c", "serve -s dist -l ${PORT:-3000}"]

@@ -4,12 +4,9 @@
  * Em dev usa proxy do Vite (paths relativos).
  */
 const TOKEN_KEY = 'dash_v5_token';
-// VITE_API_URL é baked no bundle pelo Vite durante o build (via ARG no Dockerfile)
-// Fallback para window.__ENV__ caso seja injetado via runtime
-const BASE_URL: string =
-  (typeof window !== 'undefined' && (window as any).__ENV__?.VITE_API_URL) ||
-  import.meta.env.VITE_API_URL ||
-  '';
+// VITE_API_URL é injetado no bundle durante o build via ARG no Dockerfile.
+// Usamos o valor do import.meta.env diretamente.
+const BASE_URL: string = (import.meta as any).env?.VITE_API_URL || '';
 
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
 
