@@ -29,7 +29,7 @@ ALTER TABLE agentes
 CREATE TABLE knowledge_chunks (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id     UUID REFERENCES organizations(id),
-  agent_id   UUID REFERENCES agentes(id),
+  agent_id   INT REFERENCES agentes(id),
   content    TEXT NOT NULL,
   embedding  vector(1024),
   metadata   JSONB DEFAULT '{}',
@@ -42,7 +42,7 @@ CREATE TABLE knowledge_chunks (
 CREATE TABLE ai_interaction_logs (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id                  UUID REFERENCES organizations(id),
-  agent_id                UUID REFERENCES agentes(id),
+  agent_id                INT REFERENCES agentes(id),
   thread_id               TEXT NOT NULL,
   input_guard_tokens_in   INTEGER,
   input_guard_tokens_out  INTEGER,
