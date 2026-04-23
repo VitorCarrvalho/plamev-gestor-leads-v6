@@ -25,17 +25,36 @@ app.get('/health', (req, res) => res.json({ status: 'ok', service: 'gateway' }))
 // TODO: Auth Middleware (validar JWT e injetar x-org-id nos headers pro proxy)
 
 // ── Reverse Proxies ──────────────────────────────────────────
+const proxyLogger = (req: any, res: any, next: any) => {
+  console.log(`[GATEWAY] ➡️  Proxying ${req.method} ${req.url}`);
+  next();
+};
+
+const proxyOptions = (target: string) => ({
+  target,
+  changeOrigin: true,
+  timeout: 5000, // 5 segundos de timeout interno
+  proxyTimeout: 5000,
+  onError: (err: any, req: any, res: any) => {
+    console.error(`[GATEWAY] ❌ Proxy Error (${target}):`, err.message);
+    res.status(504).json({ error: 'Gateway Timeout (Internal)', detail: err.message, target });
+  },
+  onProxyReq: (proxyReq: any, req: any) => {
+    console.log(`[GATEWAY] 🚢 Sending request to: ${target}${req.url}`);
+  }
+});
+
+app.use(proxyLogger);
+
 // Proxy para Analytics (Stats, Auditoria, Análise)
 app.use(['/api/stats', '/api/analisar', '/api/auditoria'], createProxyMiddleware({
-  target: ANALYTICS_SERVICE_URL,
-  changeOrigin: true,
+  ...proxyOptions(ANALYTICS_SERVICE_URL),
   pathRewrite: { '^/api': '/api' }
 }));
 
 // Proxy para o CRM Service (Conversas, Agenda, Templates, DB)
 app.use(['/api', '/db'], createProxyMiddleware({
-  target: CRM_SERVICE_URL,
-  changeOrigin: true,
+  ...proxyOptions(CRM_SERVICE_URL),
   pathRewrite: { '^/api': '/api', '^/db': '/api/db' }
 }));
 

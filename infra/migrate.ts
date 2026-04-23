@@ -26,13 +26,32 @@ export async function runMigrations(pool: Pool): Promise<void> {
       )
     `);
 
-    // Diretório das migrations (relativo ao raiz do projeto)
-    const migrationsDir = path.join(__dirname, '../infra/migrations');
+    // Diretório das migrations
+    // Em produção (Docker), o processo roda na raiz /app
+    // Em dev, roda na raiz do projeto.
+    // Tentamos caminhos comuns para garantir que funcione em ambos.
+    const possiblePaths = [
+      path.join(process.cwd(), 'infra/migrations'),
+      path.join(__dirname, 'migrations'),
+      path.join(__dirname, '../infra/migrations'),
+      path.join(__dirname, '../../infra/migrations')
+    ];
 
-    if (!fs.existsSync(migrationsDir)) {
-      console.warn('[MIGRATE] ⚠️  Diretório de migrations não encontrado:', migrationsDir);
+    let migrationsDir = '';
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        migrationsDir = p;
+        break;
+      }
+    }
+
+    if (!migrationsDir) {
+      console.error('[MIGRATE] ❌ Erro: Nenhum diretório de migrations encontrado!');
+      console.error('[MIGRATE] 📂 Caminhos tentados:', possiblePaths);
       return;
     }
+
+    console.log('[MIGRATE] 📂 Usando diretório:', migrationsDir);
 
     // Listar e ordenar migrations
     const files = fs

@@ -17,18 +17,20 @@ const INTERNAL_PORT = 3001;
 const PORT = process.env.PORT || INTERNAL_PORT;
 
 async function bootstrap() {
+  // 1. Subir HTTP IMEDIATAMENTE (healthcheck Railway)
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[AGENT-AI] 🧠 HTTP Server ready on port ${PORT}`);
+  });
+
   try {
-    // 1. Migrations antes de qualquer coisa
+    // 2. Migrations
+    console.log('[AGENT-AI] 🔄 Iniciando migrations...');
     await runMigrations(pool);
-    // 2. Subir HTTP (healthcheck Railway)
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`[AGENT-AI] 🧠 Server running on port ${PORT}`);
-    });
     // 3. Subir consumer BullMQ
     await startConsumer();
+    console.log('[AGENT-AI] ✅ Inicialização completa.');
   } catch (err: any) {
-    console.error('[AGENT-AI] ❌ Falha no bootstrap:', err.message);
-    process.exit(1);
+    console.error('[AGENT-AI] ❌ Erro na inicialização:', err.message);
   }
 }
 

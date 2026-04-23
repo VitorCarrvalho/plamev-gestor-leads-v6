@@ -97,18 +97,20 @@ const INTERNAL_PORT = 3002;
 const PORT = process.env.PORT || INTERNAL_PORT;
 
 async function bootstrap() {
+  // 1. Subir o servidor HTTP IMEDIATAMENTE (Evita 504 Gateway Timeout)
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[CRM-SERVICE] 🚀 HTTP Server ready on port ${PORT}`);
+  });
+
   try {
-    // 1. Rodar migrations automaticamente no startup
+    // 2. Rodar migrations e testes em background
+    console.log('[CRM-SERVICE] 🔄 Iniciando banco de dados...');
     await runMigrations(pool);
-    // 2. Verificar conexão com o banco
     await testar();
-    // 3. Subir o servidor HTTP
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`[CRM-SERVICE] 🚀 Iniciado na porta ${PORT}`);
-    });
+    console.log('[CRM-SERVICE] ✅ Banco de dados pronto.');
   } catch (err: any) {
-    console.error('[CRM-SERVICE] ❌ Falha no bootstrap:', err.message);
-    process.exit(1); // Falha no deploy Railway = serviço não sobe
+    console.error('[CRM-SERVICE] ❌ Erro na inicialização (DB):', err.message);
+    // Não paramos o processo para não causar looping de restart no Railway
   }
 }
 

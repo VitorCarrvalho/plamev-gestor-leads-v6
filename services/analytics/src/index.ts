@@ -45,15 +45,17 @@ const INTERNAL_PORT = 3004;
 const PORT = process.env.PORT || INTERNAL_PORT;
 
 async function bootstrap() {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[ANALYTICS] 🚀 HTTP Server ready on port ${PORT}`);
+  });
+
   try {
+    console.log('[ANALYTICS] 🔄 Iniciando banco de dados...');
     await runMigrations(pool);
     await testar();
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`[ANALYTICS] 🚀 Iniciado na porta ${PORT}`);
-    });
+    console.log('[ANALYTICS] ✅ Banco de dados pronto.');
   } catch (err: any) {
-    console.error('[ANALYTICS] ❌ Falha no bootstrap:', err.message);
-    process.exit(1);
+    console.error('[ANALYTICS] ❌ Erro na inicialização:', err.message);
   }
 }
 
