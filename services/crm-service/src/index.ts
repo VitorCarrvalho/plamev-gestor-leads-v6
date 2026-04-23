@@ -8,6 +8,8 @@ import { listarConversas, buscarConversa, buscarMensagens, buscarStats } from '.
 
 config({ path: path.join(__dirname, '../../.env') });
 
+const app = express();
+app.use(cors());
 app.use(express.json());
 
 // Logger de requisições para debug
