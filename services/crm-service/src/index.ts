@@ -31,10 +31,12 @@ app.use((req, res, next) => {
 app.get(['/api/conversations', '/api/conversas'], async (req, res) => {
   try {
     const orgId = req.headers['x-org-id'] as string;
+    console.log(`[CRM-SERVICE] 🔍 Listando conversas para org: ${orgId}`);
     const items = await listarConversas(orgId);
     res.json(items);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error(`[CRM-SERVICE] ❌ Erro em /api/conversas:`, error);
+    res.status(500).json({ error: error.message, stack: error.stack });
   }
 });
 
