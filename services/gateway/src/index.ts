@@ -60,14 +60,6 @@ const onError = (target: string) => (err: any, _req: any, res: any) => {
   }
 };
 
-// Analytics — rotas específicas de /api antes do catch-all do CRM
-app.use(createProxyMiddleware({
-  target: ANALYTICS_SERVICE_URL,
-  changeOrigin: true,
-  pathFilter: (p) => p.startsWith('/api/analisar') || p.startsWith('/api/auditoria'),
-  on: { error: onError(ANALYTICS_SERVICE_URL) },
-}));
-
 // Channel service
 app.use(createProxyMiddleware({
   target: CHANNEL_SERVICE_URL,

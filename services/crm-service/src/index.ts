@@ -2,10 +2,19 @@ import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
 import path from 'path';
-import { pool, testar } from './config/db';
+import { pool, testar, queryOne, execute } from './config/db';
 import { runMigrations } from '../../../infra/migrate';
 import { listarConversas, buscarConversa, buscarMensagens, buscarStats } from './repositories/conversations.repository';
-import authRouter from './routes/auth';
+import { autenticar } from './middleware/auth';
+import authRouter     from './routes/auth';
+import mensagensRouter from './routes/mensagens';
+import templatesRouter from './routes/templates';
+import agendaRouter    from './routes/agenda';
+import buscaRouter     from './routes/busca';
+import sandboxRouter   from './routes/sandbox';
+import analisarRouter  from './routes/analisar';
+import auditoriaRouter from './routes/auditoria';
+import dbRouter        from './routes/db';
 
 config({ path: path.join(__dirname, '../../.env') });
 
@@ -13,44 +22,39 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Logger de requisições para debug
-app.use((req, res, next) => {
+app.use((req, _res, next) => {
   console.log(`[CRM-SERVICE] 📥 ${req.method} ${req.url}`);
   next();
 });
 
-app.get('/health', (req, res) => res.json({ status: 'ok', service: 'crm-service' }));
+app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'crm-service' }));
 
+// Auth
 app.use('/auth', authRouter);
 
-// TODO: Middleware de Autenticação/Multi-tenancy
-// Simulação de orgId que virá do Gateway
-app.use((req, res, next) => {
-  req.headers['x-org-id'] = '00000000-0000-0000-0000-000000000000';
+// Injeta orgId default (multi-tenancy virá do Gateway JWT futuramente)
+app.use((req, _res, next) => {
+  req.headers['x-org-id'] = req.headers['x-org-id'] || '00000000-0000-0000-0000-000000000000';
   next();
 });
 
-// ── Rotas de Conversas ──────────────────────────────────────────
+// ── Conversas (inline — precisam de orgId) ──────────────────────
 app.get(['/api/conversations', '/api/conversas'], async (req, res) => {
   try {
     const orgId = req.headers['x-org-id'] as string;
-    console.log(`[CRM-SERVICE] 🔍 Listando conversas para org: ${orgId}`);
     const items = await listarConversas(orgId);
     res.json(items);
-  } catch (error: any) {
-    console.error(`[CRM-SERVICE] ❌ Erro em /api/conversas:`, error);
-    res.status(500).json({ error: error.message, stack: error.stack });
+  } catch (e: any) {
+    console.error('[CRM-SERVICE] ❌ Erro em /api/conversas:', e);
+    res.status(500).json({ error: e.message, stack: e.stack });
   }
 });
 
 app.get(['/api/conversations/stats', '/api/stats'], async (req, res) => {
   try {
     const orgId = req.headers['x-org-id'] as string;
-    const stats = await buscarStats(orgId);
-    res.json(stats);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+    res.json(await buscarStats(orgId));
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/conversations/:id', async (req, res) => {
@@ -59,9 +63,7 @@ app.get('/api/conversations/:id', async (req, res) => {
     const item = await buscarConversa(orgId, req.params.id);
     if (!item) return res.status(404).json({ error: 'Conversa não encontrada' });
     res.json(item);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.get(['/api/conversations/:id/messages', '/api/conversas/:id/mensagens'], async (req, res) => {
@@ -69,61 +71,62 @@ app.get(['/api/conversations/:id/messages', '/api/conversas/:id/mensagens'], asy
     const orgId = req.headers['x-org-id'] as string;
     const { limit, before } = req.query;
     const messages = await buscarMensagens(
-      orgId,
-      req.params.id, 
-      limit ? parseInt(limit as string, 10) : undefined, 
-      before as string | undefined
+      orgId, req.params.id,
+      limit ? parseInt(limit as string, 10) : undefined,
+      before as string | undefined,
     );
     res.json(messages);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Outras Rotas CRM (Agenda, Templates, Auditoria, DB) ────────
-app.get('/api/agenda', async (req, res) => {
-  // Mock ou implementação real da agenda
-  res.json([]);
-});
+// ── Etapa do Kanban ─────────────────────────────────────────────
+const ETAPAS_VALIDAS = [
+  'acolhimento', 'qualificacao', 'apresentacao_planos', 'validacao_cep',
+  'negociacao', 'objecao', 'pre_fechamento', 'fechamento',
+  'venda_fechada', 'pago', 'sem_cobertura', 'encerrado',
+];
 
-app.get('/api/templates', async (req, res) => {
-  // Mock ou implementação real de templates
-  res.json([]);
-});
-
-app.get('/api/db/tables', async (req, res) => {
+app.patch('/api/conversa/:id/etapa', autenticar, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public'
-    `);
-    res.json(result.rows.map(r => r.table_name));
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+    const { id } = req.params;
+    const etapa: string = (req.body?.etapa || '').toString();
+    if (!ETAPAS_VALIDAS.includes(etapa)) {
+      res.status(400).json({ erro: `etapa inválida: ${etapa}` }); return;
+    }
+    const atual = await queryOne<any>('SELECT etapa FROM conversas WHERE id=$1', [id]);
+    if (!atual) { res.status(404).json({ erro: 'Conversa não encontrada' }); return; }
+    await execute('UPDATE conversas SET etapa=$1 WHERE id=$2', [etapa, id]);
+    await execute(
+      'INSERT INTO funil_conversao (conversa_id, etapa_origem, etapa_destino) VALUES ($1,$2,$3)',
+      [id, atual.etapa, etapa],
+    ).catch(() => {});
+    res.json({ ok: true, etapa });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
 
-// No Railway, a variável PORT é dinâmica para o tráfego externo.
-// Para comunicação interna entre microserviços, usamos uma porta fixa previsível.
-const INTERNAL_PORT = 8080;
-const PORT = process.env.PORT || INTERNAL_PORT;
+// ── Routers ─────────────────────────────────────────────────────
+app.use('/api/mensagens',  mensagensRouter);
+app.use('/api/templates',  templatesRouter);
+app.use('/api/agenda',     agendaRouter);
+app.use('/api/busca',      buscaRouter);
+app.use('/api/sandbox',    sandboxRouter);
+app.use('/api/analisar',   analisarRouter);
+app.use('/api/auditoria',  auditoriaRouter);
+app.use('/api/db',         dbRouter);
+
+// ── Boot ────────────────────────────────────────────────────────
+const PORT = process.env.PORT || 8080;
 
 async function bootstrap() {
-  // 1. Subir o servidor HTTP IMEDIATAMENTE (Evita 504 Gateway Timeout)
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[CRM-SERVICE] 🚀 HTTP Server ready on port ${PORT}`);
   });
-
   try {
-    // 2. Rodar migrations e testes em background
-    console.log('[CRM-SERVICE] 🔄 Iniciando banco de dados...');
     await runMigrations(pool);
     await testar();
     console.log('[CRM-SERVICE] ✅ Banco de dados pronto.');
   } catch (err: any) {
     console.error('[CRM-SERVICE] ❌ Erro na inicialização (DB):', err.message);
-    // Não paramos o processo para não causar looping de restart no Railway
   }
 }
 
