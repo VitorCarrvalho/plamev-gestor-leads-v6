@@ -25,79 +25,56 @@ app.use(cors());
 // ── Debug Network ─────────────────────────────────────────────
 app.get('/debug-network', async (req, res) => {
   const targets = {
-    crm: CRM_SERVICE_URL,
-    analytics: ANALYTICS_SERVICE_URL,
-    agent: AGENT_AI_URL,
-    channels: CHANNEL_SERVICE_URL
+    crm_health: `${CRM_SERVICE_URL}/health`,
+    crm_data: `${CRM_SERVICE_URL}/api/conversas`,
+    analytics_health: `${ANALYTICS_SERVICE_URL}/health`,
+    agent_health: `${AGENT_AI_URL}/health`,
+    channels_health: `${CHANNEL_SERVICE_URL}/health`
   };
   
   const results: any = {};
-  
   for (const [name, url] of Object.entries(targets)) {
     try {
-      const start = Date.now();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      
-      const response = await fetch(`${url}/health`, { signal: controller.signal });
-      const status = response.status;
-      const duration = Date.now() - start;
-      results[name] = { status, duration: `${duration}ms`, ok: true };
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const resp = await fetch(url, { signal: controller.signal });
+      results[name] = { status: resp.status, ok: resp.ok, url };
       clearTimeout(timeoutId);
-    } catch (err: any) {
-      results[name] = { error: err.message, ok: false, tried_url: url };
+    } catch (e: any) {
+      results[name] = { error: e.message, ok: false, url };
     }
   }
-  
-  res.json({
-    message: "Network Diagnostic",
-    timestamp: new Date().toISOString(),
-    results
-  });
+  res.json(results);
 });
 
 // ── Reverse Proxies ──────────────────────────────────────────
-const proxyLogger = (req: any, res: any, next: any) => {
-  console.log(`[GATEWAY] ➡️  Proxying ${req.method} ${req.url}`);
-  next();
-};
-
 const proxyOptions = (target: string) => ({
   target,
   changeOrigin: true,
-  timeout: 5000, // 5 segundos de timeout interno
-  proxyTimeout: 5000,
+  timeout: 10000,
+  proxyTimeout: 10000,
   onError: (err: any, req: any, res: any) => {
-    console.error(`[GATEWAY] ❌ Proxy Error (${target}):`, err.message);
-    res.status(504).json({ error: 'Gateway Timeout (Internal)', detail: err.message, target });
-  },
-  onProxyReq: (proxyReq: any, req: any) => {
-    console.log(`[GATEWAY] 🚢 Sending request to: ${target}${req.url}`);
+    console.error(`[GATEWAY] ❌ Proxy Error to ${target}:`, err.message);
+    res.status(504).json({ error: 'Gateway Timeout', detail: err.message });
   }
 });
 
-app.use(proxyLogger);
+// Analytics (Alta prioridade para rotas específicas)
+app.use('/api/stats', createProxyMiddleware(proxyOptions(ANALYTICS_SERVICE_URL)));
+app.use('/api/analisar', createProxyMiddleware(proxyOptions(ANALYTICS_SERVICE_URL)));
+app.use('/api/auditoria', createProxyMiddleware(proxyOptions(ANALYTICS_SERVICE_URL)));
 
-// 1. Prioridade: Analytics (Rotas específicas)
-app.use(['/api/stats', '/api/analisar', '/api/auditoria'], createProxyMiddleware({
-  ...proxyOptions(ANALYTICS_SERVICE_URL),
-  // Não faz rewrite, envia o path completo /api/stats -> /api/stats
-}));
+// Webhooks
+app.use('/webhooks', createProxyMiddleware(proxyOptions(CHANNEL_SERVICE_URL)));
 
-// 2. Webhooks
-app.use('/webhooks', createProxyMiddleware({
-  ...proxyOptions(CHANNEL_SERVICE_URL),
-}));
+// AI
+app.use('/ai', createProxyMiddleware(proxyOptions(AGENT_AI_URL)));
 
-// 3. IA
-app.use('/ai', createProxyMiddleware({
-  ...proxyOptions(AGENT_AI_URL),
-}));
-
-// 4. Geral CRM (Conversas, DB, etc) - Deve vir por último
-app.use(['/api', '/db'], createProxyMiddleware({
+// CRM (Geral /api e /db)
+app.use('/api', createProxyMiddleware(proxyOptions(CRM_SERVICE_URL)));
+app.use('/db', createProxyMiddleware({
   ...proxyOptions(CRM_SERVICE_URL),
-  pathRewrite: { '^/db': '/api/db' } // Transforma /db/tables em /api/db/tables
+  pathRewrite: { '^/db': '/api/db' }
 }));
 
 // ── WebSocket Server ─────────────────────────────────────────
