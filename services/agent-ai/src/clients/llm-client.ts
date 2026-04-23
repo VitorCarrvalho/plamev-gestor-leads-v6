@@ -2,8 +2,26 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { AgentConfig, GenerationResult } from '@plamev/shared';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Lazy singletons — instanciados apenas na primeira chamada real,
+// nunca durante o import/startup (evita crash por env var ausente).
+let _anthropic: Anthropic | null = null;
+let _openai: OpenAI | null = null;
+
+function getAnthropic(): Anthropic {
+  if (!_anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada.');
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _anthropic;
+}
+
+function getOpenAI(): OpenAI {
+  if (!_openai) {
+    if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY não configurada.');
+    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return _openai;
+}
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
@@ -44,7 +62,7 @@ async function generateAnthropic(system: string, messages: ChatMessage[], model:
       content: m.content
     }));
 
-  const response = await anthropic.messages.create({
+  const response = await getAnthropic().messages.create({
     model: model || 'claude-3-5-haiku-20241022',
     max_tokens: 1500,
     system,
@@ -64,7 +82,7 @@ async function generateAnthropic(system: string, messages: ChatMessage[], model:
 }
 
 async function generateOpenAI(system: string, messages: ChatMessage[], model: string): Promise<GenerationResult> {
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAI().chat.completions.create({
     model: model || 'gpt-4o-mini',
     messages: [
       { role: 'system', content: system },
