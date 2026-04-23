@@ -26,6 +26,21 @@ app.use((req, res, next) => {
 
 app.use('/api/analisar', analisarRouter);
 
+app.get('/api/stats', async (req, res) => {
+  // TODO: Implementar busca real de estatísticas no DB
+  res.json({
+    leads_hoje: 0,
+    conversoes: 0,
+    tempo_medio: '0m',
+    custo_ia: 0
+  });
+});
+
+app.get(['/api/auditoria', '/api/auditoria/acoes'], async (req, res) => {
+  // TODO: Implementar busca de logs de auditoria
+  res.json([]);
+});
+
 const PORT = process.env.PORT || 3004;
 
 async function bootstrap() {

@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 3000;
 const CRM_SERVICE_URL = process.env.CRM_SERVICE_URL || 'http://localhost:3002';
 const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://localhost:3003';
 const AGENT_AI_URL = process.env.AGENT_AI_URL || 'http://localhost:3001';
+const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3004';
 
 const app = express();
 const server = http.createServer(app);
@@ -24,11 +25,18 @@ app.get('/health', (req, res) => res.json({ status: 'ok', service: 'gateway' }))
 // TODO: Auth Middleware (validar JWT e injetar x-org-id nos headers pro proxy)
 
 // ── Reverse Proxies ──────────────────────────────────────────
-// Proxy para o CRM Service (Painel / API de dados)
-app.use('/api', createProxyMiddleware({
-  target: CRM_SERVICE_URL,
+// Proxy para Analytics (Stats, Auditoria, Análise)
+app.use(['/api/stats', '/api/analisar', '/api/auditoria'], createProxyMiddleware({
+  target: ANALYTICS_SERVICE_URL,
   changeOrigin: true,
   pathRewrite: { '^/api': '/api' }
+}));
+
+// Proxy para o CRM Service (Conversas, Agenda, Templates, DB)
+app.use(['/api', '/db'], createProxyMiddleware({
+  target: CRM_SERVICE_URL,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '/api', '^/db': '/api/db' }
 }));
 
 // Proxy para Webhooks e canais (Evolution API / Telegram)
@@ -38,7 +46,7 @@ app.use('/webhooks', createProxyMiddleware({
   pathRewrite: { '^/webhooks': '/webhooks' }
 }));
 
-// Proxy para comandos diretos à IA (se houver)
+// Proxy para comandos diretos à IA
 app.use('/ai', createProxyMiddleware({
   target: AGENT_AI_URL,
   changeOrigin: true,

@@ -20,7 +20,7 @@ app.use((req, res, next) => {
 });
 
 // ── Rotas de Conversas ──────────────────────────────────────────
-app.get('/api/conversations', async (req, res) => {
+app.get(['/api/conversations', '/api/conversas'], async (req, res) => {
   try {
     const orgId = req.headers['x-org-id'] as string;
     const items = await listarConversas(orgId);
@@ -51,7 +51,7 @@ app.get('/api/conversations/:id', async (req, res) => {
   }
 });
 
-app.get('/api/conversations/:id/messages', async (req, res) => {
+app.get(['/api/conversations/:id/messages', '/api/conversas/:id/mensagens'], async (req, res) => {
   try {
     const orgId = req.headers['x-org-id'] as string;
     const { limit, before } = req.query;
@@ -64,6 +64,30 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
     res.json(messages);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Outras Rotas CRM (Agenda, Templates, Auditoria, DB) ────────
+app.get('/api/agenda', async (req, res) => {
+  // Mock ou implementação real da agenda
+  res.json([]);
+});
+
+app.get('/api/templates', async (req, res) => {
+  // Mock ou implementação real de templates
+  res.json([]);
+});
+
+app.get('/api/db/tables', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public'
+    `);
+    res.json(result.rows.map(r => r.table_name));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
