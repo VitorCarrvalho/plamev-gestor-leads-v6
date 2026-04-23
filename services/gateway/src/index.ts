@@ -9,10 +9,11 @@ import path from 'path';
 config({ path: path.join(__dirname, '../../.env') });
 
 const PORT = process.env.PORT || 3000;
-const CRM_SERVICE_URL = process.env.CRM_SERVICE_URL || 'http://localhost:3002';
-const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://localhost:3003';
-const AGENT_AI_URL = process.env.AGENT_AI_URL || 'http://localhost:3001';
-const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://localhost:3004';
+// No Railway, a porta interna padrão é 8080 para todos os containers
+const CRM_SERVICE_URL = process.env.CRM_SERVICE_URL || 'http://crm-service.railway.internal:8080';
+const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
+const AGENT_AI_URL = process.env.AGENT_AI_URL || 'http://agent-ai.railway.internal:8080';
+const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analytics.railway.internal:8080';
 
 const app = express();
 const server = http.createServer(app);
