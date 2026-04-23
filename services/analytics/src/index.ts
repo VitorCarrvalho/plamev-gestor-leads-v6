@@ -41,13 +41,14 @@ app.get(['/api/auditoria', '/api/auditoria/acoes'], async (req, res) => {
   res.json([]);
 });
 
-const PORT = process.env.PORT || 3004;
+const INTERNAL_PORT = 3004;
+const PORT = process.env.PORT || INTERNAL_PORT;
 
 async function bootstrap() {
   try {
     await runMigrations(pool);
     await testar();
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`[ANALYTICS] 🚀 Iniciado na porta ${PORT}`);
     });
   } catch (err: any) {

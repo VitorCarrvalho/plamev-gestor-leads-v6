@@ -13,14 +13,15 @@ app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ ok: true, service: 'agent-ai' }));
 
-const PORT = process.env.PORT || 3001;
+const INTERNAL_PORT = 3001;
+const PORT = process.env.PORT || INTERNAL_PORT;
 
 async function bootstrap() {
   try {
     // 1. Migrations antes de qualquer coisa
     await runMigrations(pool);
     // 2. Subir HTTP (healthcheck Railway)
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`[AGENT-AI] 🧠 Server running on port ${PORT}`);
     });
     // 3. Subir consumer BullMQ

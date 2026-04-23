@@ -91,7 +91,10 @@ app.get('/api/db/tables', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3002;
+// No Railway, a variável PORT é dinâmica para o tráfego externo.
+// Para comunicação interna entre microserviços, usamos uma porta fixa previsível.
+const INTERNAL_PORT = 3002;
+const PORT = process.env.PORT || INTERNAL_PORT;
 
 async function bootstrap() {
   try {
@@ -100,7 +103,7 @@ async function bootstrap() {
     // 2. Verificar conexão com o banco
     await testar();
     // 3. Subir o servidor HTTP
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`[CRM-SERVICE] 🚀 Iniciado na porta ${PORT}`);
     });
   } catch (err: any) {

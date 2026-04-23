@@ -12,9 +12,10 @@ app.use(express.json({ limit: '10mb' }));
 // Setup routes
 setupRoutes(app);
 
-const PORT = process.env.PORT || 3002;
+const INTERNAL_PORT = 3003;
+const PORT = process.env.PORT || INTERNAL_PORT;
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`[CHANNEL-SERVICE] 🚀 Server running on port ${PORT}`);
   
   if (process.env.TELEGRAM_TOKEN) {
