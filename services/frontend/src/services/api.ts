@@ -1,13 +1,17 @@
 /**
  * services/api.ts — HTTP client do Dashboard V5.
+ * Em produção aponta para o Gateway via VITE_API_URL.
+ * Em dev usa proxy do Vite (paths relativos).
  */
 const TOKEN_KEY = 'dash_v5_token';
+const BASE_URL = (import.meta as any).env?.VITE_API_URL || '';
 
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
 
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const token = getToken();
-  const res = await fetch(path, {
+  const url = path.startsWith('http') ? path : `${BASE_URL}${path}`;
+  const res = await fetch(url, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
