@@ -19,10 +19,41 @@ const server = http.createServer(app);
 
 app.use(cors());
 
-// Health check
-app.get('/health', (req, res) => res.json({ status: 'ok', service: 'gateway' }));
-
 // TODO: Auth Middleware (validar JWT e injetar x-org-id nos headers pro proxy)
+
+// ── Debug Network ─────────────────────────────────────────────
+app.get('/debug-network', async (req, res) => {
+  const targets = {
+    crm: CRM_SERVICE_URL,
+    analytics: ANALYTICS_SERVICE_URL,
+    agent: AGENT_AI_URL,
+    channels: CHANNEL_SERVICE_URL
+  };
+  
+  const results: any = {};
+  
+  for (const [name, url] of Object.entries(targets)) {
+    try {
+      const start = Date.now();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      
+      const response = await fetch(`${url}/health`, { signal: controller.signal });
+      const status = response.status;
+      const duration = Date.now() - start;
+      results[name] = { status, duration: `${duration}ms`, ok: true };
+      clearTimeout(timeoutId);
+    } catch (err: any) {
+      results[name] = { error: err.message, ok: false, tried_url: url };
+    }
+  }
+  
+  res.json({
+    message: "Network Diagnostic",
+    timestamp: new Date().toISOString(),
+    results
+  });
+});
 
 // ── Reverse Proxies ──────────────────────────────────────────
 const proxyLogger = (req: any, res: any, next: any) => {
