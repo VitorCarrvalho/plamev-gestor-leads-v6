@@ -5,6 +5,7 @@ import path from 'path';
 import { pool, testar } from './config/db';
 import { runMigrations } from '../../../infra/migrate';
 import { listarConversas, buscarConversa, buscarMensagens, buscarStats } from './repositories/conversations.repository';
+import authRouter from './routes/auth';
 
 config({ path: path.join(__dirname, '../../.env') });
 
@@ -19,6 +20,8 @@ app.use((req, res, next) => {
 });
 
 app.get('/health', (req, res) => res.json({ status: 'ok', service: 'crm-service' }));
+
+app.use('/auth', authRouter);
 
 // TODO: Middleware de Autenticação/Multi-tenancy
 // Simulação de orgId que virá do Gateway

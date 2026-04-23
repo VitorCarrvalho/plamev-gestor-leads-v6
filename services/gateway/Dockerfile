@@ -12,6 +12,6 @@ RUN npm install
 RUN npm run build -w packages/shared
 RUN npm run build -w services/gateway
 
-EXPOSE 3000
+EXPOSE 8080
 
 CMD ["npm", "start", "-w", "services/gateway"]

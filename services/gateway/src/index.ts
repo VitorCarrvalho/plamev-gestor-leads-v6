@@ -8,8 +8,7 @@ import path from 'path';
 
 config({ path: path.join(__dirname, '../../.env') });
 
-const PORT = process.env.PORT || 3000;
-// No Railway, a porta interna padrão é 8080 para todos os containers
+const PORT = process.env.PORT || 8080;
 const CRM_SERVICE_URL = process.env.CRM_SERVICE_URL || 'http://crm-service.railway.internal:8080';
 const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
 const AGENT_AI_URL = process.env.AGENT_AI_URL || 'http://agent-ai.railway.internal:8080';
@@ -19,8 +18,9 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(cors());
+app.use(express.json());
 
-// TODO: Auth Middleware (validar JWT e injetar x-org-id nos headers pro proxy)
+app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'gateway' }));
 
 // ── Debug Network ─────────────────────────────────────────────
 app.get('/debug-network', async (req, res) => {
@@ -64,6 +64,9 @@ app.use('/api/stats', createProxyMiddleware(proxyOptions(ANALYTICS_SERVICE_URL))
 app.use('/api/analisar', createProxyMiddleware(proxyOptions(ANALYTICS_SERVICE_URL)));
 app.use('/api/auditoria', createProxyMiddleware(proxyOptions(ANALYTICS_SERVICE_URL)));
 
+// Auth (proxeia para o CRM que gerencia login/JWT)
+app.use('/auth', createProxyMiddleware(proxyOptions(CRM_SERVICE_URL)));
+
 // Webhooks
 app.use('/webhooks', createProxyMiddleware(proxyOptions(CHANNEL_SERVICE_URL)));
 
@@ -92,7 +95,7 @@ io.on('connection', (socket) => {
   // TODO: Implementar handlers de eventos (substituir server/websocket/socket.server.ts)
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`[GATEWAY] 🚀 Rodando na porta ${PORT}`);
   console.log(`[GATEWAY] 🔗 CRM -> ${CRM_SERVICE_URL}`);
   console.log(`[GATEWAY] 🔗 Channels -> ${CHANNEL_SERVICE_URL}`);
