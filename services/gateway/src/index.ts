@@ -31,7 +31,7 @@ app.get('/debug-network', async (req, res) => {
     agent_health: `${AGENT_AI_URL}/health`,
     channels_health: `${CHANNEL_SERVICE_URL}/health`
   };
-  
+
   const results: any = {};
   for (const [name, url] of Object.entries(targets)) {
     try {
@@ -48,36 +48,49 @@ app.get('/debug-network', async (req, res) => {
 });
 
 // ── Reverse Proxies ──────────────────────────────────────────
-const proxyOptions = (target: string) => ({
-  target,
-  changeOrigin: true,
-  timeout: 10000,
-  proxyTimeout: 10000,
-  onError: (err: any, req: any, res: any) => {
-    console.error(`[GATEWAY] ❌ Proxy Error to ${target}:`, err.message);
+// IMPORTANTE: montados em '/' para o Express NÃO remover o prefixo do path.
+// Se usarmos app.use('/api', proxy), o Express strip '/api' antes de passar ao
+// proxy middleware, e o CRM recebe '/conversas' em vez de '/api/conversas' → 404.
+// Usamos pathFilter para filtrar quais requests cada proxy deve capturar.
+
+const onError = (target: string) => (err: any, _req: any, res: any) => {
+  console.error(`[GATEWAY] ❌ Proxy Error to ${target}:`, err.message);
+  if (!res.headersSent) {
     res.status(504).json({ error: 'Gateway Timeout', detail: err.message });
   }
-});
+};
 
-// Analytics (Alta prioridade para rotas específicas)
-app.use('/api/stats', createProxyMiddleware(proxyOptions(ANALYTICS_SERVICE_URL)));
-app.use('/api/analisar', createProxyMiddleware(proxyOptions(ANALYTICS_SERVICE_URL)));
-app.use('/api/auditoria', createProxyMiddleware(proxyOptions(ANALYTICS_SERVICE_URL)));
+// Analytics — rotas específicas de /api antes do catch-all do CRM
+app.use(createProxyMiddleware({
+  target: ANALYTICS_SERVICE_URL,
+  changeOrigin: true,
+  pathFilter: (p) => p.startsWith('/api/stats') || p.startsWith('/api/analisar') || p.startsWith('/api/auditoria'),
+  on: { error: onError(ANALYTICS_SERVICE_URL) },
+}));
 
-// Auth (proxeia para o CRM que gerencia login/JWT)
-app.use('/auth', createProxyMiddleware(proxyOptions(CRM_SERVICE_URL)));
+// Channel service
+app.use(createProxyMiddleware({
+  target: CHANNEL_SERVICE_URL,
+  changeOrigin: true,
+  pathFilter: (p) => p.startsWith('/webhooks'),
+  on: { error: onError(CHANNEL_SERVICE_URL) },
+}));
 
-// Webhooks
-app.use('/webhooks', createProxyMiddleware(proxyOptions(CHANNEL_SERVICE_URL)));
+// Agent AI
+app.use(createProxyMiddleware({
+  target: AGENT_AI_URL,
+  changeOrigin: true,
+  pathFilter: (p) => p.startsWith('/ai'),
+  on: { error: onError(AGENT_AI_URL) },
+}));
 
-// AI
-app.use('/ai', createProxyMiddleware(proxyOptions(AGENT_AI_URL)));
-
-// CRM (Geral /api e /db)
-app.use('/api', createProxyMiddleware(proxyOptions(CRM_SERVICE_URL)));
-app.use('/db', createProxyMiddleware({
-  ...proxyOptions(CRM_SERVICE_URL),
-  pathRewrite: { '^/db': '/api/db' }
+// CRM — /auth, /api/* e /db/* (com rewrite de /db → /api/db)
+app.use(createProxyMiddleware({
+  target: CRM_SERVICE_URL,
+  changeOrigin: true,
+  pathFilter: (p) => p.startsWith('/auth') || p.startsWith('/api') || p.startsWith('/db'),
+  pathRewrite: { '^/db': '/api/db' },
+  on: { error: onError(CRM_SERVICE_URL) },
 }));
 
 // ── WebSocket Server ─────────────────────────────────────────
@@ -91,8 +104,6 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`[SOCKET] 🔴 Cliente desconectado: ${socket.id}`);
   });
-
-  // TODO: Implementar handlers de eventos (substituir server/websocket/socket.server.ts)
 });
 
 server.listen(PORT, '0.0.0.0', () => {
