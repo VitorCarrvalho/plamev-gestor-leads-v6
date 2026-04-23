@@ -75,7 +75,7 @@ export async function runMigrations(pool: Pool): Promise<void> {
 
     let applied_count = 0;
 
-    for (const file of files) {
+    for (const file of sqlFiles) {
       if (applied.has(file)) {
         console.log(`[MIGRATE] ✅ Já aplicada: ${file}`);
         continue;
