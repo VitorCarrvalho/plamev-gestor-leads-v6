@@ -1,11 +1,14 @@
 FROM node:20-alpine AS builder
-
 WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY tsconfig.json ./
 COPY packages/shared ./packages/shared
 COPY services/frontend ./services/frontend
+
+# Railway passa env vars como build args automaticamente
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
 
 RUN npm install
 RUN npm run build -w packages/shared
@@ -17,11 +20,9 @@ WORKDIR /app
 RUN npm install -g serve
 
 COPY --from=builder /app/services/frontend/dist ./dist
-COPY services/frontend/entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
 
 EXPOSE 3000
 
-# entrypoint.sh gera /app/dist/env-config.js com as env vars em runtime,
-# depois sobe o serve com SPA fallback (-s)
-CMD ["sh", "./entrypoint.sh"]
+# sh -c permite expandir $PORT em runtime (Railway injeta dinamicamente)
+# -s = SPA mode (redireciona 404 para index.html)
+CMD sh -c "serve -s dist -l tcp://0.0.0.0:${PORT:-3000}"
