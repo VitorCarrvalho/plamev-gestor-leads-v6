@@ -99,7 +99,7 @@ app.get('/api/db/tables', async (req, res) => {
 
 // No Railway, a variável PORT é dinâmica para o tráfego externo.
 // Para comunicação interna entre microserviços, usamos uma porta fixa previsível.
-const INTERNAL_PORT = 3002;
+const INTERNAL_PORT = 8080;
 const PORT = process.env.PORT || INTERNAL_PORT;
 
 async function bootstrap() {

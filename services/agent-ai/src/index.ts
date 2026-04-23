@@ -13,7 +13,7 @@ app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ ok: true, service: 'agent-ai' }));
 
-const INTERNAL_PORT = 3001;
+const INTERNAL_PORT = 8080;
 const PORT = process.env.PORT || INTERNAL_PORT;
 
 async function bootstrap() {

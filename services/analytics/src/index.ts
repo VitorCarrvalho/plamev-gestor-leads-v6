@@ -48,7 +48,7 @@ app.get(['/api/auditoria', '/api/auditoria/acoes'], async (req, res) => {
   res.json([]);
 });
 
-const INTERNAL_PORT = 3004;
+const INTERNAL_PORT = 8080;
 const PORT = process.env.PORT || INTERNAL_PORT;
 
 async function bootstrap() {

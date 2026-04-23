@@ -12,7 +12,7 @@ app.use(express.json({ limit: '10mb' }));
 // Setup routes
 setupRoutes(app);
 
-const INTERNAL_PORT = 3003;
+const INTERNAL_PORT = 8080;
 const PORT = process.env.PORT || INTERNAL_PORT;
 
 app.listen(PORT, '0.0.0.0', () => {
