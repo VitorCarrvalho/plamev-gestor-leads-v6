@@ -7,5 +7,3 @@ watchPatterns = ["src/**", "public/**", "package.json", "vite.config.ts"]
 restartPolicyType = "ON_FAILURE"
 numReplicas = 1
 sleepApplication = false
-healthcheckPath = "/"
-healthcheckTimeout = 100

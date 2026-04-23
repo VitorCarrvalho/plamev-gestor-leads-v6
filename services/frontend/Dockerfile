@@ -21,8 +21,7 @@ RUN npm install -g serve
 
 COPY --from=builder /app/services/frontend/dist ./dist
 
-EXPOSE 3000
+EXPOSE 8080
 
-# sh -c permite expandir $PORT em runtime (Railway injeta dinamicamente)
-# -s = SPA mode (redireciona 404 para index.html)
-CMD sh -c "serve -s dist -l tcp://0.0.0.0:${PORT:-3000}"
+# Serve the static files. Railway will provide the PORT env var.
+CMD ["sh", "-c", "serve -s dist -l ${PORT:-8080}"]
