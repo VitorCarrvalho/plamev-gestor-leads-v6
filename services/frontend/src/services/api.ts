@@ -4,7 +4,11 @@
  * Em dev usa proxy do Vite (paths relativos).
  */
 const TOKEN_KEY = 'dash_v5_token';
-const BASE_URL = (import.meta as any).env?.VITE_API_URL || '';
+// Em produção, VITE_API_URL vem do env-config.js gerado em runtime pelo entrypoint.sh
+// Em dev, usa path relativo (proxy do Vite)
+const BASE_URL = (window as any).__ENV__?.VITE_API_URL
+  || (import.meta as any).env?.VITE_API_URL
+  || '';
 
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
 
