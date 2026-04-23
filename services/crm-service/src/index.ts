@@ -8,9 +8,15 @@ import { listarConversas, buscarConversa, buscarMensagens, buscarStats } from '.
 
 config({ path: path.join(__dirname, '../../.env') });
 
-const app = express();
-app.use(cors());
 app.use(express.json());
+
+// Logger de requisições para debug
+app.use((req, res, next) => {
+  console.log(`[CRM-SERVICE] 📥 ${req.method} ${req.url}`);
+  next();
+});
+
+app.get('/health', (req, res) => res.json({ status: 'ok', service: 'crm-service' }));
 
 // TODO: Middleware de Autenticação/Multi-tenancy
 // Simulação de orgId que virá do Gateway

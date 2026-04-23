@@ -78,30 +78,26 @@ const proxyOptions = (target: string) => ({
 
 app.use(proxyLogger);
 
-// Proxy para Analytics (Stats, Auditoria, Análise)
+// 1. Prioridade: Analytics (Rotas específicas)
 app.use(['/api/stats', '/api/analisar', '/api/auditoria'], createProxyMiddleware({
   ...proxyOptions(ANALYTICS_SERVICE_URL),
-  pathRewrite: { '^/api': '/api' }
+  // Não faz rewrite, envia o path completo /api/stats -> /api/stats
 }));
 
-// Proxy para o CRM Service (Conversas, Agenda, Templates, DB)
+// 2. Webhooks
+app.use('/webhooks', createProxyMiddleware({
+  ...proxyOptions(CHANNEL_SERVICE_URL),
+}));
+
+// 3. IA
+app.use('/ai', createProxyMiddleware({
+  ...proxyOptions(AGENT_AI_URL),
+}));
+
+// 4. Geral CRM (Conversas, DB, etc) - Deve vir por último
 app.use(['/api', '/db'], createProxyMiddleware({
   ...proxyOptions(CRM_SERVICE_URL),
-  pathRewrite: { '^/api': '/api', '^/db': '/api/db' }
-}));
-
-// Proxy para Webhooks e canais (Evolution API / Telegram)
-app.use('/webhooks', createProxyMiddleware({
-  target: CHANNEL_SERVICE_URL,
-  changeOrigin: true,
-  pathRewrite: { '^/webhooks': '/webhooks' }
-}));
-
-// Proxy para comandos diretos à IA
-app.use('/ai', createProxyMiddleware({
-  target: AGENT_AI_URL,
-  changeOrigin: true,
-  pathRewrite: { '^/ai': '/ai' }
+  pathRewrite: { '^/db': '/api/db' } // Transforma /db/tables em /api/db/tables
 }));
 
 // ── WebSocket Server ─────────────────────────────────────────

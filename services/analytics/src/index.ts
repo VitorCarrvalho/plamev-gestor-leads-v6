@@ -24,6 +24,13 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use((req, res, next) => {
+  console.log(`[ANALYTICS] 📥 ${req.method} ${req.url}`);
+  next();
+});
+
+app.get('/health', (req, res) => res.json({ status: 'ok', service: 'analytics' }));
+
 app.use('/api/analisar', analisarRouter);
 
 app.get('/api/stats', async (req, res) => {
