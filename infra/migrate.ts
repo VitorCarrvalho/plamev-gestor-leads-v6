@@ -32,9 +32,13 @@ export async function runMigrations(pool: Pool): Promise<void> {
     // Tentamos caminhos comuns para garantir que funcione em ambos.
     const possiblePaths = [
       path.join(process.cwd(), 'infra/migrations'),
+      path.join(process.cwd(), '../../infra/migrations'),
+      path.join(process.cwd(), '../infra/migrations'),
       path.join(__dirname, 'migrations'),
       path.join(__dirname, '../infra/migrations'),
-      path.join(__dirname, '../../infra/migrations')
+      path.join(__dirname, '../../infra/migrations'),
+      path.join(__dirname, '../../../infra/migrations'),
+      '/app/infra/migrations' // Caminho absoluto padrão no Docker Railway
     ];
 
     let migrationsDir = '';
@@ -47,17 +51,21 @@ export async function runMigrations(pool: Pool): Promise<void> {
 
     if (!migrationsDir) {
       console.error('[MIGRATE] ❌ Erro: Nenhum diretório de migrations encontrado!');
-      console.error('[MIGRATE] 📂 Caminhos tentados:', possiblePaths);
+      console.error('[MIGRATE] 📂 Caminhos tentados:', JSON.stringify(possiblePaths, null, 2));
       return;
     }
 
     console.log('[MIGRATE] 📂 Usando diretório:', migrationsDir);
 
     // Listar e ordenar migrations
-    const files = fs
-      .readdirSync(migrationsDir)
+    const allFiles = fs.readdirSync(migrationsDir);
+    console.log('[MIGRATE] 📄 Arquivos encontrados no diretório:', allFiles);
+
+    const sqlFiles = allFiles
       .filter(f => f.endsWith('.sql'))
       .sort(); // Ordem lexicográfica: 001_, 002_, 003_...
+    
+    console.log('[MIGRATE] 📝 SQLs para processar:', sqlFiles);
 
     // Buscar migrations já aplicadas
     const { rows } = await client.query(

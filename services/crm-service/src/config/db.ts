@@ -30,9 +30,9 @@ export const executeIntel = (sql: string, p?: any[]) => poolIntel.query(sql, p);
 
 export async function testar() {
   try {
-    const r = await queryOne<any>(`SELECT COUNT(*) as n FROM conversas`);
-    console.log(`[DB V5] ✅ mariv3 — conversas: ${r?.n || 0}`);
+    const r = await queryOne<any>(`SELECT 1 as ok`);
+    console.log(`[DB V5] ✅ Conexão estabelecida.`);
   } catch (e: any) {
-    console.warn(`[DB V5] ⚠️ mariv3: ${e.message}`);
+    console.warn(`[DB V5] ⚠️ Falha na conexão: ${e.message}`);
   }
 }
