@@ -22,6 +22,7 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
     },
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { logout(); window.location.href = '/'; }
   if (!res.ok) throw new Error(data.erro || `HTTP ${res.status}`);
   return data as T;
 }
