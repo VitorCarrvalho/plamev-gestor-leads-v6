@@ -3,7 +3,7 @@
  */
 import { Router } from 'express';
 import { autenticar } from '../middleware/auth';
-import { queryIntel } from '../config/db';
+import { query } from '../config/db';
 
 const router = Router();
 router.use(autenticar);
@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
     if (desde)     { cond.push(`criado_em >= $${vals.length+1}`); vals.push(desde); }
     const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
 
-    const rows = await queryIntel<any>(
+    const rows = await query<any>(
       `SELECT * FROM dashv5_audit_log ${where} ORDER BY criado_em DESC LIMIT ${lim}`,
       vals
     );
@@ -30,7 +30,7 @@ router.get('/', async (req, res) => {
 
 router.get('/acoes', autenticar, async (_req, res) => {
   try {
-    const rows = await queryIntel<any>(`SELECT acao, COUNT(*)::int AS n FROM dashv5_audit_log GROUP BY acao ORDER BY n DESC`);
+    const rows = await query<any>(`SELECT acao, COUNT(*)::int AS n FROM dashv5_audit_log GROUP BY acao ORDER BY n DESC`);
     res.json({ ok: true, acoes: rows });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });

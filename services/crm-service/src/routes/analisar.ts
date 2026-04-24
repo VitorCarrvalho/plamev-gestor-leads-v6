@@ -117,7 +117,7 @@ router.get('/agentes', async (_req, res) => {
         COUNT(DISTINCT c.id) FILTER (WHERE c.etapa = 'fechamento')::int AS fechamentos,
         COUNT(DISTINCT c.id) FILTER (WHERE c.criado_em >= NOW() - INTERVAL '30 days')::int AS conv_30d,
         COALESCE(ROUND(AVG(c.score)::numeric, 1), 0)::float AS score_medio,
-        (SELECT COALESCE(SUM(custo_usd), 0)::float FROM custos_ia WHERE agent_id = a.id AND criado_em >= NOW() - INTERVAL '30 days') AS custo_30d_usd
+        (SELECT COALESCE(SUM(custo_usd), 0)::float FROM custos_ia WHERE agent_id = a.id AND timestamp >= NOW() - INTERVAL '30 days') AS custo_30d_usd
       FROM agentes a
       LEFT JOIN conversas c ON c.agent_id = a.id
       GROUP BY a.id, a.slug, a.nome, a.ativo
