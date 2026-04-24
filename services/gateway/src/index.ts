@@ -53,37 +53,34 @@ app.get('/debug-network', async (req, res) => {
 // proxy middleware, e o CRM recebe '/conversas' em vez de '/api/conversas' → 404.
 // Usamos pathFilter para filtrar quais requests cada proxy deve capturar.
 
-const onError = (target: string) => (err: any, _req: any, res: any) => {
-  console.error(`[GATEWAY] ❌ Proxy Error to ${target}:`, err.message);
-  if (!res.headersSent) {
-    res.status(504).json({ error: 'Gateway Timeout', detail: err.message });
-  }
-};
+const makeProxy = (target: string, pathFilter: (p: string) => boolean, pathRewrite?: Record<string, string>) =>
+  createProxyMiddleware({
+    target,
+    changeOrigin: true,
+    pathFilter,
+    ...(pathRewrite ? { pathRewrite } : {}),
+    timeout: 10_000,
+    proxyTimeout: 10_000,
+    on: {
+      error: (err: any, _req: any, res: any) => {
+        console.error(`[GATEWAY] ❌ Proxy Error to ${target}:`, err.message);
+        if (!res.headersSent) res.status(504).json({ error: 'Gateway Timeout', detail: err.message });
+      },
+    },
+  });
 
 // Channel service
-app.use(createProxyMiddleware({
-  target: CHANNEL_SERVICE_URL,
-  changeOrigin: true,
-  pathFilter: (p) => p.startsWith('/webhooks'),
-  on: { error: onError(CHANNEL_SERVICE_URL) },
-}));
+app.use(makeProxy(CHANNEL_SERVICE_URL, (p) => p.startsWith('/webhooks')));
 
 // Agent AI
-app.use(createProxyMiddleware({
-  target: AGENT_AI_URL,
-  changeOrigin: true,
-  pathFilter: (p) => p.startsWith('/ai'),
-  on: { error: onError(AGENT_AI_URL) },
-}));
+app.use(makeProxy(AGENT_AI_URL, (p) => p.startsWith('/ai')));
 
 // CRM — /auth, /api/* e /db/* (com rewrite de /db → /api/db)
-app.use(createProxyMiddleware({
-  target: CRM_SERVICE_URL,
-  changeOrigin: true,
-  pathFilter: (p) => p.startsWith('/auth') || p.startsWith('/api') || p.startsWith('/db'),
-  pathRewrite: { '^/db': '/api/db' },
-  on: { error: onError(CRM_SERVICE_URL) },
-}));
+app.use(makeProxy(
+  CRM_SERVICE_URL,
+  (p) => p.startsWith('/auth') || p.startsWith('/api') || p.startsWith('/db'),
+  { '^/db': '/api/db' },
+));
 
 // ── WebSocket Server ─────────────────────────────────────────
 const io = new Server(server, {

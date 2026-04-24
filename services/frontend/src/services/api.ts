@@ -22,7 +22,9 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
     },
   });
   const data = await res.json().catch(() => ({}));
-  if (res.status === 401) { logout(); window.location.href = '/'; }
+  // Só força logout se o usuário JÁ estava autenticado e o token expirou/invalidou.
+  // Durante o login não há token, então 401 = credenciais erradas → mostra erro normal.
+  if (res.status === 401 && getToken()) { logout(); window.location.href = '/'; }
   if (!res.ok) throw new Error(data.erro || `HTTP ${res.status}`);
   return data as T;
 }
