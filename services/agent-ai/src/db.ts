@@ -175,3 +175,11 @@ export async function buscarContextoRelacional(orgId: string, agentId: string, t
 export async function buscarInstrucaoAtiva(orgId: string, conversaId: string) {
   return null;
 }
+
+export async function buscarPrompts(agentId: number): Promise<Record<string, string>> {
+  const rows = await query(
+    `SELECT tipo, conteudo FROM agente_prompts WHERE agent_id=$1 AND ativo=TRUE AND conteudo <> ''`,
+    [agentId]
+  );
+  return rows.reduce((acc: any, row: any) => ({ ...acc, [row.tipo]: row.conteudo }), {});
+}

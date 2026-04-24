@@ -106,7 +106,8 @@ router.post('/webhook/whatsapp', validateHmac, async (req: Request, res: Respons
   res.json({ ok: true });
   const body = req.body || {};
   const instancia = body.instance || body.instanceName || '';
-  const agentSlug = instancia.includes('rapha') ? 'rapha' : 'mari';
+  const { resolverAgentePorInstancia } = await import('../services/config');
+  const agentSlug = resolverAgentePorInstancia(instancia);
 
   const lista = Array.isArray(body.data) ? body.data : body.data ? [body.data] : [];
   for (const item of lista) {

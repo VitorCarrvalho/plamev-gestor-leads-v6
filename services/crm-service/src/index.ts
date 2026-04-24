@@ -15,6 +15,7 @@ import sandboxRouter   from './routes/sandbox';
 import analisarRouter  from './routes/analisar';
 import auditoriaRouter from './routes/auditoria';
 import dbRouter        from './routes/db';
+import { agenteRouter, internalRouter } from './routes/config-agentes';
 
 config({ path: path.join(__dirname, '../../.env') });
 
@@ -112,7 +113,9 @@ app.use('/api/busca',      buscaRouter);
 app.use('/api/sandbox',    sandboxRouter);
 app.use('/api/analisar',   analisarRouter);
 app.use('/api/auditoria',  auditoriaRouter);
-app.use('/api/db',         dbRouter);
+app.use('/api/db',              dbRouter);
+app.use('/api/config/agentes',  agenteRouter);
+app.use('/api/internal',        internalRouter);
 
 // ── Boot ────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 8080;

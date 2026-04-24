@@ -1,23 +1,16 @@
 import https from 'https';
+import { resolverInstanciaPorDDD, tokenTelegramPorAgente } from './config';
 
 const EVO_HOST = 'legendarios-evolution-api.bycpkh.easypanel.host';
 const EVO_KEY = process.env.EVOLUTION_API_KEY || '';
-const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
-
-const CHIP_FALLBACK = 'mari-plamev-zap2';
-
-const ROTEAMENTO_CHIPS: Record<string, string> = {
-  '5511': 'mari011',
-  '5531': 'mari-plamev-zap2',
-};
 
 export function getInstancia(phone: string): string {
-  const p = String(phone).replace(/\D/g, '');
-  for (const [prefix, inst] of Object.entries(ROTEAMENTO_CHIPS)) {
-    if (p.startsWith(prefix)) return inst;
+  const inst = resolverInstanciaPorDDD(phone);
+  if (!inst) {
+    console.warn(`[SENDER] ⚠️ Sem rota para ${String(phone).slice(0, 7)}... — usando fallback`);
+    return 'mari-plamev-zap2';
   }
-  console.warn(`[SENDER] ⚠️ Sem rota para ${p.slice(0, 6)}... — usando fallback ${CHIP_FALLBACK}`);
-  return CHIP_FALLBACK;
+  return inst;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -39,10 +32,7 @@ function wppPost(path: string, body: any): Promise<any> {
     }, res => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(d)); }
-        catch { resolve({}); }
-      });
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({}); } });
     });
     req.on('error', reject);
     req.write(b);
@@ -60,16 +50,14 @@ function normalizarNumero(phone: string): string {
 }
 
 function normalizarJID(phone: string, jid?: string | null): string {
-  if (jid && jid.includes('@')) {
-    return jid;
-  }
+  if (jid && jid.includes('@')) return jid;
   return normalizarNumero(phone) + '@s.whatsapp.net';
 }
 
 export async function enviarWA(phone: string, jid: string | null, texto: string, instanciaExplicita: string | null): Promise<boolean> {
   let inst = instanciaExplicita;
   if (!inst) inst = getInstancia(phone);
-  
+
   const numero = normalizarJID(phone, jid);
 
   await wppPost(`/chat/sendPresence/${inst}`, { number: numero, options: { presence: 'composing' } }).catch(() => {});
@@ -94,21 +82,18 @@ export async function enviarWA(phone: string, jid: string | null, texto: string,
   return false;
 }
 
-function tgPost(path: string, body: any): Promise<any> {
+function tgPost(path: string, body: any, token: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const b = JSON.stringify(body);
     const req = https.request({
       hostname: 'api.telegram.org',
-      path: `/bot${TG_TOKEN}${path}`,
+      path: `/bot${token}${path}`,
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b) }
     }, res => {
       let d = '';
       res.on('data', c => d += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(d)); }
-        catch { resolve({}); }
-      });
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({}); } });
     });
     req.on('error', reject);
     req.write(b);
@@ -116,10 +101,10 @@ function tgPost(path: string, body: any): Promise<any> {
   });
 }
 
-export async function enviarTG(chatId: string, texto: string): Promise<boolean> {
-  await tgPost('/sendChatAction', { chat_id: chatId, action: 'typing' });
+export async function enviarTG(chatId: string, texto: string, token: string): Promise<boolean> {
+  await tgPost('/sendChatAction', { chat_id: chatId, action: 'typing' }, token);
   await sleep(200);
-  const r = await tgPost('/sendMessage', { chat_id: chatId, text: texto, parse_mode: 'Markdown' });
+  const r = await tgPost('/sendMessage', { chat_id: chatId, text: texto, parse_mode: 'Markdown' }, token);
   if (r.ok) {
     console.log(`[SENDER] ✅ TG → ${chatId}`);
     return true;
@@ -150,7 +135,8 @@ export async function enviar(msg: any, resposta: string): Promise<void> {
   for (let i = 0; i < blocos.length; i++) {
     const bloco = blocos[i].trim();
     if (msg.canal === 'telegram') {
-      await enviarTG(msg.chatId || msg.phone, bloco);
+      const token = tokenTelegramPorAgente(msg.agentSlug || 'mari');
+      await enviarTG(msg.chatId || msg.phone, bloco, token);
     } else {
       await enviarWA(msg.phone, msg.jid, bloco, msg.instancia);
     }

@@ -1,20 +1,13 @@
 import https from 'https';
+import { nomeAmigavelInstancia } from './config';
 
 const EVO_HOST = 'legendarios-evolution-api.bycpkh.easypanel.host';
 const EVO_KEY = process.env.EVOLUTION_API_KEY || '';
 
 export const mapaChips = new Map<string, string>();
 
-const nomesInstancias: Record<string, string> = {
-  "mari-plamev-whatsapp": "Mari 011 (legado)",
-  "mari011": "Mari 011",
-  "mari-plamev-zap2": "Mari 031",
-  "plamev": "Bella 021",
-  "grione": "Grione",
-};
-
 export function nomeAmigavel(instancia: string): string {
-  return nomesInstancias[instancia] || instancia;
+  return nomeAmigavelInstancia(instancia);
 }
 
 function evoGet(path: string): Promise<any> {
@@ -81,10 +74,7 @@ export function processarConexao(instancia: string, status: string, ownerJid: st
     console.log(`[CHIPS] ✅ ${instancia} conectado: +${numero}`);
   } else if (status === 'close' || status === 'connecting') {
     for (const [num, inst] of mapaChips.entries()) {
-      if (inst === instancia) {
-        mapaChips.delete(num);
-        break;
-      }
+      if (inst === instancia) { mapaChips.delete(num); break; }
     }
     console.log(`[CHIPS] ⚠️ ${instancia} desconectado`);
   }

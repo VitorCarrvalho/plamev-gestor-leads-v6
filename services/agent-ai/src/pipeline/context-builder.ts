@@ -1,12 +1,28 @@
 /**
  * orchestrator/contexto.js — Monta o contexto completo para o Brain
- * Consulta BD, Obsidian e contexto relacional conforme decisão do motor
+ * Fonte primária: agente_prompts (banco). Fallback: arquivos Obsidian.
  */
 require('dotenv').config({ path: '../.env' });
 const fs   = require('fs');
 const path = require('path');
 const db   = require('../db');
 const vault = require('../services/vault-prompts');
+
+// ── Cache de prompts do banco (60s TTL) ───────────────────────
+const _promptsCache = new Map();
+const PROMPTS_TTL = 60_000;
+
+async function carregarPromptsBanco(agentId) {
+  const cached = _promptsCache.get(agentId);
+  if (cached && Date.now() - cached.ts < PROMPTS_TTL) return cached.prompts;
+  try {
+    const prompts = await db.buscarPrompts(agentId);
+    _promptsCache.set(agentId, { ts: Date.now(), prompts });
+    return prompts;
+  } catch(e) {
+    return cached?.prompts || {};
+  }
+}
 
 // ── Obsidian: vault Mari-Knowledge-Base (atual) ─────────────
 // Contexto dinâmico por etapa — menos tokens, mais foco
@@ -155,7 +171,27 @@ async function montar({ conversa, cliente, perfil, historico, decisao, agente, m
     : [];
 
   const fixos = [...new Set([...base, ...extras, ...arquivosDecisao])];
-  const core  = lerObsidian(agente.obsidian_path, fixos);
+
+  // Tenta banco primeiro; se soul preenchido, usa DB. Caso contrário, Obsidian.
+  const dbPrompts = await carregarPromptsBanco(agente.id);
+  let core;
+  if (dbPrompts.soul && String(dbPrompts.soul).trim()) {
+    const partesBanco = [dbPrompts.soul];
+    if (dbPrompts.tom)            partesBanco.push(dbPrompts.tom);
+    if (dbPrompts.regras)         partesBanco.push(dbPrompts.regras);
+    if (dbPrompts.anti_repeticao) partesBanco.push(dbPrompts.anti_repeticao);
+    if (dbPrompts.modo_rapido && ['acolhimento','qualificacao'].includes(etapaAtual)) {
+      partesBanco.push(dbPrompts.modo_rapido);
+    }
+    if (dbPrompts.pensamentos)    partesBanco.push(dbPrompts.pensamentos);
+    if (dbPrompts.planos && extras.some(e => e.includes('Planos'))) {
+      partesBanco.push(dbPrompts.planos);
+    }
+    core = partesBanco.join('\n\n---\n\n');
+  } else {
+    core = lerObsidian(agente.obsidian_path, fixos);
+  }
+
   if (core) partes.push('# IDENTIDADE E COMPORTAMENTO\n' + core);
 
   // 2. Dados do BD (só o que foi solicitado pelo decisor)
