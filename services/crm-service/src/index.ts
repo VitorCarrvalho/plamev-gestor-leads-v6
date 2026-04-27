@@ -119,6 +119,27 @@ app.use('/api/config/agentes',  agenteRouter);
 app.use('/api/config/agentes/:agenteId/conhecimento', conhecimentoRouter);
 app.use('/api/internal',        internalRouter);
 
+// ── Rota de manutenção: re-rodar migrations ──────────────────────
+app.post('/api/internal/migrate', async (req, res) => {
+  const secret = process.env.INTERNAL_SECRET || 'plamev-internal';
+  if (req.headers['x-internal-secret'] !== secret) {
+    res.status(401).json({ erro: 'Não autorizado' }); return;
+  }
+  const { reset_versions } = req.body || {};
+  try {
+    if (reset_versions && Array.isArray(reset_versions) && reset_versions.length > 0) {
+      const placeholders = reset_versions.map((_: any, i: number) => `$${i + 1}`).join(', ');
+      await pool.query(`DELETE FROM schema_migrations WHERE version IN (${placeholders})`, reset_versions);
+      console.log('[MIGRATE] 🗑️ Versões resetadas:', reset_versions);
+    }
+    await runMigrations(pool);
+    const { rows } = await pool.query('SELECT version, applied_at FROM schema_migrations ORDER BY version');
+    res.json({ ok: true, applied: rows });
+  } catch (e: any) {
+    res.status(500).json({ erro: e.message, stack: e.stack });
+  }
+});
+
 // ── Boot ────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 8080;
 
