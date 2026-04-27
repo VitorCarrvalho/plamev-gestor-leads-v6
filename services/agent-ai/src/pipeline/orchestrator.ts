@@ -7,6 +7,7 @@ import { logInteraction } from './interaction-logger';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
 
 const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
+const CRM_SERVICE_URL = process.env.CRM_SERVICE_URL || 'http://crm-service.railway.internal:8080';
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
 
 function postJson(url: string, body: any, headers: Record<string, string> = {}): Promise<any> {
@@ -102,7 +103,18 @@ export async function processMessage(msg: InternalMessage) {
     console.error(`[ORCHESTRATOR] ❌ Falha ao entregar resposta: ${sendErr.message}`);
   }
 
-  // 6. Log de métricas
+  // 6. Persiste no CRM (cliente + conversa + mensagens)
+  try {
+    await postJson(
+      `${CRM_SERVICE_URL}/api/internal/salvar-interacao`,
+      { message: msg, resposta },
+      { 'x-internal-secret': INTERNAL_SECRET }
+    );
+  } catch (crmErr: any) {
+    console.error(`[ORCHESTRATOR] ❌ Falha ao salvar no CRM: ${crmErr.message}`);
+  }
+
+  // 7. Log de métricas
   await logInteraction({
     thread_id: msg.phone,
     total_latency_ms: Date.now() - start,
