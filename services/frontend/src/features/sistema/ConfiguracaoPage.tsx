@@ -532,10 +532,10 @@ const TabConhecimento: React.FC<{ agenteId: number }> = ({ agenteId }) => {
 
   const filteredGrupos = busca.trim()
     ? Object.fromEntries(
-        Object.entries(grupos).map(([pasta, docs]) => [
+        (Object.entries(grupos).map(([pasta, docs]) => [
           pasta,
           docs.filter(d => d.arquivo.toLowerCase().includes(busca.toLowerCase()) || d.titulo.toLowerCase().includes(busca.toLowerCase()))
-        ]).filter(([_, docs]) => docs.length > 0)
+        ]) as [string, KbDocMeta[]][]).filter(([_, docs]) => docs.length > 0)
       )
     : grupos;
 
