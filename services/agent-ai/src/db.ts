@@ -183,3 +183,23 @@ export async function buscarPrompts(agentId: number): Promise<Record<string, str
   );
   return rows.reduce((acc: any, row: any) => ({ ...acc, [row.tipo]: row.conteudo }), {});
 }
+
+export interface KbDoc { pasta: string; arquivo: string; conteudo: string; }
+
+export async function buscarKnowledge(agentId: number, etapa: string, extrasPath: string[]): Promise<KbDoc[]> {
+  const rows = await query(
+    `SELECT pasta, arquivo, conteudo
+     FROM knowledge_base_docs
+     WHERE agent_id = $1
+       AND ativo = TRUE
+       AND conteudo <> ''
+       AND (
+         sempre_ativo = TRUE
+         OR $2 = ANY(etapas)
+         OR (pasta || '/' || arquivo) = ANY($3::text[])
+       )
+     ORDER BY sempre_ativo DESC, ordem ASC, pasta ASC`,
+    [agentId, etapa, extrasPath]
+  ) as any[];
+  return rows;
+}

@@ -16,6 +16,7 @@ import analisarRouter  from './routes/analisar';
 import auditoriaRouter from './routes/auditoria';
 import dbRouter        from './routes/db';
 import { agenteRouter, internalRouter } from './routes/config-agentes';
+import conhecimentoRouter from './routes/conhecimento';
 
 config({ path: path.join(__dirname, '../../.env') });
 
@@ -115,6 +116,7 @@ app.use('/api/analisar',   analisarRouter);
 app.use('/api/auditoria',  auditoriaRouter);
 app.use('/api/db',              dbRouter);
 app.use('/api/config/agentes',  agenteRouter);
+app.use('/api/config/agentes/:agenteId/conhecimento', conhecimentoRouter);
 app.use('/api/internal',        internalRouter);
 
 // ── Boot ────────────────────────────────────────────────────────

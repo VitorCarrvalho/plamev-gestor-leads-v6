@@ -10,7 +10,8 @@ const vault = require('../services/vault-prompts');
 
 // ── Cache de prompts do banco (60s TTL) ───────────────────────
 const _promptsCache = new Map();
-const PROMPTS_TTL = 60_000;
+const _kbCache      = new Map();
+const PROMPTS_TTL   = 60_000;
 
 async function carregarPromptsBanco(agentId) {
   const cached = _promptsCache.get(agentId);
@@ -21,6 +22,26 @@ async function carregarPromptsBanco(agentId) {
     return prompts;
   } catch(e) {
     return cached?.prompts || {};
+  }
+}
+
+// Carrega documentos da knowledge_base_docs com cache 60s
+async function lerBanco(agentId, etapa, extrasPaths) {
+  const cacheKey = `${agentId}:${etapa}:${extrasPaths.slice().sort().join(',')}`;
+  const cached = _kbCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < PROMPTS_TTL) return cached.core;
+  try {
+    const docs = await db.buscarKnowledge(agentId, etapa, extrasPaths);
+    if (!docs || docs.length === 0) {
+      _kbCache.set(cacheKey, { ts: Date.now(), core: null });
+      return null;
+    }
+    const core = docs.map(d => `\n## [${d.arquivo}]\n${d.conteudo}`).join('');
+    _kbCache.set(cacheKey, { ts: Date.now(), core });
+    return core;
+  } catch(e) {
+    console.warn('[CONTEXT] lerBanco erro:', e.message);
+    return cached?.core || null;
   }
 }
 
@@ -171,25 +192,29 @@ async function montar({ conversa, cliente, perfil, historico, decisao, agente, m
     : [];
 
   const fixos = [...new Set([...base, ...extras, ...arquivosDecisao])];
+  // Converte paths (Mari/Identidade.md → Mari/Identidade) para lookup no banco
+  const extrasPaths = fixos.map(f => f.replace(/\.md$/, ''));
 
-  // Tenta banco primeiro; se soul preenchido, usa DB. Caso contrário, Obsidian.
-  const dbPrompts = await carregarPromptsBanco(agente.id);
-  let core;
-  if (dbPrompts.soul && String(dbPrompts.soul).trim()) {
-    const partesBanco = [dbPrompts.soul];
-    if (dbPrompts.tom)            partesBanco.push(dbPrompts.tom);
-    if (dbPrompts.regras)         partesBanco.push(dbPrompts.regras);
-    if (dbPrompts.anti_repeticao) partesBanco.push(dbPrompts.anti_repeticao);
-    if (dbPrompts.modo_rapido && ['acolhimento','qualificacao'].includes(etapaAtual)) {
-      partesBanco.push(dbPrompts.modo_rapido);
+  // ── Carrega conhecimento: banco → agente_prompts → Obsidian ───────────────
+  // Prioridade 1: knowledge_base_docs (importado do Obsidian vault, editável pelo painel)
+  let core = await lerBanco(agente.id, etapaAtual, extrasPaths);
+
+  if (!core) {
+    // Prioridade 2: agente_prompts.soul (configuração manual pela aba Soul)
+    const dbPrompts = await carregarPromptsBanco(agente.id);
+    if (dbPrompts.soul && String(dbPrompts.soul).trim()) {
+      const partesBanco = [dbPrompts.soul];
+      if (dbPrompts.tom)            partesBanco.push(dbPrompts.tom);
+      if (dbPrompts.regras)         partesBanco.push(dbPrompts.regras);
+      if (dbPrompts.anti_repeticao) partesBanco.push(dbPrompts.anti_repeticao);
+      if (dbPrompts.modo_rapido && ['acolhimento','qualificacao'].includes(etapaAtual)) partesBanco.push(dbPrompts.modo_rapido);
+      if (dbPrompts.pensamentos)    partesBanco.push(dbPrompts.pensamentos);
+      if (dbPrompts.planos && extras.some(e => e.includes('Planos'))) partesBanco.push(dbPrompts.planos);
+      core = partesBanco.join('\n\n---\n\n');
+    } else {
+      // Prioridade 3: arquivos Obsidian no filesystem (local dev)
+      core = lerObsidian(agente.obsidian_path, fixos);
     }
-    if (dbPrompts.pensamentos)    partesBanco.push(dbPrompts.pensamentos);
-    if (dbPrompts.planos && extras.some(e => e.includes('Planos'))) {
-      partesBanco.push(dbPrompts.planos);
-    }
-    core = partesBanco.join('\n\n---\n\n');
-  } else {
-    core = lerObsidian(agente.obsidian_path, fixos);
   }
 
   if (core) partes.push('# IDENTIDADE E COMPORTAMENTO\n' + core);
