@@ -1,8 +1,10 @@
 import https from 'https';
-import { resolverInstanciaPorDDD, tokenTelegramPorAgente } from './config';
+import http from 'http';
+import { resolverInstanciaPorDDD, tokenTelegramPorAgente, getInstanciaConfig } from './config';
 
-const EVO_HOST = 'legendarios-evolution-api.bycpkh.easypanel.host';
-const EVO_KEY = process.env.EVOLUTION_API_KEY || '';
+// Fallbacks para quando a instância não tem configuração no banco ainda
+const EVO_HOST_DEFAULT = process.env.EVOLUTION_API_HOST || 'legendarios-evolution-api.bycpkh.easypanel.host';
+const EVO_KEY_DEFAULT  = process.env.EVOLUTION_API_KEY  || '';
 
 export function getInstancia(phone: string): string {
   const inst = resolverInstanciaPorDDD(phone);
@@ -17,18 +19,25 @@ function sleep(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
-function wppPost(path: string, body: any): Promise<any> {
+function wppPost(baseUrl: string, path: string, body: any, apiKey: string): Promise<any> {
   return new Promise((resolve, reject) => {
+    const fullUrl = `${baseUrl}${path}`;
+    let parsed: URL;
+    try { parsed = new URL(fullUrl); }
+    catch { return reject(new Error(`URL inválida: ${fullUrl}`)); }
+
+    const lib = parsed.protocol === 'https:' ? https : http;
     const b = JSON.stringify(body);
-    const req = https.request({
-      hostname: EVO_HOST,
-      path,
+    const req = lib.request({
+      hostname: parsed.hostname,
+      port: parsed.port ? parseInt(parsed.port) : undefined,
+      path: parsed.pathname + (parsed.search || ''),
       method: 'POST',
       headers: {
-        apikey: EVO_KEY,
+        apikey: apiKey,
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(b)
-      }
+        'Content-Length': Buffer.byteLength(b),
+      },
     }, res => {
       let d = '';
       res.on('data', c => d += c);
@@ -54,13 +63,23 @@ function normalizarJID(phone: string, jid?: string | null): string {
   return normalizarNumero(phone) + '@s.whatsapp.net';
 }
 
+function getEvoConfig(instancia: string): { baseUrl: string; apiKey: string } {
+  const cfg = getInstanciaConfig(instancia);
+  const baseUrl = cfg?.evolution_url?.trim().replace(/\/$/, '') || `https://${EVO_HOST_DEFAULT}`;
+  const apiKey  = cfg?.evolution_api_key?.trim() || EVO_KEY_DEFAULT;
+  return { baseUrl, apiKey };
+}
+
 export async function enviarWA(phone: string, jid: string | null, texto: string, instanciaExplicita: string | null): Promise<boolean> {
   let inst = instanciaExplicita;
   if (!inst) inst = getInstancia(phone);
 
+  const { baseUrl, apiKey } = getEvoConfig(inst);
   const numero = normalizarJID(phone, jid);
 
-  await wppPost(`/chat/sendPresence/${inst}`, { number: numero, options: { presence: 'composing' } }).catch(() => {});
+  console.log(`[SENDER] 📤 WA → instância ${inst} via ${baseUrl}`);
+
+  await wppPost(baseUrl, `/chat/sendPresence/${inst}`, { number: numero, options: { presence: 'composing' } }, apiKey).catch(() => {});
 
   const numNorm = normalizarNumero(phone);
   const tentativas = [
@@ -71,7 +90,7 @@ export async function enviarWA(phone: string, jid: string | null, texto: string,
 
   for (const num of tentativas) {
     if (!num) continue;
-    const r = await wppPost(`/message/sendText/${inst}`, { number: num, text: texto }).catch(() => ({}));
+    const r = await wppPost(baseUrl, `/message/sendText/${inst}`, { number: num, text: texto }, apiKey).catch(() => ({}));
     if (r.key || r.id) {
       console.log(`[SENDER] ✅ WA ${inst} → ${num}`);
       return true;

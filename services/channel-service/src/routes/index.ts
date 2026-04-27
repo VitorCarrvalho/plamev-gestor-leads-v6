@@ -102,7 +102,7 @@ async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
   });
 }
 
-router.post('/webhook/whatsapp', validateHmac, async (req: Request, res: Response) => {
+router.post('/whatsapp', validateHmac, async (req: Request, res: Response) => {
   res.json({ ok: true });
   const body = req.body || {};
   const instancia = body.instance || body.instanceName || '';
@@ -119,9 +119,9 @@ router.post('/webhook/whatsapp', validateHmac, async (req: Request, res: Respons
   }
 });
 
-// Outras rotas internas como connection, pagamento, etc. seriam migradas aqui
-router.get('/health', (req, res) => res.json({ ok: true, service: 'channel-service' }));
-
 export function setupRoutes(app: any) {
-  app.use('/internal', router);
+  // Health no nível raiz (não prefixado) para health checks do Railway/gateway
+  app.get('/health', (_req: Request, res: Response) => res.json({ ok: true, service: 'channel-service' }));
+  // Webhooks externos: Evolution API e outros canais postam aqui
+  app.use('/webhooks', router);
 }

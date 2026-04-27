@@ -15,6 +15,9 @@ export interface WaInstance {
   ddd_prefixos: string[];
   chip_fallback: boolean;
   agent_slug: string;
+  provider: string;
+  evolution_url: string;
+  evolution_api_key: string;
 }
 
 export interface TelegramBot {
@@ -80,6 +83,10 @@ export function resolverInstanciaPorDDD(phone: string): string | null {
 export function nomeAmigavelInstancia(instancia: string): string {
   const found = _config.instances.find(i => i.instancia_nome === instancia);
   return found?.instancia_label || instancia;
+}
+
+export function getInstanciaConfig(instancia: string): WaInstance | null {
+  return _config.instances.find(i => i.instancia_nome === instancia) || null;
 }
 
 export function tokenTelegramPorAgente(agentSlug: string): string {

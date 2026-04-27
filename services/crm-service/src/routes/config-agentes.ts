@@ -206,7 +206,9 @@ internalRouter.get('/channel-config', async (req, res) => {
   }
   try {
     const instances = await query<any>(
-      `SELECT cw.instancia_nome, cw.instancia_label, cw.ddd_prefixos, cw.chip_fallback, a.slug AS agent_slug
+      `SELECT cw.instancia_nome, cw.instancia_label, cw.ddd_prefixos, cw.chip_fallback,
+              cw.provider, cw.evolution_url, cw.evolution_api_key,
+              a.slug AS agent_slug
        FROM canais_whatsapp cw JOIN agentes a ON a.id = cw.agent_id
        WHERE cw.ativo = TRUE AND a.ativo = TRUE`
     );
