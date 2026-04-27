@@ -22,26 +22,41 @@ const validateHmac = (req: Request, res: Response, next: any) => {
 };
 
 async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
+  const logPrefix = `[WH] event=${body.event || '?'} instance=${body.instance || body.instanceName || '?'}`;
+
   // Ignorar mensagens enviadas pelo próprio chip
-  if (item.key?.fromMe === true) return;
-  if (body.event === 'messages.upsert' && item.key?.fromMe) return;
-  
+  if (item.key?.fromMe === true) {
+    console.log(`${logPrefix} → ignorado (fromMe=true)`);
+    return;
+  }
+
   const senderNum = (body.sender || '').replace(/@.*/, '');
   const remoto = (item.key?.remoteJid || '').replace(/@.*/, '');
-  if (senderNum && remoto && senderNum === remoto) return;
+  if (senderNum && remoto && senderNum === remoto) {
+    console.log(`${logPrefix} → ignorado (sender==remoto: ${senderNum})`);
+    return;
+  }
 
-  // Ignorar mensagens históricas (sincronização)
+  // Ignorar mensagens históricas (sincronização) — mais de 5 minutos
   const msgTimestamp = item.messageTimestamp || item.message?.messageContextInfo?.messageTimestamp || 0;
   const agora = Math.floor(Date.now() / 1000);
-  if (msgTimestamp && (agora - msgTimestamp) > 120) {
+  if (msgTimestamp && (agora - msgTimestamp) > 300) {
+    console.log(`${logPrefix} → ignorado (histórico, age=${agora - msgTimestamp}s)`);
     return;
   }
 
   const jidRaw = item.key?.remoteJid || '';
-  if (!jidRaw || jidRaw.includes('@g.us') || jidRaw.includes('@broadcast')) return;
+  if (!jidRaw || jidRaw.includes('@g.us') || jidRaw.includes('@broadcast')) {
+    console.log(`${logPrefix} → ignorado (grupo/broadcast: ${jidRaw})`);
+    return;
+  }
 
   const msgId = item.key?.id || '';
-  if (!msgId || await isDuplicate(msgId, 'whatsapp')) return;
+  if (!msgId) { console.log(`${logPrefix} → ignorado (sem msgId)`); return; }
+  if (await isDuplicate(msgId, 'whatsapp')) {
+    console.log(`${logPrefix} → ignorado (duplicado: ${msgId})`);
+    return;
+  }
 
   const instancia = body.instance || body.instanceName || agentSlug;
   const senderChip = body.sender || null;
@@ -90,16 +105,19 @@ async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
     agentSlug,
   });
 
-  console.log(`[CHANNEL-SERVICE] 📱 Enfileirando WA: ${phone} | "${texto.substring(0, 30)}..."`);
-  
-  // Enfileirar na BullMQ com debounce delay (5s) pelo threadId (phone)
-  await messageQueue.add('process-message', { message: msg }, {
-    jobId: `msg:${msg.canal}:${msg.id}`,
-    delay: 5000, 
-    // Usar removeOnComplete para não poluir o Redis com jobs antigos
-    removeOnComplete: true,
-    removeOnFail: false
-  });
+  console.log(`[CHANNEL-SERVICE] 📱 Enfileirando WA: ${phone} | instancia=${instancia} | "${texto.substring(0, 40)}"`);
+
+  try {
+    await messageQueue.add('process-message', { message: msg }, {
+      jobId: `msg:${msg.canal}:${msg.id}`,
+      delay: 5000,
+      removeOnComplete: true,
+      removeOnFail: false,
+    });
+    console.log(`[CHANNEL-SERVICE] ✅ Job enfileirado: msg:whatsapp:${msg.id}`);
+  } catch (qErr: any) {
+    console.error(`[CHANNEL-SERVICE] ❌ Falha ao enfileirar (Redis?): ${qErr.message}`);
+  }
 }
 
 router.post('/whatsapp', validateHmac, async (req: Request, res: Response) => {
@@ -116,6 +134,22 @@ router.post('/whatsapp', validateHmac, async (req: Request, res: Response) => {
     } catch (e: any) {
       console.error('[CHANNEL-SERVICE] Erro ao processar item WA:', e.message);
     }
+  }
+});
+
+// ── Diagnóstico da fila ─────────────────────────────────────────
+router.get('/queue-status', async (_req: Request, res: Response) => {
+  try {
+    const [waiting, active, completed, failed, delayed] = await Promise.all([
+      messageQueue.getWaitingCount(),
+      messageQueue.getActiveCount(),
+      messageQueue.getCompletedCount(),
+      messageQueue.getFailedCount(),
+      messageQueue.getDelayedCount(),
+    ]);
+    res.json({ ok: true, queue: { waiting, active, completed, failed, delayed } });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, erro: e.message });
   }
 });
 
