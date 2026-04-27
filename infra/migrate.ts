@@ -12,6 +12,62 @@ import fs from 'fs';
 import path from 'path';
 import { Pool } from 'pg';
 
+/**
+ * Divide um arquivo SQL em statements individuais.
+ * Respeita dollar-quoting ($BODY$...$BODY$) — não divide dentro deles.
+ */
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = '';
+  let dollarTag: string | null = null;
+  let i = 0;
+
+  while (i < sql.length) {
+    // Detecta início/fim de dollar-quoting
+    if (dollarTag === null) {
+      const dollarMatch = sql.slice(i).match(/^(\$[A-Za-z0-9_]*\$)/);
+      if (dollarMatch) {
+        dollarTag = dollarMatch[1];
+        current += dollarTag;
+        i += dollarTag.length;
+        continue;
+      }
+    } else {
+      if (sql.slice(i).startsWith(dollarTag)) {
+        current += dollarTag;
+        i += dollarTag.length;
+        dollarTag = null;
+        continue;
+      }
+    }
+
+    const ch = sql[i];
+
+    // Fora de dollar-quoting: semicolon separa statements
+    if (dollarTag === null && ch === ';') {
+      const stmt = current.trim();
+      if (stmt) statements.push(stmt + ';');
+      current = '';
+      i++;
+      continue;
+    }
+
+    // Pula comentários de linha
+    if (dollarTag === null && ch === '-' && sql[i + 1] === '-') {
+      const end = sql.indexOf('\n', i);
+      i = end === -1 ? sql.length : end + 1;
+      continue;
+    }
+
+    current += ch;
+    i++;
+  }
+
+  const remaining = current.trim();
+  if (remaining) statements.push(remaining);
+  return statements;
+}
+
 export async function runMigrations(pool: Pool): Promise<void> {
   const client = await pool.connect();
 
@@ -84,12 +140,26 @@ export async function runMigrations(pool: Pool): Promise<void> {
       const filePath = path.join(migrationsDir, file);
       const sql = fs.readFileSync(filePath, 'utf-8');
 
-      console.log(`[MIGRATE] 🔧 Aplicando: ${file}`);
+      console.log(`[MIGRATE] 🔧 Aplicando: ${file} (${sql.length} bytes)`);
 
-      // Executar em transação atômica
+      // Executar em transação atômica, statement por statement
+      // (evita falha silenciosa do pg com SQLs muito grandes / dollar-quoting)
       await client.query('BEGIN');
       try {
-        await client.query(sql);
+        // Divide o SQL em statements individuais respeitando dollar-quoting
+        const statements = splitSqlStatements(sql);
+        console.log(`[MIGRATE] 📝 ${file}: ${statements.length} statements`);
+        for (let i = 0; i < statements.length; i++) {
+          const stmt = statements[i].trim();
+          if (!stmt) continue;
+          try {
+            await client.query(stmt);
+          } catch (stmtErr: any) {
+            console.error(`[MIGRATE] ❌ ${file} statement ${i + 1}/${statements.length}: ${stmtErr.message}`);
+            console.error(`[MIGRATE] SQL: ${stmt.substring(0, 200)}`);
+            throw stmtErr;
+          }
+        }
         await client.query(
           'INSERT INTO schema_migrations (version) VALUES ($1)',
           [file]
