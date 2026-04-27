@@ -4,7 +4,10 @@ import { config } from 'dotenv';
 import path from 'path';
 import { pool, testar, queryOne, execute } from './config/db';
 import { runMigrations } from '../../../infra/migrate';
-import { listarConversas, buscarConversa, buscarMensagens, buscarStats } from './repositories/conversations.repository';
+import {
+  listarConversas, buscarConversa, buscarMensagens, buscarStats,
+  buscarPerfil, buscarAgendamentos, buscarEtapasVisitadas, buscarObsidianAtivo,
+} from './repositories/conversations.repository';
 import { autenticar } from './middleware/auth';
 import authRouter     from './routes/auth';
 import mensagensRouter from './routes/mensagens';
@@ -83,21 +86,17 @@ app.get(['/api/conversations/:id/messages', '/api/conversas/:id/mensagens'], asy
 });
 
 // Conversa completa — conversa + mensagens + perfil + agendamentos + etapas
-import {
-  buscarPerfil, buscarAgendamentos, buscarEtapasVisitadas, buscarObsidianAtivo,
-} from './repositories/conversations.repository';
-
 app.get('/api/conversas/:id/full', autenticar, async (req, res) => {
   try {
     const orgId = req.headers['x-org-id'] as string;
     const conversa = await buscarConversa(orgId, req.params.id);
     if (!conversa) { res.status(404).json({ error: 'Conversa não encontrada' }); return; }
     const [mensagens, perfil, agendamentos, etapasVisitadas, obsidianAtivo] = await Promise.all([
-      buscarMensagens(orgId, req.params.id),
-      buscarPerfil(conversa.client_id),
-      buscarAgendamentos(req.params.id),
-      buscarEtapasVisitadas(req.params.id),
-      buscarObsidianAtivo(req.params.id),
+      buscarMensagens(orgId, req.params.id).catch(() => []),
+      buscarPerfil(conversa.client_id).catch(() => null),
+      buscarAgendamentos(req.params.id).catch(() => []),
+      buscarEtapasVisitadas(req.params.id).catch(() => []),
+      buscarObsidianAtivo(req.params.id).catch(() => []),
     ]);
     res.json({ conversa, mensagens, perfil: perfil || {}, agendamentos, etapasVisitadas, obsidianAtivo });
   } catch (e: any) { res.status(500).json({ error: e.message }); }
