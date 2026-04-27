@@ -35,6 +35,7 @@ import { AgentesPage } from './features/analisar/AgentesPage';
 import { AuditoriaPage }     from './features/sistema/AuditoriaPage';
 import { TemplatesPage }     from './features/sistema/TemplatesPage';
 import { ConfiguracaoPage }  from './features/sistema/ConfiguracaoPage';
+import { ProvedoresPage }    from './features/sistema/ProvedoresPage';
 import { useNotifications } from './hooks/useNotifications';
 
 // ── LOGIN ─────────────────────────────────────────────────────
@@ -153,6 +154,7 @@ const Shell: React.FC = () => {
       case 'sistema/auditoria':     return <AuditoriaPage />;
       case 'sistema/templates':     return <TemplatesPage />;
       case 'sistema/configuracao':  return <ConfiguracaoPage />;
+      case 'sistema/provedores':    return <ProvedoresPage />;
       case 'sistema/config':        return <ConfigPage />;
       default: return <div className="p-6 text-slate-500">Página não encontrada</div>;
     }

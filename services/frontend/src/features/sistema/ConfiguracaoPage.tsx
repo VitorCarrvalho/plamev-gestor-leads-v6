@@ -28,6 +28,9 @@ interface Prompt { tipo: string; titulo: string; conteudo: string; ativo: boolea
 interface CanalWA {
   id: number; instancia_nome: string; instancia_label?: string;
   ddd_prefixos: string[]; chip_fallback: boolean; ativo: boolean;
+  provider: 'evolution' | 'twilio';
+  evolution_url: string; evolution_api_key: string;
+  twilio_account_sid: string; twilio_auth_token: string; twilio_phone_from: string;
 }
 
 interface CanalTG { id: number; bot_nome?: string; ativo: boolean; }
@@ -240,11 +243,19 @@ const TabPrompts: React.FC<{ agente: AgenteDetalhe; onUpdate: (prompts: Prompt[]
 // ════════════════════════════════════════════════════════════════
 // Editor de Agente — Aba WhatsApp
 // ════════════════════════════════════════════════════════════════
+const FORM_WA_VAZIO = {
+  instancia_nome: '', instancia_label: '', ddd_prefixos: '', chip_fallback: false, ativo: true,
+  provider: 'evolution' as 'evolution' | 'twilio',
+  evolution_url: '', evolution_api_key: '',
+  twilio_account_sid: '', twilio_auth_token: '', twilio_phone_from: '',
+};
+
 const TabWhatsApp: React.FC<{ agente: AgenteDetalhe; onUpdate: (canais: CanalWA[]) => void }> = ({ agente, onUpdate }) => {
   const [canais, setCanais] = useState<CanalWA[]>(agente.canais_whatsapp);
-  const [form, setForm] = useState({ instancia_nome: '', instancia_label: '', ddd_prefixos: '', chip_fallback: false, ativo: true });
+  const [form, setForm] = useState(FORM_WA_VAZIO);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [mostrarForm, setMostrarForm] = useState(false);
 
   const adicionar = async () => {
     if (!form.instancia_nome) return;
@@ -255,7 +266,8 @@ const TabWhatsApp: React.FC<{ agente: AgenteDetalhe; onUpdate: (canais: CanalWA[
       const updated = [...canais, canal];
       setCanais(updated);
       onUpdate(updated);
-      setForm({ instancia_nome: '', instancia_label: '', ddd_prefixos: '', chip_fallback: false, ativo: true });
+      setForm(FORM_WA_VAZIO);
+      setMostrarForm(false);
     } catch(e: any) { alert(e.message); }
     finally { setSaving(false); }
   };
@@ -281,23 +293,34 @@ const TabWhatsApp: React.FC<{ agente: AgenteDetalhe; onUpdate: (canais: CanalWA[
     } catch(e: any) { alert(e.message); }
   };
 
+  const providerBadge = (p: string) => p === 'twilio'
+    ? <span className="px-1.5 py-0.5 bg-red-50 text-red-700 rounded text-[10px] font-medium">Twilio</span>
+    : <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-[10px] font-medium">Evolution</span>;
+
   return (
     <div className="space-y-5 max-w-2xl">
       <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 border border-slate-200">
-        <strong>Instâncias WhatsApp</strong> são os chips conectados à Evolution API. O campo <em>DDDs</em> define por qual
-        chip o agente responde conforme o prefixo do número do cliente. O chip marcado como <em>Fallback</em> é usado quando nenhum DDD bater.
+        Cada instância é um número/chip de WhatsApp. Configure o <strong>provedor</strong> (Evolution API ou Twilio),
+        os <strong>DDDs</strong> atendidos e o <strong>Fallback</strong> para quando nenhum DDD bater.
       </div>
 
-      {canais.length === 0 && (
-        <p className="text-sm text-slate-400 italic">Nenhuma instância configurada.</p>
-      )}
+      {canais.length === 0 && <p className="text-sm text-slate-400 italic">Nenhuma instância configurada.</p>}
 
       {canais.map(c => (
         <div key={c.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-center gap-3">
           <Phone className="w-5 h-5 text-indigo-500 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-slate-900 text-sm font-mono">{c.instancia_nome}</div>
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-slate-900 text-sm font-mono">{c.instancia_nome}</span>
+              {providerBadge(c.provider || 'evolution')}
+            </div>
             <div className="text-xs text-slate-500">{c.instancia_label || '—'}</div>
+            {c.provider === 'evolution' && c.evolution_url && (
+              <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{c.evolution_url}</div>
+            )}
+            {c.provider === 'twilio' && c.twilio_phone_from && (
+              <div className="text-[10px] text-slate-400 font-mono mt-0.5">{c.twilio_phone_from}</div>
+            )}
             <div className="flex flex-wrap gap-1 mt-1.5">
               {(c.ddd_prefixos || []).map(d => (
                 <span key={d} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-mono">{d}</span>
@@ -316,37 +339,98 @@ const TabWhatsApp: React.FC<{ agente: AgenteDetalhe; onUpdate: (canais: CanalWA[
         </div>
       ))}
 
-      <div className="bg-white rounded-xl border border-dashed border-slate-300 p-5 space-y-3">
-        <div className="text-sm font-medium text-slate-700">Adicionar instância</div>
-        <div className="grid grid-cols-2 gap-3">
+      {!mostrarForm ? (
+        <button onClick={() => setMostrarForm(true)}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-slate-300 text-sm text-slate-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors">
+          <Plus className="w-4 h-4" /> Adicionar instância
+        </button>
+      ) : (
+        <div className="bg-white rounded-xl border border-dashed border-slate-300 p-5 space-y-4">
+          <div className="text-sm font-medium text-slate-700">Nova instância</div>
+
+          {/* Provedor */}
           <div>
-            <label className="text-xs font-medium text-slate-600 mb-1 block">Nome da instância *</label>
-            <Input value={form.instancia_nome} onChange={e => setForm(f => ({ ...f, instancia_nome: e.target.value }))} placeholder="ex: mari011" className="font-mono text-sm" />
+            <label className="text-xs font-medium text-slate-600 mb-1 block">Provedor *</label>
+            <div className="flex gap-2">
+              {(['evolution', 'twilio'] as const).map(p => (
+                <button key={p} onClick={() => setForm(f => ({ ...f, provider: p }))}
+                  className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${form.provider === p ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+                  {p === 'evolution' ? 'Evolution API' : 'Twilio'}
+                </button>
+              ))}
+            </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Nome da instância *</label>
+              <Input value={form.instancia_nome} onChange={e => setForm(f => ({ ...f, instancia_nome: e.target.value }))} placeholder="ex: mari011" className="font-mono text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Label amigável</label>
+              <Input value={form.instancia_label} onChange={e => setForm(f => ({ ...f, instancia_label: e.target.value }))} placeholder="ex: Mari São Paulo" />
+            </div>
+          </div>
+
+          {/* Campos Evolution API */}
+          {form.provider === 'evolution' && (
+            <div className="space-y-3 bg-green-50/50 rounded-lg p-3 border border-green-100">
+              <div className="text-xs font-semibold text-green-800">Evolution API</div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">URL do servidor</label>
+                <Input value={form.evolution_url} onChange={e => setForm(f => ({ ...f, evolution_url: e.target.value }))} placeholder="https://evolution.exemplo.com.br" className="font-mono text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">API Key</label>
+                <Input type="password" value={form.evolution_api_key} onChange={e => setForm(f => ({ ...f, evolution_api_key: e.target.value }))} placeholder="••••••••" className="font-mono text-sm" />
+              </div>
+            </div>
+          )}
+
+          {/* Campos Twilio */}
+          {form.provider === 'twilio' && (
+            <div className="space-y-3 bg-red-50/50 rounded-lg p-3 border border-red-100">
+              <div className="text-xs font-semibold text-red-800">Twilio</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">Account SID</label>
+                  <Input value={form.twilio_account_sid} onChange={e => setForm(f => ({ ...f, twilio_account_sid: e.target.value }))} placeholder="ACxxxxxxxx" className="font-mono text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">Auth Token</label>
+                  <Input type="password" value={form.twilio_auth_token} onChange={e => setForm(f => ({ ...f, twilio_auth_token: e.target.value }))} placeholder="••••••••" className="font-mono text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">Número de origem (From)</label>
+                <Input value={form.twilio_phone_from} onChange={e => setForm(f => ({ ...f, twilio_phone_from: e.target.value }))} placeholder="+5511999999999" className="font-mono text-sm" />
+              </div>
+            </div>
+          )}
+
           <div>
-            <label className="text-xs font-medium text-slate-600 mb-1 block">Label amigável</label>
-            <Input value={form.instancia_label} onChange={e => setForm(f => ({ ...f, instancia_label: e.target.value }))} placeholder="ex: Mari São Paulo" />
+            <label className="text-xs font-medium text-slate-600 mb-1 block">DDDs atendidos (separados por vírgula)</label>
+            <Input value={form.ddd_prefixos} onChange={e => setForm(f => ({ ...f, ddd_prefixos: e.target.value }))} placeholder="ex: 011, 012, 013" className="font-mono text-sm" />
+          </div>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={form.chip_fallback} onChange={e => setForm(f => ({ ...f, chip_fallback: e.target.checked }))} className="accent-indigo-500" />
+              Usar como fallback global
+            </label>
+            <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+              <input type="checkbox" checked={form.ativo} onChange={e => setForm(f => ({ ...f, ativo: e.target.checked }))} className="accent-indigo-500" />
+              Ativo
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={adicionar} disabled={saving || !form.instancia_nome} className="gap-2 h-8 text-sm">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Adicionar
+            </Button>
+            <Button variant="outline" onClick={() => setMostrarForm(false)} className="h-8 text-sm">Cancelar</Button>
           </div>
         </div>
-        <div>
-          <label className="text-xs font-medium text-slate-600 mb-1 block">DDDs atendidos (separados por vírgula)</label>
-          <Input value={form.ddd_prefixos} onChange={e => setForm(f => ({ ...f, ddd_prefixos: e.target.value }))} placeholder="ex: 5511, 5512, 5513" className="font-mono text-sm" />
-        </div>
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-            <input type="checkbox" checked={form.chip_fallback} onChange={e => setForm(f => ({ ...f, chip_fallback: e.target.checked }))} className="accent-indigo-500" />
-            Usar como fallback global
-          </label>
-          <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-            <input type="checkbox" checked={form.ativo} onChange={e => setForm(f => ({ ...f, ativo: e.target.checked }))} className="accent-indigo-500" />
-            Ativo
-          </label>
-        </div>
-        <Button onClick={adicionar} disabled={saving || !form.instancia_nome} className="gap-2 h-8 text-sm">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-          Adicionar
-        </Button>
-      </div>
+      )}
     </div>
   );
 };

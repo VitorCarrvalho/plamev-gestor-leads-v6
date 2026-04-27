@@ -23,7 +23,14 @@ agenteRouter.get('/:id', autenticar, async (req, res) => {
     if (!agente) { res.status(404).json({ erro: 'Agente não encontrado' }); return; }
 
     const prompts     = await query<any>(`SELECT tipo, titulo, conteudo, ativo, ordem FROM agente_prompts WHERE agent_id=$1 ORDER BY ordem`, [req.params.id]);
-    const whatsapps   = await query<any>(`SELECT * FROM canais_whatsapp WHERE agent_id=$1 ORDER BY criado_em`, [req.params.id]);
+    const whatsapps   = await query<any>(
+      `SELECT id, instancia_nome, instancia_label, ddd_prefixos, chip_fallback, ativo,
+              provider, evolution_url, twilio_account_sid, twilio_phone_from,
+              CASE WHEN LENGTH(evolution_api_key) > 0 THEN '••••••••' || RIGHT(evolution_api_key,4) ELSE '' END AS evolution_api_key,
+              CASE WHEN LENGTH(twilio_auth_token) > 0 THEN '••••••••' || RIGHT(twilio_auth_token,4) ELSE '' END AS twilio_auth_token
+       FROM canais_whatsapp WHERE agent_id=$1 ORDER BY criado_em`,
+      [req.params.id]
+    );
     const telegrams   = await query<any>(`SELECT id, bot_nome, ativo, criado_em FROM canais_telegram WHERE agent_id=$1 ORDER BY criado_em`, [req.params.id]);
 
     res.json({ ok: true, agente: { ...agente, prompts, canais_whatsapp: whatsapps, canais_telegram: telegrams } });
@@ -66,10 +73,25 @@ agenteRouter.put('/:id/prompts/:tipo', soAdmin, async (req, res) => {
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
 
-// ── WhatsApp: lista ───────────────────────────────────────────
+function maskSecret(s: string): string {
+  if (!s || s.length < 4) return s ? '••••' : '';
+  return '••••••••' + s.slice(-4);
+}
+function isMasked(v: unknown): boolean {
+  return typeof v === 'string' && v.includes('•');
+}
+
+// ── WhatsApp: lista (campos sensíveis mascarados) ─────────────
 agenteRouter.get('/:id/canais/whatsapp', autenticar, async (req, res) => {
   try {
-    const rows = await query<any>(`SELECT * FROM canais_whatsapp WHERE agent_id=$1 ORDER BY criado_em`, [req.params.id]);
+    const rows = await query<any>(
+      `SELECT id, instancia_nome, instancia_label, ddd_prefixos, chip_fallback, ativo,
+              provider, evolution_url, twilio_account_sid, twilio_phone_from,
+              CASE WHEN LENGTH(evolution_api_key) > 0 THEN '••••••••' || RIGHT(evolution_api_key,4) ELSE '' END AS evolution_api_key,
+              CASE WHEN LENGTH(twilio_auth_token) > 0 THEN '••••••••' || RIGHT(twilio_auth_token,4) ELSE '' END AS twilio_auth_token
+       FROM canais_whatsapp WHERE agent_id=$1 ORDER BY criado_em`,
+      [req.params.id]
+    );
     res.json({ ok: true, canais: rows });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
@@ -77,12 +99,20 @@ agenteRouter.get('/:id/canais/whatsapp', autenticar, async (req, res) => {
 // ── WhatsApp: criar ───────────────────────────────────────────
 agenteRouter.post('/:id/canais/whatsapp', soAdmin, async (req, res) => {
   try {
-    const { instancia_nome, instancia_label, ddd_prefixos = [], chip_fallback = false, ativo = true } = req.body || {};
+    const {
+      instancia_nome, instancia_label, ddd_prefixos = [], chip_fallback = false, ativo = true,
+      provider = 'evolution', evolution_url = '', evolution_api_key = '',
+      twilio_account_sid = '', twilio_auth_token = '', twilio_phone_from = '',
+    } = req.body || {};
     if (!instancia_nome) { res.status(400).json({ erro: 'instancia_nome obrigatório' }); return; }
     const rows = await query<any>(
-      `INSERT INTO canais_whatsapp (agent_id, instancia_nome, instancia_label, ddd_prefixos, chip_fallback, ativo)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [req.params.id, instancia_nome, instancia_label || null, ddd_prefixos, chip_fallback, ativo]
+      `INSERT INTO canais_whatsapp
+         (agent_id, instancia_nome, instancia_label, ddd_prefixos, chip_fallback, ativo,
+          provider, evolution_url, evolution_api_key, twilio_account_sid, twilio_auth_token, twilio_phone_from)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       RETURNING id, instancia_nome, instancia_label, ddd_prefixos, chip_fallback, ativo, provider, evolution_url, twilio_account_sid, twilio_phone_from`,
+      [req.params.id, instancia_nome, instancia_label || null, ddd_prefixos, chip_fallback, ativo,
+       provider, evolution_url, evolution_api_key, twilio_account_sid, twilio_auth_token, twilio_phone_from]
     );
     res.json({ ok: true, canal: rows[0] });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
@@ -91,11 +121,18 @@ agenteRouter.post('/:id/canais/whatsapp', soAdmin, async (req, res) => {
 // ── WhatsApp: atualizar ───────────────────────────────────────
 agenteRouter.patch('/:id/canais/whatsapp/:canalId', soAdmin, async (req, res) => {
   try {
-    const allowed = ['instancia_nome', 'instancia_label', 'ddd_prefixos', 'chip_fallback', 'ativo'];
+    const textFields = ['instancia_nome', 'instancia_label', 'ddd_prefixos', 'chip_fallback', 'ativo',
+                        'provider', 'evolution_url', 'twilio_account_sid', 'twilio_phone_from'];
+    const secretFields = ['evolution_api_key', 'twilio_auth_token'];
     const sets: string[] = [];
     const vals: any[] = [];
-    for (const k of allowed) {
+    for (const k of textFields) {
       if (req.body[k] !== undefined) { sets.push(`${k}=$${vals.length + 1}`); vals.push(req.body[k]); }
+    }
+    for (const k of secretFields) {
+      if (req.body[k] !== undefined && !isMasked(req.body[k])) {
+        sets.push(`${k}=$${vals.length + 1}`); vals.push(req.body[k]);
+      }
     }
     if (!sets.length) { res.status(400).json({ erro: 'Nada para atualizar' }); return; }
     vals.push(req.params.canalId, req.params.id);

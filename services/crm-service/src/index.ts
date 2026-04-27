@@ -17,6 +17,7 @@ import auditoriaRouter from './routes/auditoria';
 import dbRouter        from './routes/db';
 import { agenteRouter, internalRouter } from './routes/config-agentes';
 import conhecimentoRouter from './routes/conhecimento';
+import llmConfigRouter    from './routes/llm-config';
 
 config({ path: path.join(__dirname, '../../.env') });
 
@@ -115,9 +116,10 @@ app.use('/api/sandbox',    sandboxRouter);
 app.use('/api/analisar',   analisarRouter);
 app.use('/api/auditoria',  auditoriaRouter);
 app.use('/api/db',              dbRouter);
-app.use('/api/config/agentes',  agenteRouter);
+app.use('/api/config/llm',           llmConfigRouter);
+app.use('/api/config/agentes',       agenteRouter);
 app.use('/api/config/agentes/:agenteId/conhecimento', conhecimentoRouter);
-app.use('/api/internal',        internalRouter);
+app.use('/api/internal',             internalRouter);
 
 // ── Rota de manutenção: re-rodar migrations ──────────────────────
 app.post('/api/internal/migrate', async (req, res) => {
