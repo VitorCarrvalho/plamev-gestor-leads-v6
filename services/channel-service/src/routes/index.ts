@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { isDuplicate, messageQueue } from '../utils/redis';
 import { normalizeMessage } from '../utils/normalizer';
+import { enviar } from '../services/sender';
 
 const router = Router();
 
@@ -153,9 +154,33 @@ router.get('/queue-status', async (_req: Request, res: Response) => {
   }
 });
 
+// ── Endpoint interno: agent-ai envia resposta para ser entregue ao usuário ──
+const internalRouter = Router();
+
+internalRouter.post('/send', async (req: Request, res: Response) => {
+  const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+  if (req.headers['x-internal-secret'] !== INTERNAL_SECRET) {
+    res.status(401).json({ erro: 'Não autorizado' });
+    return;
+  }
+  const { message, resposta } = req.body || {};
+  if (!message || !resposta) {
+    res.status(400).json({ erro: 'message e resposta são obrigatórios' });
+    return;
+  }
+  res.json({ ok: true });
+  try {
+    await enviar(message, resposta);
+  } catch (e: any) {
+    console.error('[CHANNEL-SERVICE] ❌ Falha ao enviar resposta:', e.message);
+  }
+});
+
 export function setupRoutes(app: any) {
   // Health no nível raiz (não prefixado) para health checks do Railway/gateway
   app.get('/health', (_req: Request, res: Response) => res.json({ ok: true, service: 'channel-service' }));
   // Webhooks externos: Evolution API e outros canais postam aqui
   app.use('/webhooks', router);
+  // Rotas internas: agent-ai → channel-service
+  app.use('/internal', internalRouter);
 }
