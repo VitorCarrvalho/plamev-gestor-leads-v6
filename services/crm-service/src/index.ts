@@ -82,6 +82,27 @@ app.get(['/api/conversations/:id/messages', '/api/conversas/:id/mensagens'], asy
   } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
+// Conversa completa — conversa + mensagens + perfil + agendamentos + etapas
+import {
+  buscarPerfil, buscarAgendamentos, buscarEtapasVisitadas, buscarObsidianAtivo,
+} from './repositories/conversations.repository';
+
+app.get('/api/conversas/:id/full', autenticar, async (req, res) => {
+  try {
+    const orgId = req.headers['x-org-id'] as string;
+    const conversa = await buscarConversa(orgId, req.params.id);
+    if (!conversa) { res.status(404).json({ error: 'Conversa não encontrada' }); return; }
+    const [mensagens, perfil, agendamentos, etapasVisitadas, obsidianAtivo] = await Promise.all([
+      buscarMensagens(orgId, req.params.id),
+      buscarPerfil(conversa.client_id),
+      buscarAgendamentos(req.params.id),
+      buscarEtapasVisitadas(req.params.id),
+      buscarObsidianAtivo(req.params.id),
+    ]);
+    res.json({ conversa, mensagens, perfil: perfil || {}, agendamentos, etapasVisitadas, obsidianAtivo });
+  } catch (e: any) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Etapa do Kanban ─────────────────────────────────────────────
 const ETAPAS_VALIDAS = [
   'acolhimento', 'qualificacao', 'apresentacao_planos', 'validacao_cep',

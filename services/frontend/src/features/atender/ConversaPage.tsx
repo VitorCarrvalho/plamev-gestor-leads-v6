@@ -449,14 +449,19 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
   // Auto-foca o input quando a ação termina OU quando troca de aba
   useEffect(() => { if (!acaoLoading) inputRef.current?.focus(); }, [acaoLoading, aba, conversaId]);
 
-  // Carregar via socket
-  useEffect(() => {
+  const carregarConversa = async () => {
     setLoading(true);
-    socket.emit('get_conversa', conversaId);
-    const onData = (d: any) => { if (d.conversa?.id === conversaId) { setData(d); setLoading(false); } };
-    socket.on('conversa_data', onData);
-    return () => { socket.off('conversa_data', onData); };
-  }, [conversaId, socket]);
+    try {
+      const d = await api.get<any>(`/api/conversas/${conversaId}/full`);
+      setData(d);
+    } catch (e: any) {
+      console.error('[ChatWindow] Erro ao carregar conversa:', e.message);
+    }
+    setLoading(false);
+  };
+
+  // Carregar via REST
+  useEffect(() => { carregarConversa(); }, [conversaId]);
 
   // Scroll para o final quando novas mensagens chegam (só do container)
   useEffect(() => {
@@ -475,7 +480,7 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
       ['ia_status',          (d) => setFeedback({ ok: true, text: `✓ IA ${d.silenciada ? 'silenciada' : 'ativa'}` })],
       ['erro',               (d) => setFeedback({ ok: false, text: d.msg || 'Erro' })],
     ];
-    handlers.forEach(([e, h]) => socket.on(e, (d: any) => { h(d); setAcaoLoading(false); setTimeout(() => setFeedback(null), 3000); socket.emit('get_conversa', conversaId); }));
+    handlers.forEach(([e, h]) => socket.on(e, (d: any) => { h(d); setAcaoLoading(false); setTimeout(() => setFeedback(null), 3000); carregarConversa(); }));
     return () => { handlers.forEach(([e]) => socket.off(e)); };
   }, [socket, conversaId]);
 
@@ -534,7 +539,7 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
     try {
       await api.patch(`/api/conversa/${conversaId}/etapa`, { etapa });
       setFeedback({ ok: true, text: `✓ Etapa atualizada para ${etapa}` });
-      socket.emit('get_conversa', conversaId);
+      await carregarConversa();
       setTimeout(() => setFeedback(null), 3000);
     } catch (e: any) {
       setFeedback({ ok: false, text: e?.message || 'Erro ao mudar etapa' });
@@ -999,10 +1004,17 @@ const PerfilPanel: React.FC<{ conversaId: string }> = ({ conversaId }) => {
   const [data, setData] = useState<any>(null);
 
   useEffect(() => {
-    const onData = (d: any) => { if (d.conversa?.id === conversaId) setData(d); };
-    socket.on('conversa_data', onData);
-    socket.emit('get_conversa', conversaId);
-    return () => { socket.off('conversa_data', onData); };
+    api.get<any>(`/api/conversas/${conversaId}/full`)
+      .then(setData)
+      .catch(e => console.error('[PerfilPanel]', e.message));
+  }, [conversaId]);
+
+  // Atualiza quando o socket avisar
+  useEffect(() => {
+    const refresh = () => api.get<any>(`/api/conversas/${conversaId}/full`).then(setData).catch(() => {});
+    socket.on('conversa_atualizada', refresh);
+    socket.on('nova_msg', refresh);
+    return () => { socket.off('conversa_atualizada', refresh); socket.off('nova_msg', refresh); };
   }, [conversaId, socket]);
 
   if (!data) return <div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div>;
