@@ -136,22 +136,56 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   const guardResult = await checkInputGuard(msg);
 
   guardSpan.end({
-    output:   { action: guardResult.action, intent: guardResult.intent, latencyMs: guardResult.latencyMs },
+    output:   {
+      action: guardResult.action,
+      intent: guardResult.intent,
+      reason: guardResult.reason ?? null,
+      matchedRules: guardResult.matchedRules ?? [],
+      failOpen: guardResult.failOpen ?? false,
+      latencyMs: guardResult.latencyMs,
+    },
     level:    guardResult.action === 'escalate' ? 'WARNING' : guardResult.action === 'drop' ? 'ERROR' : 'DEFAULT',
-    metadata: { action: guardResult.action, intent: guardResult.intent },
+    metadata: {
+      action: guardResult.action,
+      intent: guardResult.intent,
+      reason: guardResult.reason ?? null,
+      matched_rules: guardResult.matchedRules ?? [],
+      fail_open: guardResult.failOpen ?? false,
+    },
   });
 
-  console.log(`${tag} [1/7] InputGuard → action=${guardResult.action} intent=${guardResult.intent} (${Date.now() - t1}ms)`);
+  console.log(
+    `${tag} [1/7] InputGuard → action=${guardResult.action} intent=${guardResult.intent}` +
+    `${guardResult.reason ? ` reason="${guardResult.reason}"` : ''}` +
+    `${guardResult.failOpen ? ' failOpen=true' : ''}` +
+    ` (${Date.now() - t1}ms)`,
+  );
 
   if (guardResult.action === 'drop') {
     console.log(`${tag} 🛑 Descartada pelo guard`);
-    trace.update({ output: 'dropped', metadata: { reason: 'input_guard_drop' } });
+    trace.update({
+      output: 'dropped',
+      metadata: {
+        reason: 'input_guard_drop',
+        input_guard_reason: guardResult.reason ?? null,
+        input_guard_rules: guardResult.matchedRules ?? [],
+        input_guard_fail_open: guardResult.failOpen ?? false,
+      },
+    });
     await lf_flush();
     return;
   }
   if (guardResult.action === 'escalate') {
     console.log(`${tag} 🚨 Escalando para humano`);
-    trace.update({ output: 'escalated', metadata: { reason: 'pedido_humano' } });
+    trace.update({
+      output: 'escalated',
+      metadata: {
+        reason: 'pedido_humano',
+        input_guard_reason: guardResult.reason ?? null,
+        input_guard_rules: guardResult.matchedRules ?? [],
+        input_guard_fail_open: guardResult.failOpen ?? false,
+      },
+    });
     await lf_flush();
     return;
   }
@@ -328,6 +362,9 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       history_msgs_count: historico.length,
       guard_intent:       guardResult.intent,
       guard_action:       guardResult.action,
+      guard_reason:       guardResult.reason ?? null,
+      guard_rules:        guardResult.matchedRules ?? [],
+      guard_fail_open:    guardResult.failOpen ?? false,
       was_rewritten:      wasRewritten,
       tokens_in:          generation._uso?.input_tokens  ?? 0,
       tokens_out:         generation._uso?.output_tokens ?? 0,

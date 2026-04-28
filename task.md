@@ -115,9 +115,21 @@
 - [ ] Propagar multi-tenancy no contrato da fila quando houver necessidade de distinguir mensagens por org sem depender apenas de `agentSlug`
 
 ### Etapa 5 — Fortalecer input guardrails no caminho ativo
-- [ ] Validar ordem correta apos debounce
-- [ ] Integrar classificacao mais robusta no input guard
-- [ ] Tratar fail-open e escalonamento com observabilidade
+- [x] Validar ordem correta apos debounce
+- [x] Integrar classificacao mais robusta no input guard
+- [x] Tratar fail-open e escalonamento com observabilidade
+
+#### Achados da Etapa 5
+- [x] Ordem operacional confirmada como `webhook -> debounce Redis -> job BullMQ -> input guard -> contexto/RAG -> LLM -> output guard -> envio -> persistencia`
+- [x] O input guard ativo deixou de depender apenas de regex minima e passou a classificar saudacao, duvida de produto, intencao de compra e objecao de preco com regras deterministicas mais claras
+- [x] Mensagens vazias sem anexo passaram a ser descartadas cedo, enquanto anexos sem texto continuam seguindo para o fluxo multimodal oficial
+- [x] Pedidos de humano/cancelamento, sinais de conflito juridico/agressividade e tentativas de prompt injection agora escalam explicitamente
+- [x] Sinais fortes de spam ou ruido agora podem ser descartados antes de consumir contexto e LLM
+- [x] O input guard agora opera em fail-open observavel: se falhar internamente, a mensagem segue com marcador explicito de degradacao em logs e traces
+
+#### Risco residual apos a Etapa 5
+- [ ] Refinar com exemplos reais de producao os padrões de spam, abuso e prompt injection para reduzir falso positivo
+- [ ] Decidir se escalonamentos do input guard devem apenas parar no trace ou tambem abrir algum mecanismo operacional de fila humana
 
 ### Etapa 6 — Conectar RAG real ao fluxo principal
 - [ ] Integrar retrieval vetorial/rerank no pipeline oficial
@@ -135,6 +147,6 @@
 - [ ] Deixar base pronta para evoluir para E2E e CI/CD
 
 ## Progresso atual
-- Status geral: Etapa 4 concluida
-- Ultima atualizacao: runtime principal do agent-ai passou a resolver agente, org e configuracao de LLM pelo banco; persistencia interna alinhada ao mesmo contexto; build do monorepo validado
-- Proxima acao imediata: iniciar Etapa 5 para fortalecer input guardrails no caminho ativo
+- Status geral: Etapa 5 concluida
+- Ultima atualizacao: input guard do caminho principal foi fortalecido com regras deterministicas, descarte antecipado, escalonamento explicito e fail-open observavel; build do monorepo validado
+- Proxima acao imediata: iniciar Etapa 6 para conectar o RAG real ao fluxo principal
