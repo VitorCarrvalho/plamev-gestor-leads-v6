@@ -7,6 +7,11 @@ import { validateClaims } from './guards/output-guard';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
 import { langfuse } from '../clients/langfuse-client';
 
+async function lf_flush() {
+  try { await langfuse.flushAsync(); }
+  catch (e: any) { console.error('[LANGFUSE] ❌ Flush falhou:', e?.message ?? e); }
+}
+
 const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
 const CRM_SERVICE_URL     = process.env.CRM_SERVICE_URL     || 'http://crm-service.railway.internal:8080';
 const INTERNAL_SECRET     = process.env.INTERNAL_SECRET     || 'plamev-internal';
@@ -162,13 +167,13 @@ export async function processMessage(msg: InternalMessage) {
   if (guardResult.action === 'drop') {
     console.log(`${tag} 🛑 Descartada pelo guard`);
     trace.update({ output: 'dropped', metadata: { reason: 'input_guard_drop' } });
-    await langfuse.flushAsync();
+    await lf_flush();
     return;
   }
   if (guardResult.action === 'escalate') {
     console.log(`${tag} 🚨 Escalando para humano`);
     trace.update({ output: 'escalated', metadata: { reason: 'pedido_humano' } });
-    await langfuse.flushAsync();
+    await lf_flush();
     return;
   }
 
@@ -260,7 +265,7 @@ export async function processMessage(msg: InternalMessage) {
   if (!generation) {
     console.warn(`${tag} ⚠️ Geração retornou null`);
     trace.update({ output: 'llm_null', level: 'ERROR' });
-    await langfuse.flushAsync();
+    await lf_flush();
     return;
   }
 
@@ -290,7 +295,7 @@ export async function processMessage(msg: InternalMessage) {
   if (!resposta) {
     console.warn(`${tag} ⚠️ Resposta vazia`);
     trace.update({ output: 'empty_response', level: 'ERROR' });
-    await langfuse.flushAsync();
+    await lf_flush();
     return;
   }
 
@@ -356,8 +361,7 @@ export async function processMessage(msg: InternalMessage) {
     },
   });
 
-  // Flush assíncrono — não bloqueia, envia em background
-  langfuse.flushAsync().catch(() => {});
+  lf_flush(); // async, errors already logged inside lf_flush
 
   console.log(`${tag} ✅ Pipeline completo em ${totalLatency}ms`);
 }
