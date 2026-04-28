@@ -141,6 +141,37 @@ app.use('/api/config/agentes',       agenteRouter);
 app.use('/api/config/agentes/:agenteId/conhecimento', conhecimentoRouter);
 app.use('/api/internal',             internalRouter);
 
+// ── Pipeline Logs (ai_interaction_logs) ─────────────────────────
+app.get('/api/pipeline-logs', async (req, res) => {
+  try {
+    const limit  = Math.min(parseInt((req.query.limit  as string) || '100', 10), 500);
+    const offset = parseInt((req.query.offset as string) || '0', 10);
+    const phone  = (req.query.phone as string) || '';
+    const { rows } = await pool.query(`
+      SELECT
+        id, thread_id, criado_em,
+        provider, model,
+        input_guard_intent, input_guard_action,
+        was_rewritten,
+        rag_docs_count, rag_sources, kb_chars_injected,
+        history_msgs_count,
+        generation_tokens_in, generation_tokens_out,
+        rag_latency_ms, generation_latency_ms, total_latency_ms
+      FROM ai_interaction_logs
+      ${phone ? 'WHERE thread_id ILIKE $3' : ''}
+      ORDER BY criado_em DESC
+      LIMIT $1 OFFSET $2
+    `, phone ? [limit, offset, `%${phone}%`] : [limit, offset]);
+    const { rows: [{ total }] } = await pool.query(
+      `SELECT COUNT(*)::int AS total FROM ai_interaction_logs ${phone ? 'WHERE thread_id ILIKE $1' : ''}`,
+      phone ? [`%${phone}%`] : []
+    );
+    res.json({ ok: true, logs: rows, total });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, erro: e.message });
+  }
+});
+
 // ── Rota de manutenção: re-rodar migrations ──────────────────────
 app.post('/api/internal/migrate', async (req, res) => {
   const secret = process.env.INTERNAL_SECRET || 'plamev-internal';

@@ -34,4 +34,14 @@ export interface InteractionMetrics {
   total_latency_ms?: number;
   provider?: string;
   model?: string;
+  // Pipeline trace
+  rag_docs_count?: number;
+  rag_sources?: string;
+  kb_chars_injected?: number;
+  history_msgs_count?: number;
+  input_guard_intent?: string;
+  input_guard_action?: string;
+  was_rewritten?: boolean;
+  rag_latency_ms?: number;
+  generation_latency_ms?: number;
 }

@@ -239,10 +239,18 @@ export async function processMessage(msg: InternalMessage) {
   await logInteraction({
     thread_id: msg.phone,
     total_latency_ms: Date.now() - start,
-    generation_tokens_in: generation._uso?.input_tokens,
+    generation_tokens_in:  generation._uso?.input_tokens,
     generation_tokens_out: generation._uso?.output_tokens,
+    generation_latency_ms: Date.now() - t4,
     provider: config.provider,
     model: config.model,
+    rag_docs_count:      kb.fontes.length,
+    rag_sources:         kb.fontes.join(', ') || null,
+    kb_chars_injected:   kb.conteudo.length,
+    history_msgs_count:  historico.length,
+    input_guard_intent:  guardResult.intent,
+    input_guard_action:  guardResult.action,
+    was_rewritten:       !validation.isValid,
   });
 
   console.log(`${tag} ✅ Pipeline completo em ${Date.now() - start}ms`);

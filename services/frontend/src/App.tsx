@@ -32,10 +32,11 @@ import { FunilPage }   from './features/analisar/FunilPage';
 import { AgentesPage } from './features/analisar/AgentesPage';
 
 // Novidades (Fase 6)
-import { AuditoriaPage }     from './features/sistema/AuditoriaPage';
-import { TemplatesPage }     from './features/sistema/TemplatesPage';
-import { ConfiguracaoPage }  from './features/sistema/ConfiguracaoPage';
-import { ProvedoresPage }    from './features/sistema/ProvedoresPage';
+import { AuditoriaPage }      from './features/sistema/AuditoriaPage';
+import { TemplatesPage }      from './features/sistema/TemplatesPage';
+import { ConfiguracaoPage }   from './features/sistema/ConfiguracaoPage';
+import { ProvedoresPage }     from './features/sistema/ProvedoresPage';
+import { PipelineLogsPage }   from './features/sistema/PipelineLogsPage';
 import { useNotifications } from './hooks/useNotifications';
 
 // ── LOGIN ─────────────────────────────────────────────────────
@@ -153,9 +154,10 @@ const Shell: React.FC = () => {
       case 'sistema/sql':       return <SqlBrowserPage />;
       case 'sistema/auditoria':     return <AuditoriaPage />;
       case 'sistema/templates':     return <TemplatesPage />;
-      case 'sistema/configuracao':  return <ConfiguracaoPage />;
-      case 'sistema/provedores':    return <ProvedoresPage />;
-      case 'sistema/config':        return <ConfigPage />;
+      case 'sistema/configuracao':   return <ConfiguracaoPage />;
+      case 'sistema/provedores':     return <ProvedoresPage />;
+      case 'sistema/pipeline-logs':  return <PipelineLogsPage />;
+      case 'sistema/config':         return <ConfigPage />;
       default: return <div className="p-6 text-slate-500">Página não encontrada</div>;
     }
   };
