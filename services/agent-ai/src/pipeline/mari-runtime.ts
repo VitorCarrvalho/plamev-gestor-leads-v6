@@ -124,13 +124,9 @@ export function buildMariPrompt({
   if (includePlanContext && productCatalog) sections.push(productCatalog);
   if (knowledgeBase) sections.push(`# BASE DE CONHECIMENTO\n${knowledgeBase}`);
 
-  sections.push(`# ORIENTACAO COMERCIAL
-Etapa atual: ${stage}
-- Siga a sequência comercial da Mari sem pular contexto.
-- Se o cliente pedir os planos, explique primeiro os planos oficiais que existem hoje.
-- Não peça "qual plano você quer" antes de listar o catálogo quando a pergunta for sobre planos existentes.
-- Depois de listar o catálogo, avance com UMA próxima pergunta útil para qualificação ou recomendação.
-- Nunca invente nomes de plano, cobertura, clínica ou valor fora do catálogo/contexto.`);
+  sections.push(`# CONTEXTO ATUAL
+Etapa: ${stage}
+Nunca invente nomes de plano, cobertura, clínica ou valor fora do que está no contexto acima.`);
 
   return sections.filter(Boolean).join('\n\n');
 }
