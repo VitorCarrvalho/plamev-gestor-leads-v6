@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Radio, Users, MessageSquare, UserCircle, Eye,
   BarChart3, Bookmark, Filter, Award,
   Calendar, Database, ShieldCheck, FileCode2, Settings, Bot, KeyRound,
-  Bell, LogOut, LucideIcon, Sparkles, Columns3, X, Activity,
+  Bell, LogOut, LucideIcon, Sparkles, Columns3, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -48,7 +48,6 @@ export const NAV_TREE: { id: Pilar; label: string; items: NavItem[] }[] = [
     id: 'sistema',
     label: 'Sistema',
     items: [
-      { id: 'pipeline-logs', label: 'Logs IA',     icon: Activity },
       { id: 'agenda',        label: 'Agenda',      icon: Calendar },
       { id: 'sql',           label: 'SQL Browser', icon: Database },
       { id: 'auditoria',     label: 'Auditoria',   icon: ShieldCheck },
