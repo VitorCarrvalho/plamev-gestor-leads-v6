@@ -150,16 +150,22 @@ export function formatProductCatalogPrompt(rows: CatalogRow[]) {
   const grouped = byPlan(rows);
   const lines = [
     '# DADOS DO PRODUTO',
-    'Use APENAS os planos e preços abaixo. Nunca invente nomes de plano, faixas ou valores fora desta tabela.',
+    'Use APENAS os valores abaixo. O PREÇO A DIVULGAR é o "preço vigente". Nunca invente planos ou valores fora desta tabela.',
   ];
 
   for (const [slug, plan] of grouped.entries()) {
     lines.push(`## ${plan.nome} (${slug})`);
     if (plan.descricao) lines.push(plan.descricao);
     for (const modalidade of plan.modalidades) {
-      lines.push(
-        `- ${modalidade.modalidade}: vigente ${formatCurrency(modalidade.valor)} | tabela ${formatCurrency(modalidade.valor_tabela)} | promocional ${formatCurrency(modalidade.valor_promocional)} | oferta ${formatCurrency(modalidade.valor_oferta)} | limite ${formatCurrency(modalidade.valor_limite)}`
-      );
+      const vigente = modalidade.valor_promocional ?? modalidade.valor;
+      const tabela  = modalidade.valor_tabela;
+      const showFrom = tabela != null && vigente != null && Number(tabela) !== Number(vigente);
+      const priceStr = vigente == null
+        ? '—'
+        : showFrom
+          ? `de ${formatCurrency(tabela)} por ${formatCurrency(vigente)}/mês`
+          : `${formatCurrency(vigente)}/mês`;
+      lines.push(`- ${modalidade.modalidade} — preço vigente: ${priceStr}`);
     }
   }
 
