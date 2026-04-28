@@ -10,7 +10,7 @@ const router = Router();
 const DEBOUNCE_DELAY_MS = 8000; // espera 8s após a última mensagem antes de processar
 const CRM_URL = process.env.CRM_SERVICE_URL || 'http://crm-service.railway.internal:8080';
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
-const RESET_COMMAND = '--reset';
+const RESET_COMMAND_REGEX = /^[\s\-—–]+reset[\s]*$/i;
 
 // Middleware to validate HMAC signature from Gateway
 const validateHmac = (req: Request, res: Response, next: any) => {
@@ -59,6 +59,14 @@ async function resetContactState(msg: any) {
     }
   );
   return data;
+}
+
+function isResetCommand(text: string) {
+  const normalized = String(text || '')
+    .trim()
+    .replace(/[—–]/g, '-')
+    .replace(/\s+/g, ' ');
+  return RESET_COMMAND_REGEX.test(normalized);
 }
 
 async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
@@ -144,14 +152,12 @@ async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
     agentSlug,
   });
 
-  if ((msg.texto || '').trim().toLowerCase() === RESET_COMMAND) {
+  if (isResetCommand(msg.texto || '')) {
     try {
       const result = await resetContactState(msg);
       console.log(`[CHANNEL-SERVICE] ♻️ Reset por comando executado para ${msg.phone} | removed=${Boolean(result?.removed)}`);
-      await enviar(msg, 'Pronto! Apaguei o histórico desse contato. Pode mandar uma nova mensagem e eu vou tratar como conversa nova.');
     } catch (e: any) {
       console.error(`[CHANNEL-SERVICE] ❌ Falha no reset de ${msg.phone}: ${e.message}`);
-      await enviar(msg, 'Não consegui resetar esse contato agora. Tenta de novo em alguns segundos.');
     }
     return;
   }

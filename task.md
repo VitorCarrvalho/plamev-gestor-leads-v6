@@ -190,7 +190,8 @@
 #### Facilidades de teste em produção
 - [x] Comando `--reset` adicionado no webhook do WhatsApp para apagar completamente o histórico do contato
 - [x] O reset agora limpa o estado do contato no CRM por telefone/canal/org e remove debounce pendente antes de qualquer nova mensagem
-- [x] O comando de reset não chega à Mari; o usuário recebe apenas uma confirmação operacional curta
+- [x] O comando de reset não chega à Mari e agora é silencioso: apaga e aguarda um novo contato sem iniciar conversa
+- [x] O parser do reset passou a aceitar também travessão/en dash (`—reset`, `–reset`) além de `--reset`
 
 #### Seed operacional de produto
 - [x] Criada migration idempotente para popular a tabela `planos` com `Slim`, `Advance`, `Platinum` e `Diamond` no próximo deploy
