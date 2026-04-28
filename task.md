@@ -78,6 +78,8 @@
 - [x] Deploy isolado do `gateway` no Railway quebrou porque o socket passou a importar arquivos-fonte de `crm-service`
 - [x] O `gateway` agora possui camada local minima de `auth`, `db`, `repo` e `actions` para o socket, sem depender de imports cross-service no build
 - [x] Dependencias locais do `gateway` foram alinhadas para o deploy isolado (`pg` + tipos)
+- [x] Webhooks WhatsApp passaram a abortar no `channel-service` porque o `gateway` consumia o body com `express.json()` antes do proxy
+- [x] O parser JSON do `gateway` foi movido para baixo dos proxies, preservando o body bruto para `/webhooks`
 
 ### Etapa 3 — Unificar o caminho ativo do pipeline do Agent AI
 - [x] Definir o caminho oficial de execucao no Agent AI

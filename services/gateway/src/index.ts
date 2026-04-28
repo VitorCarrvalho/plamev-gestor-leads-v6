@@ -18,7 +18,6 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(cors());
-app.use(express.json());
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'gateway' }));
 app.get('/debug/runtime', (_req, res) => {
@@ -111,6 +110,10 @@ app.use(makeProxy(
 ));
 
 // ── Notificações internas para o dashboard ───────────────────
+// IMPORTANTE: o parser JSON fica abaixo dos proxies para não consumir o body
+// de webhooks e requests proxied antes do encaminhamento ao serviço correto.
+app.use(express.json());
+
 app.post(['/interno/nova-msg', '/internal/nova-msg'], (req, res) => {
   const { conversa_id, phone, nome, msg_cliente, msg_mari } = req.body || {};
   if (!conversa_id) {
