@@ -15,20 +15,23 @@
  */
 import { Server as HttpServer } from 'http';
 import { Server as SocketServer, Socket } from 'socket.io';
-import { validarTokenSocket } from '../middleware/auth';
-import * as repo   from '../repositories/conversations.repository';
-import * as actions from '../services/actions.service';
-import { setIo } from '../services/actions.service';
-import { execute, queryOne, query } from '../config/db';
+import { validarTokenSocket } from '../../../crm-service/src/middleware/auth';
+import * as repo from '../../../crm-service/src/repositories/conversations.repository';
+import { reescreverComoMari } from '../../../crm-service/src/services/actions.service';
+import { execute, queryOne, query } from '../../../crm-service/src/config/db';
 
 let io: SocketServer;
+const ORG_ID = '00000000-0000-0000-0000-000000000000';
+
+function emitUnsupported(socket: Socket, eventName: string) {
+  socket.emit('erro', { msg: `Ação ainda não operacional via socket: ${eventName}` });
+}
 
 export function iniciarSocket(server: HttpServer): SocketServer {
   io = new SocketServer(server, {
     cors: { origin: '*' },
     pingTimeout: 60000,
   });
-  setIo(io); // Compartilha io com actions.service para notificar dashboard
 
   // ── Autenticação ─────────────────────────────────────────────
   io.use((socket, next) => {
@@ -46,9 +49,9 @@ export function iniciarSocket(server: HttpServer): SocketServer {
     // ── LEITURA: lista de conversas ────────────────────────────
     socket.on('get_conversas', async () => {
       try {
-        const conversas = await repo.listarConversas();
+        const conversas = await repo.listarConversas(ORG_ID);
         socket.emit('conversas_data', conversas);
-        socket.emit('stats_data', await repo.buscarStats());
+        socket.emit('stats_data', await repo.buscarStats(ORG_ID));
       } catch (e: any) {
         socket.emit('erro', { msg: e.message });
       }
@@ -57,12 +60,12 @@ export function iniciarSocket(server: HttpServer): SocketServer {
     // ── LEITURA: conversa completa ─────────────────────────────
     socket.on('get_conversa', async (id: string) => {
       try {
-        const conversa    = await repo.buscarConversa(id);
+        const conversa = await repo.buscarConversa(ORG_ID, id);
         if (!conversa) return socket.emit('erro', { msg: 'Conversa não encontrada' });
-        const mensagens      = await repo.buscarMensagens(id);
-        const perfil         = await repo.buscarPerfil(conversa.client_id);
-        const agendamentos   = await repo.buscarAgendamentos(id);
-        const obsidianAtivo  = await repo.buscarObsidianAtivo(id).catch(() => []);
+        const mensagens = await repo.buscarMensagens(ORG_ID, id);
+        const perfil = await repo.buscarPerfil(conversa.client_id);
+        const agendamentos = await repo.buscarAgendamentos(id);
+        const obsidianAtivo = await repo.buscarObsidianAtivo(id).catch(() => []);
         const etapasVisitadas = await repo.buscarEtapasVisitadas(id).catch(() => []);
         socket.join(`conversa:${id}`);
         socket.emit('conversa_data', { conversa, mensagens, perfil, agendamentos, obsidianAtivo, etapasVisitadas });
@@ -74,7 +77,7 @@ export function iniciarSocket(server: HttpServer): SocketServer {
     // ── LEITURA: mais mensagens (paginação) ────────────────────
     socket.on('get_mais_msgs', async ({ conversa_id, antes_id }: { conversa_id: string; antes_id: string }) => {
       try {
-        const mensagens = await repo.buscarMensagens(conversa_id, undefined, antes_id);
+        const mensagens = await repo.buscarMensagens(ORG_ID, conversa_id, undefined, antes_id);
         socket.emit('mais_msgs_data', { conversa_id, mensagens });
       } catch (e: any) {
         socket.emit('erro', { msg: e.message });
@@ -94,64 +97,33 @@ export function iniciarSocket(server: HttpServer): SocketServer {
     // ── AÇÃO: provocar (reativação contextualizada) ────────────
     socket.on('provocar', async ({ conversa_id }: { conversa_id: string }) => {
       console.log(`[ACTIONS] 🎯 provocar → conversa=${conversa_id} por ${(socket as any).user?.email}`);
-      try {
-        const msg = await actions.provocar(conversa_id);
-        console.log(`[ACTIONS] ✅ provocar ok: "${msg.slice(0, 60)}"`);
-        socket.emit('provocar_ok', { conversa_id, msg });
-        io.emit('conversa_atualizada', { conversa_id });
-      } catch (e: any) {
-        console.error(`[ACTIONS] ❌ provocar ERRO: ${e.message}`);
-        socket.emit('erro', { msg: e.message });
-      }
+      emitUnsupported(socket, 'provocar');
     });
 
     // ── AÇÃO: instruir Mari (supervisor instrui, Mari executa) ──
     socket.on('instrucao', async ({ conversa_id, texto }: { conversa_id: string; texto: string }) => {
       console.log(`[ACTIONS] 🎯 instrucao → conversa=${conversa_id} texto="${(texto||'').slice(0,50)}"`);
-      try {
-        const msg = await actions.instruirMari(conversa_id, texto);
-        console.log(`[ACTIONS] ✅ instrucao ok: "${msg.slice(0, 60)}"`);
-        socket.emit('instrucao_ok', { conversa_id, msg });
-        io.emit('nova_msg', { conversa_id, msg_mari: msg, timestamp: new Date().toISOString() });
-      } catch (e: any) {
-        console.error(`[ACTIONS] ❌ instrucao ERRO: ${e.message}`);
-        socket.emit('erro', { msg: e.message });
-      }
+      emitUnsupported(socket, 'instrucao');
     });
 
     // ── AÇÃO: falar direto (supervisor → Mari reescreve → envia) ─
     socket.on('falar_direto', async ({ conversa_id, texto, reescrever }: any) => {
       console.log(`[ACTIONS] 🎯 falar_direto → conversa=${conversa_id} reescrever=${reescrever} texto="${(texto||'').slice(0,50)}"`);
-      try {
-        const msg = await actions.falarDireto(conversa_id, texto, reescrever ?? true);
-        console.log(`[ACTIONS] ✅ falar_direto ok: "${msg.slice(0, 60)}"`);
-        socket.emit('falar_direto_ok', { conversa_id, msg });
-        io.emit('nova_msg', { conversa_id, msg_mari: msg, timestamp: new Date().toISOString() });
-      } catch (e: any) {
-        console.error(`[ACTIONS] ❌ falar_direto ERRO: ${e.message}`);
-        socket.emit('falar_direto_err', { erro: e.message });
-        socket.emit('erro', { msg: e.message });
-      }
+      socket.emit('falar_direto_err', { erro: 'Ação ainda não operacional via socket: falar_direto' });
+      emitUnsupported(socket, 'falar_direto');
     });
 
     // ── AÇÃO: preview de falar direto ─────────────────────────
     socket.on('fd_preview', async ({ conversa_id, texto }: { conversa_id: string; texto: string }) => {
-      try {
-        const msg = await actions.previewFalarDireto(conversa_id, texto);
-        socket.emit('fd_preview_ok', { msg });
-      } catch { socket.emit('fd_preview_ok', { msg: texto }); }
+      try { socket.emit('fd_preview_ok', { msg: await reescreverComoMari(conversa_id, texto) }); }
+      catch { socket.emit('fd_preview_ok', { msg: texto }); }
     });
 
     // ── AÇÃO: enviar manual do plano (PDF) ao cliente ──────────
     // Supervisor escolhe o plano e o PDF é enviado direto no WhatsApp
     socket.on('enviar_manual', async ({ conversa_id, plano_slug }: { conversa_id: string; plano_slug: string }) => {
-      try {
-        const resultado = await actions.enviarManual(conversa_id, plano_slug || 'geral');
-        socket.emit('manual_enviado_ok', { conversa_id, resultado });
-        io.emit('nova_msg', { conversa_id, msg_mari: `[📄 Manual enviado: ${plano_slug}]`, timestamp: new Date().toISOString() });
-      } catch (e: any) {
-        socket.emit('manual_enviado_err', { conversa_id, erro: e.message });
-      }
+      socket.emit('manual_enviado_err', { conversa_id, erro: 'Ação ainda não operacional via socket: enviar_manual' });
+      emitUnsupported(socket, 'enviar_manual');
     });
 
     // ── AÇÃO: transferir conversa ─────────────────────────────
@@ -220,7 +192,7 @@ export function iniciarSocket(server: HttpServer): SocketServer {
         // Reescrever no tom da Mari se solicitado
         let msgFinal = texto;
         if (reescrever && texto?.trim()) {
-          msgFinal = await actions.previewFalarDireto(conversa_id, texto).catch(() => texto);
+          msgFinal = await reescreverComoMari(conversa_id, texto).catch(() => texto);
         }
         const dt = new Date(executar_em);
         await execute(
@@ -295,7 +267,7 @@ export function iniciarSocket(server: HttpServer): SocketServer {
             [conversa_id, desde]
           );
         } else {
-          msgs = await repo.buscarMensagens(conversa_id);
+          msgs = await repo.buscarMensagens(ORG_ID, conversa_id);
         }
 
         const conv = await queryOne<{ client_id: string }>('SELECT client_id FROM conversas WHERE id=$1', [conversa_id]);

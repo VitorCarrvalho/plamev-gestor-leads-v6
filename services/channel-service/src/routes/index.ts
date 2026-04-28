@@ -194,6 +194,22 @@ internalRouter.post('/send', async (req: Request, res: Response) => {
 
 export function setupRoutes(app: any) {
   app.get('/health', (_req: Request, res: Response) => res.json({ ok: true, service: 'channel-service' }));
+  app.get('/debug/runtime', (_req: Request, res: Response) => res.json({
+    ok: true,
+    service: 'channel-service',
+    runtime: {
+      webhookEntry: '/webhooks/whatsapp',
+      debounceDelayMs: DEBOUNCE_DELAY_MS,
+      queue: 'incoming-messages',
+      redisListPattern: 'debounce:msgs:{canal}:{phone}',
+      sendEndpoint: '/internal/send',
+      configSource: 'CRM /api/internal/channel-config',
+    },
+    notes: [
+      'O debounce atual acumula mensagens por telefone/canal em Redis e reseta o delay do job no BullMQ.',
+      'Este endpoint e somente diagnostico e nao altera o fluxo do webhook.',
+    ],
+  }));
   app.use('/webhooks', router);
   app.use('/internal', internalRouter);
 }

@@ -2,9 +2,9 @@ import express from 'express';
 import http from 'http';
 import cors from 'cors';
 import { createProxyMiddleware } from 'http-proxy-middleware';
-import { Server } from 'socket.io';
 import { config } from 'dotenv';
 import path from 'path';
+import { iniciarSocket, notificarDashboard } from './websocket/socket.server';
 
 config({ path: path.join(__dirname, '../../.env') });
 
@@ -18,8 +18,31 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(cors());
+app.use(express.json());
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'gateway' }));
+app.get('/debug/runtime', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'gateway',
+    runtime: {
+      proxies: {
+        channelService: CHANNEL_SERVICE_URL,
+        agentAi: AGENT_AI_URL,
+        analytics: ANALYTICS_SERVICE_URL,
+        crm: CRM_SERVICE_URL,
+      },
+      websocketBootstrap: 'operational-socket-server',
+      websocketCodeInUse: 'services/gateway/src/websocket/socket.server.ts',
+      frontendSocketPath: '/socket.io',
+      internalNotifyEndpoints: ['/interno/nova-msg', '/internal/nova-msg'],
+    },
+    notes: [
+      'O gateway agora sobe o servidor operacional de Socket.IO usado pelo frontend.',
+      'Notificacoes internas do pipeline podem atualizar o dashboard via rotas HTTP internas.',
+    ],
+  });
+});
 
 // ── Debug Network ─────────────────────────────────────────────
 app.get('/debug-network', async (req, res) => {
@@ -87,18 +110,25 @@ app.use(makeProxy(
   { '^/db': '/api/db' },
 ));
 
+// ── Notificações internas para o dashboard ───────────────────
+app.post(['/interno/nova-msg', '/internal/nova-msg'], (req, res) => {
+  const { conversa_id, phone, nome, msg_cliente, msg_mari } = req.body || {};
+  if (!conversa_id) {
+    res.status(400).json({ ok: false, erro: 'conversa_id obrigatório' });
+    return;
+  }
+  notificarDashboard(
+    String(conversa_id),
+    String(phone || ''),
+    String(nome || ''),
+    msg_cliente ? String(msg_cliente) : null,
+    msg_mari ? String(msg_mari) : null,
+  );
+  res.json({ ok: true });
+});
+
 // ── WebSocket Server ─────────────────────────────────────────
-const io = new Server(server, {
-  cors: { origin: '*' }
-});
-
-io.on('connection', (socket) => {
-  console.log(`[SOCKET] 🟢 Cliente conectado: ${socket.id}`);
-
-  socket.on('disconnect', () => {
-    console.log(`[SOCKET] 🔴 Cliente desconectado: ${socket.id}`);
-  });
-});
+iniciarSocket(server);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[GATEWAY] 🚀 Rodando na porta ${PORT}`);

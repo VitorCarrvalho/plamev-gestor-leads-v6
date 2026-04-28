@@ -1,7 +1,7 @@
 import { Worker, Job } from 'bullmq';
 import Redis from 'ioredis';
 import { InternalMessage } from '@plamev/shared';
-import { processMessage } from './orchestrator';
+import { processIncomingMessage } from './runtime';
 
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 
@@ -45,7 +45,7 @@ export async function startConsumer() {
       };
 
       try {
-        await processMessage(msgParaProcessar);
+        await processIncomingMessage(msgParaProcessar);
       } catch (e: any) {
         console.error(`[AGENT-AI] ❌ Erro processando job ${job.id}:`, e.message);
         throw e;
@@ -58,7 +58,7 @@ export async function startConsumer() {
       const msg = data.message as InternalMessage;
       console.log(`[AGENT-AI] 📨 Processando (legado) job ${job.id} | ${msg.canal} | ${msg.phone}`);
       try {
-        await processMessage(msg);
+        await processIncomingMessage(msg);
       } catch (e: any) {
         console.error(`[AGENT-AI] ❌ Erro processando job ${job.id}:`, e.message);
         throw e;

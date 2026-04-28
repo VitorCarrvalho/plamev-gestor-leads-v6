@@ -1,62 +1,35 @@
-import https from 'https';
-import http from 'http';
 import { InternalMessage } from '@plamev/shared';
 import { pool } from './rag';
 import { checkInputGuard } from './guards/input-guard';
 import { validateClaims } from './guards/output-guard';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
 import { langfuse } from '../clients/langfuse-client';
+import { sendResponse, persistInteraction } from './delivery';
+import { resolverConfigRuntimeAgente, ResolvedAgentRuntimeConfig } from '../db';
 
 async function lf_flush() {
   try { await langfuse.flushAsync(); }
   catch (e: any) { console.error('[LANGFUSE] ❌ Flush falhou:', e?.message ?? e); }
 }
 
-const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
-const CRM_SERVICE_URL     = process.env.CRM_SERVICE_URL     || 'http://crm-service.railway.internal:8080';
-const INTERNAL_SECRET     = process.env.INTERNAL_SECRET     || 'plamev-internal';
 const HISTORY_LIMIT       = 30;
 const KB_CHAR_LIMIT       = 8000;
 
-// ── Utilitário HTTP ───────────────────────────────────────────
-function postJson(url: string, body: any, headers: Record<string, string> = {}): Promise<any> {
-  return new Promise((resolve, reject) => {
-    let parsed: URL;
-    try { parsed = new URL(url); } catch { return reject(new Error(`URL inválida: ${url}`)); }
-    const lib = parsed.protocol === 'https:' ? https : http;
-    const b = JSON.stringify(body);
-    const req = lib.request({
-      hostname: parsed.hostname,
-      port: parsed.port ? parseInt(parsed.port) : undefined,
-      path: parsed.pathname + (parsed.search || ''),
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b), ...headers },
-    }, res => {
-      let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({}); } });
-    });
-    req.on('error', reject);
-    req.setTimeout(10000, () => { req.destroy(); reject(new Error('Timeout')); });
-    req.write(b);
-    req.end();
-  });
-}
-
 // ── 1. Histórico de mensagens ─────────────────────────────────
-async function buscarHistorico(phone: string, canal: string): Promise<ChatMessage[]> {
+async function buscarHistorico(orgId: string, phone: string, canal: string): Promise<ChatMessage[]> {
   try {
     const { rows } = await pool.query(`
       SELECT m.role, m.conteudo
       FROM mensagens m
       JOIN conversas c ON c.id = m.conversa_id
       WHERE c.numero_externo = $1
-        AND c.canal = $2
+        AND c.org_id = $2
+        AND c.canal = $3
         AND c.status = 'ativa'
         AND m.role IN ('user', 'agent')
       ORDER BY m.timestamp DESC
-      LIMIT $3
-    `, [phone, canal, HISTORY_LIMIT]);
+      LIMIT $4
+    `, [phone, orgId, canal, HISTORY_LIMIT]);
     return rows.reverse().map((r: any) => ({
       role: r.role === 'agent' ? 'assistant' : 'user',
       content: r.conteudo,
@@ -68,28 +41,21 @@ async function buscarHistorico(phone: string, canal: string): Promise<ChatMessag
 }
 
 // ── 2. Soul (system prompt) do agente ────────────────────────
-async function buscarSoul(agentSlug: string): Promise<string | null> {
+async function buscarSoul(agentId: string): Promise<string | null> {
   try {
     const { rows } = await pool.query(`
-      SELECT ap.conteudo
-      FROM agente_prompts ap
-      JOIN agentes a ON a.id = ap.agent_id
-      WHERE a.slug = $1 AND ap.tipo = 'soul' AND ap.ativo = true
+      SELECT conteudo
+      FROM agente_prompts
+      WHERE agent_id = $1 AND tipo = 'soul' AND ativo = true
       LIMIT 1
-    `, [agentSlug]);
+    `, [agentId]);
     return rows[0]?.conteudo || null;
   } catch { return null; }
 }
 
 // ── 3. RAG: knowledge base via full-text search ───────────────
-async function buscarKnowledge(agentSlug: string, texto: string): Promise<{ conteudo: string; fontes: string[] }> {
+async function buscarKnowledge(agentId: string, texto: string): Promise<{ conteudo: string; fontes: string[] }> {
   try {
-    const { rows: ag } = await pool.query(
-      'SELECT id FROM agentes WHERE slug=$1 LIMIT 1', [agentSlug]
-    );
-    if (!ag[0]) return { conteudo: '', fontes: [] };
-    const agentId = ag[0].id;
-
     const { rows: sempre } = await pool.query(`
       SELECT titulo, arquivo, conteudo FROM knowledge_base_docs
       WHERE agent_id=$1 AND sempre_ativo=true AND ativo=true ORDER BY ordem
@@ -123,25 +89,38 @@ async function buscarKnowledge(agentSlug: string, texto: string): Promise<{ cont
   }
 }
 
-// ── PIPELINE PRINCIPAL ────────────────────────────────────────
-export async function processMessage(msg: InternalMessage) {
-  const start = Date.now();
-  const tag = `[PIPELINE] ${msg.canal}:${msg.phone}`;
-  console.log(`${tag} ▶ Início | texto="${(msg.texto || '').substring(0, 60)}"`);
+export interface PipelineRuntimeContext {
+  orgId: string;
+  agentConfig: ResolvedAgentRuntimeConfig;
+}
 
+// ── PIPELINE PRINCIPAL ────────────────────────────────────────
+export async function processMessage(msg: InternalMessage, runtimeContext?: PipelineRuntimeContext) {
+  const start = Date.now();
   const agentSlug = msg.agentSlug || 'mari';
+  const fallbackConfig = runtimeContext ? null : await resolverConfigRuntimeAgente(agentSlug);
+  const resolvedContext = runtimeContext || {
+    agentConfig: fallbackConfig!,
+    orgId: fallbackConfig!.org_id,
+  };
+  const config = resolvedContext.agentConfig;
+  const orgId = resolvedContext.orgId || config.org_id;
+  const tag = `[PIPELINE] ${orgId}:${msg.canal}:${msg.phone}`;
+  console.log(`${tag} ▶ Início | texto="${(msg.texto || '').substring(0, 60)}"`);
 
   // Langfuse: inicia trace para esta mensagem
   const trace = langfuse.trace({
     name:      'message-pipeline',
     userId:    msg.phone,
     sessionId: `${msg.canal}:${msg.phone}`,
-    tags:      [msg.canal, agentSlug, 'production'],
+    tags:      [msg.canal, agentSlug, orgId, 'production'],
     input:     msg.texto || '',
     metadata:  {
+      orgId,
       canal:     msg.canal,
       phone:     msg.phone,
       agentSlug,
+      agentId:   config.id,
       instancia: msg.instancia,
       nome:      msg.nome,
     },
@@ -181,13 +160,13 @@ export async function processMessage(msg: InternalMessage) {
   const t2 = Date.now();
   const ctxSpan = trace.span({
     name:  '2-context-load',
-    input: { agentSlug, phone: msg.phone, canal: msg.canal },
+    input: { agentSlug, orgId, phone: msg.phone, canal: msg.canal },
   });
 
   const [soulPrompt, historico, kb] = await Promise.all([
-    buscarSoul(agentSlug),
-    buscarHistorico(msg.phone, msg.canal),
-    buscarKnowledge(agentSlug, msg.texto || ''),
+    buscarSoul(config.id),
+    buscarHistorico(orgId, msg.phone, msg.canal),
+    buscarKnowledge(config.id, msg.texto || ''),
   ]);
 
   ctxSpan.end({
@@ -211,7 +190,7 @@ export async function processMessage(msg: InternalMessage) {
 
   // ── ETAPA 3: System prompt ────────────────────────────────
   const baseSoul = soulPrompt ||
-    `Você é a Mari, assistente virtual da Plamev, plano de saúde para pets. Seja simpática, objetiva e natural em português. Não se apresente se já há histórico de conversa.`;
+    `Você é ${config.nome || 'a assistente virtual da Plamev'}, assistente virtual da Plamev, plano de saúde para pets. Seja simpática, objetiva e natural em português. Não se apresente se já há histórico de conversa.`;
 
   const systemPrompt = kb.conteudo
     ? `${baseSoul}\n\n# BASE DE CONHECIMENTO\n${kb.conteudo}`
@@ -225,16 +204,6 @@ export async function processMessage(msg: InternalMessage) {
   console.log(`${tag} [3/7] Prompt | ${messages.length} msgs (${systemPrompt.length} chars system)`);
 
   // ── ETAPA 4: Geração LLM ──────────────────────────────────
-  const config = {
-    id:          'agent123',
-    org_id:      'org123',
-    slug:        agentSlug,
-    nome:        'Mari',
-    provider:    'anthropic',
-    model:       'claude-haiku-4-5-20251001',
-    guard_model: 'claude-haiku-4-5-20251001',
-  };
-
   // Preços Claude Haiku 4.5 (USD por token)
   const PRICE_INPUT  = 0.80  / 1_000_000;
   const PRICE_OUTPUT = 4.00  / 1_000_000;
@@ -249,8 +218,8 @@ export async function processMessage(msg: InternalMessage) {
     model:           config.model,
     startTime:       llmStartTime,
     input:           [{ role: 'system', content: systemPrompt }, ...messages],
-    modelParameters: { provider: config.provider, temperature: 0.7 },
-    metadata:        { agentSlug, canal: msg.canal },
+    modelParameters: { provider: config.provider, temperature: config.temperature },
+    metadata:        { agentSlug, agentId: config.id, orgId, canal: msg.canal, llmConfigId: config.llmConfigId, configSources: config.sources },
   });
 
   const generation = await generateResponse(systemPrompt, messages, config);
@@ -318,11 +287,7 @@ export async function processMessage(msg: InternalMessage) {
   console.log(`${tag} [6/7] Enviando: "${resposta.substring(0, 80)}..."`);
   const sendSpan = trace.span({ name: '6-send-response', input: { canal: msg.canal, phone: msg.phone } });
   try {
-    await postJson(
-      `${CHANNEL_SERVICE_URL}/internal/send`,
-      { message: msg, resposta },
-      { 'x-internal-secret': INTERNAL_SECRET }
-    );
+    await sendResponse(msg, resposta);
     sendSpan.end({ output: { ok: true }, metadata: { latency_ms: Date.now() - t6 } });
     console.log(`${tag} ✅ Resposta entregue`);
   } catch (e: any) {
@@ -334,11 +299,7 @@ export async function processMessage(msg: InternalMessage) {
   const t7 = Date.now();
   const crmSpan = trace.span({ name: '7-persist-crm', input: { phone: msg.phone, canal: msg.canal } });
   try {
-    await postJson(
-      `${CRM_SERVICE_URL}/api/internal/salvar-interacao`,
-      { message: msg, resposta },
-      { 'x-internal-secret': INTERNAL_SECRET }
-    );
+    await persistInteraction(msg, resposta);
     crmSpan.end({ output: { ok: true }, metadata: { latency_ms: Date.now() - t7 } });
     console.log(`${tag} [7/7] Persistido no CRM`);
   } catch (e: any) {

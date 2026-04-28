@@ -217,20 +217,20 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
   }
   res.json({ ok: true }); // responde antes de salvar para não bloquear
   try {
-    const ORG_ID = '00000000-0000-0000-0000-000000000000';
     const phone    = String(message.phone);
     const canal    = message.canal;
     const agentSlug = message.agentSlug || 'mari';
     const nome     = message.nome || null;
-    const texto    = message.texto || '';
+    const texto    = (req.body?.input_text_override || message.texto || '').toString();
     const instancia = message.instancia || null;
     const senderChip = message.senderChip || null;
     const jid      = message.jid || null;
     const msgIdExterno = message.id || null;
 
     // 1. Resolve agent_id
-    const agente = await queryOne<any>('SELECT id FROM agentes WHERE slug=$1 LIMIT 1', [agentSlug]);
+    const agente = await queryOne<any>('SELECT id, org_id FROM agentes WHERE slug=$1 LIMIT 1', [agentSlug]);
     const agentId = agente?.id;
+    const orgId = agente?.org_id || '00000000-0000-0000-0000-000000000000';
     if (!agentId) { console.warn(`[INTERNAL] agente não encontrado: ${agentSlug}`); return; }
 
     // 2. Upsert cliente via phone
@@ -245,7 +245,7 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
     } else {
       const novoCliente = await queryOne<any>(
         `INSERT INTO clientes (nome, origem, org_id) VALUES ($1,'whatsapp',$2) RETURNING id`,
-        [nome, ORG_ID]
+        [nome, orgId]
       );
       clientId = novoCliente!.id;
       await execute(
@@ -257,7 +257,7 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
     // 3. Upsert conversa ativa
     let conversa = await queryOne<any>(
       `SELECT id FROM conversas WHERE client_id=$1 AND agent_id=$2 AND canal=$3 AND org_id=$4 AND status='ativa' ORDER BY criado_em DESC LIMIT 1`,
-      [clientId, agentId, canal, ORG_ID]
+      [clientId, agentId, canal, orgId]
     );
     let conversaId: string;
     if (conversa) {
@@ -266,7 +266,7 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
       const nova = await queryOne<any>(
         `INSERT INTO conversas (client_id, agent_id, canal, numero_externo, jid, instancia_whatsapp, sender_chip, org_id, status, etapa)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ativa','acolhimento') RETURNING id`,
-        [clientId, agentId, canal, phone, jid, instancia, senderChip, ORG_ID]
+        [clientId, agentId, canal, phone, jid, instancia, senderChip, orgId]
       );
       conversaId = nova!.id;
     }

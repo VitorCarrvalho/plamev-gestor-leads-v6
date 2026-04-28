@@ -2,6 +2,7 @@
  * db/index.ts — Wrapper PostgreSQL (Agent AI)
  * Multi-tenancy habilitado (orgId obrigatório).
  */
+import { AgentConfig } from '@plamev/shared';
 import { config } from 'dotenv';
 import { Pool } from 'pg';
 import path from 'path';
@@ -10,6 +11,9 @@ config({ path: path.join(__dirname, '../.env') });
 
 const DB_URL = process.env.DATABASE_URL || 'postgresql://geta@localhost:5432/mariv3';
 export const pool = new Pool({ connectionString: DB_URL });
+const DEFAULT_ORG_ID = process.env.DEFAULT_ORG_ID || '00000000-0000-0000-0000-000000000000';
+const DEFAULT_PROVIDER = 'anthropic';
+const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 
 pool.on('error', (err) => console.error('[DB] Erro no pool:', err.message));
 
@@ -133,6 +137,93 @@ export async function atualizarPerfil(orgId: string, clientId: string, dados: Re
 // ── Agente ─────────────────────────────────────────────────────
 export async function buscarAgente(orgId: string, slug: string) {
   return one('SELECT * FROM agentes WHERE org_id=$1 AND slug=$2 AND ativo=true', [orgId, slug]);
+}
+
+export interface ResolvedAgentRuntimeConfig extends AgentConfig {
+  temperature: number;
+  maxTokens: number;
+  llmConfigId: number | null;
+  sources: {
+    orgId: 'agent' | 'default';
+    provider: 'llm_config' | 'agent' | 'fallback';
+    model: 'agent_modelo_principal' | 'llm_config' | 'agent_model' | 'fallback';
+    guardModel: 'agent_guard_model' | 'model' | 'fallback';
+  };
+}
+
+export async function buscarOrgPadrao() {
+  const org = await one(
+    `SELECT id
+     FROM organizations
+     WHERE ativo = TRUE
+     ORDER BY CASE WHEN slug = 'plamev' THEN 0 ELSE 1 END, criado_em ASC
+     LIMIT 1`
+  );
+  return org?.id || DEFAULT_ORG_ID;
+}
+
+export async function resolverOrgId(agentSlug = 'mari') {
+  const agente = await one(
+    'SELECT org_id FROM agentes WHERE slug=$1 AND ativo=TRUE LIMIT 1',
+    [agentSlug]
+  );
+  if (agente?.org_id) return agente.org_id;
+  return buscarOrgPadrao();
+}
+
+export async function buscarLLMPadrao(orgId: string) {
+  return one(
+    `SELECT id, provedor, modelo, temperatura, max_tokens
+     FROM llm_configs
+     WHERE org_id=$1 AND ativo=TRUE
+     ORDER BY padrao DESC, id ASC
+     LIMIT 1`,
+    [orgId]
+  );
+}
+
+export async function resolverConfigRuntimeAgente(agentSlug = 'mari', orgId?: string): Promise<ResolvedAgentRuntimeConfig> {
+  const resolvedOrgId = orgId || await resolverOrgId(agentSlug);
+  const agente = await one(
+    `SELECT id, org_id, slug, nome, provider, model, guard_model, modelo_principal, temperatura
+     FROM agentes
+     WHERE org_id=$1 AND slug=$2 AND ativo=TRUE
+     LIMIT 1`,
+    [resolvedOrgId, agentSlug]
+  );
+  if (!agente) throw new Error(`Agente não encontrado para slug=${agentSlug} org=${resolvedOrgId}`);
+
+  const llmPadrao = await buscarLLMPadrao(resolvedOrgId);
+
+  // Prioridade para coerência com o painel: modelo do agente, depois LLM padrão da org.
+  const provider = llmPadrao?.provedor || agente.provider || DEFAULT_PROVIDER;
+  const model = agente.modelo_principal || llmPadrao?.modelo || agente.model || DEFAULT_MODEL;
+  const guardModel = agente.guard_model || model || DEFAULT_MODEL;
+
+  return {
+    id: String(agente.id),
+    org_id: agente.org_id,
+    slug: agente.slug,
+    nome: agente.nome || agentSlug,
+    provider,
+    model,
+    guard_model: guardModel,
+    temperature: Number(agente.temperatura ?? llmPadrao?.temperatura ?? 0.7),
+    maxTokens: Number(llmPadrao?.max_tokens ?? 4096),
+    llmConfigId: llmPadrao?.id ?? null,
+    sources: {
+      orgId: orgId ? 'agent' : (agente?.org_id ? 'agent' : 'default'),
+      provider: llmPadrao?.provedor ? 'llm_config' : (agente.provider ? 'agent' : 'fallback'),
+      model: agente.modelo_principal
+        ? 'agent_modelo_principal'
+        : llmPadrao?.modelo
+          ? 'llm_config'
+          : agente.model
+            ? 'agent_model'
+            : 'fallback',
+      guardModel: agente.guard_model ? 'agent_guard_model' : model ? 'model' : 'fallback',
+    },
+  };
 }
 
 // ── Outros (Simplificados para compilar) ──────────────────────
