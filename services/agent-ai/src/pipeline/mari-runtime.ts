@@ -135,10 +135,13 @@ Etapa atual: ${stage}
   return sections.filter(Boolean).join('\n\n');
 }
 
-export function buildGreetingResponse(conversaAtual?: ConversationSnapshot | null) {
+export function buildGreetingResponse(conversaAtual?: ConversationSnapshot | null, isFirstContact = false) {
   const tutor = conversaAtual?.tutor_nome?.trim();
   const pet = conversaAtual?.nome_pet?.trim();
   const greeting = tutor ? `Boa tarde, ${tutor}! 😊` : 'Boa tarde! 😊';
+  if (isFirstContact) {
+    return `${greeting}\nSou a Mari, especialista da Plamev 🐾\nComo posso te ajudar hoje?`;
+  }
   const followup = pet
     ? `Como posso te ajudar com o ${pet}?`
     : 'Como posso te ajudar?';

@@ -178,7 +178,10 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   const catalogIntent = detectCatalogIntent(msg.texto || '');
   const priceIntent = detectPriceIntent(msg.texto || '');
   const topicalPlanMessage = /(plano|planos|pre[cç]o|valor|cobertura|car[eê]ncia|rede|consulta|exame|cirurgia|manual|pdf)/i.test(msg.texto || '');
-  const includePlanContext = !greetingOnly && (catalogIntent || priceIntent || topicalPlanMessage);
+  const CATALOG_STAGES = ['apresentacao_planos', 'qualificacao', 'negociacao', 'pre_fechamento', 'fechamento'];
+  const stageRequiresCatalog = CATALOG_STAGES.includes(conversaAtual?.etapa || '');
+  const includePlanContext = !greetingOnly && (catalogIntent || priceIntent || topicalPlanMessage || stageRequiresCatalog);
+  const isFirstContact = historico.length === 0 && !conversaAtual?.tutor_nome;
   const kb = await searchKnowledge(msg.texto || '', orgId, config.id, 5, {
     stage: targetStage,
   });
@@ -234,7 +237,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   console.log(`${tag} [3/7] Prompt | ${messages.length} msgs (${systemPrompt.length} chars system)`);
 
   if (greetingOnly) {
-    const greetingResponse = buildGreetingResponse(conversaAtual);
+    const greetingResponse = buildGreetingResponse(conversaAtual, isFirstContact);
     console.log(`${tag} [3.2/7] Saudação determinística acionada`);
     await sendResponse(msg, greetingResponse);
     await persistInteraction(msg, greetingResponse);
