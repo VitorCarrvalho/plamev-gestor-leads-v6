@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import { isDuplicate, messageQueue } from '../utils/redis';
+import { isDuplicate, messageQueue, redisClient } from '../utils/redis';
 import { normalizeMessage } from '../utils/normalizer';
 import { enviar } from '../services/sender';
 
 const router = Router();
+
+const DEBOUNCE_DELAY_MS = 8000; // espera 8s após a última mensagem antes de processar
 
 // Middleware to validate HMAC signature from Gateway
 const validateHmac = (req: Request, res: Response, next: any) => {
@@ -25,7 +27,6 @@ const validateHmac = (req: Request, res: Response, next: any) => {
 async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
   const logPrefix = `[WH] event=${body.event || '?'} instance=${body.instance || body.instanceName || '?'}`;
 
-  // Ignorar mensagens enviadas pelo próprio chip
   if (item.key?.fromMe === true) {
     console.log(`${logPrefix} → ignorado (fromMe=true)`);
     return;
@@ -38,7 +39,7 @@ async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
     return;
   }
 
-  // Ignorar mensagens históricas (sincronização) — mais de 5 minutos
+  // Ignorar mensagens históricas — mais de 5 minutos
   const msgTimestamp = item.messageTimestamp || item.message?.messageContextInfo?.messageTimestamp || 0;
   const agora = Math.floor(Date.now() / 1000);
   if (msgTimestamp && (agora - msgTimestamp) > 300) {
@@ -106,19 +107,34 @@ async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
     agentSlug,
   });
 
-  console.log(`[CHANNEL-SERVICE] 📱 Enfileirando WA: ${phone} | instancia=${instancia} | "${texto.substring(0, 40)}"`);
+  // ── DEBOUNCE: acumula mensagens do mesmo usuário numa lista Redis ──
+  const listKey = `debounce:msgs:${msg.canal}:${msg.phone}`;
+  await redisClient.rpush(listKey, JSON.stringify(msg));
+  await redisClient.expire(listKey, 120); // TTL de 2 min
 
+  // Cancela job anterior (se ainda estiver delayed) e cria novo com delay resetado
+  const debounceId = `debounce:${msg.canal}:${msg.phone}`;
   try {
-    await messageQueue.add('process-message', { message: msg }, {
-      jobId: `msg:${msg.canal}:${msg.id}`,
-      delay: 5000,
+    const existing = await messageQueue.getJob(debounceId);
+    if (existing) {
+      const state = await existing.getState();
+      if (state === 'delayed' || state === 'waiting') {
+        await existing.remove();
+      }
+    }
+  } catch { /* ignora se não encontrar */ }
+
+  await messageQueue.add('process-message',
+    { debounce: true, phone: msg.phone, canal: msg.canal, agentSlug: msg.agentSlug },
+    {
+      jobId: debounceId,
+      delay: DEBOUNCE_DELAY_MS,
       removeOnComplete: true,
       removeOnFail: false,
-    });
-    console.log(`[CHANNEL-SERVICE] ✅ Job enfileirado: msg:whatsapp:${msg.id}`);
-  } catch (qErr: any) {
-    console.error(`[CHANNEL-SERVICE] ❌ Falha ao enfileirar (Redis?): ${qErr.message}`);
-  }
+    }
+  );
+
+  console.log(`[CHANNEL-SERVICE] 📱 Acumulado WA: ${phone} | "${texto.substring(0, 40)}" | debounce=${DEBOUNCE_DELAY_MS}ms`);
 }
 
 router.post('/whatsapp', validateHmac, async (req: Request, res: Response) => {
@@ -177,10 +193,7 @@ internalRouter.post('/send', async (req: Request, res: Response) => {
 });
 
 export function setupRoutes(app: any) {
-  // Health no nível raiz (não prefixado) para health checks do Railway/gateway
   app.get('/health', (_req: Request, res: Response) => res.json({ ok: true, service: 'channel-service' }));
-  // Webhooks externos: Evolution API e outros canais postam aqui
   app.use('/webhooks', router);
-  // Rotas internas: agent-ai → channel-service
   app.use('/internal', internalRouter);
 }

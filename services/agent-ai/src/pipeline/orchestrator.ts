@@ -8,10 +8,12 @@ import { logInteraction } from './interaction-logger';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
 
 const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
-const CRM_SERVICE_URL = process.env.CRM_SERVICE_URL || 'http://crm-service.railway.internal:8080';
-const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
-const HISTORY_LIMIT = 30; // últimas N mensagens como contexto
+const CRM_SERVICE_URL     = process.env.CRM_SERVICE_URL     || 'http://crm-service.railway.internal:8080';
+const INTERNAL_SECRET     = process.env.INTERNAL_SECRET     || 'plamev-internal';
+const HISTORY_LIMIT       = 30;   // últimas N mensagens de histórico
+const KB_CHAR_LIMIT       = 8000; // limite de chars de knowledge base injetados
 
+// ── Utilitário HTTP ───────────────────────────────────────────
 function postJson(url: string, body: any, headers: Record<string, string> = {}): Promise<any> {
   return new Promise((resolve, reject) => {
     let parsed: URL;
@@ -36,10 +38,11 @@ function postJson(url: string, body: any, headers: Record<string, string> = {}):
   });
 }
 
+// ── 1. Busca histórico de mensagens da conversa ativa ─────────
 async function buscarHistorico(phone: string, canal: string): Promise<ChatMessage[]> {
   try {
     const { rows } = await pool.query(`
-      SELECT m.role, m.conteudo, m.enviado_por
+      SELECT m.role, m.conteudo
       FROM mensagens m
       JOIN conversas c ON c.id = m.conversa_id
       WHERE c.numero_externo = $1
@@ -49,19 +52,18 @@ async function buscarHistorico(phone: string, canal: string): Promise<ChatMessag
       ORDER BY m.timestamp DESC
       LIMIT $3
     `, [phone, canal, HISTORY_LIMIT]);
-
-    // Retorna em ordem cronológica (mais antigo primeiro)
     return rows.reverse().map((r: any) => ({
       role: r.role === 'agent' ? 'assistant' : 'user',
       content: r.conteudo,
     } as ChatMessage));
   } catch (e: any) {
-    console.warn(`[ORCHESTRATOR] ⚠️ Falha ao buscar histórico: ${e.message}`);
+    console.warn(`[PIPELINE] ⚠️ Histórico indisponível: ${e.message}`);
     return [];
   }
 }
 
-async function buscarSoulAgente(agentSlug: string): Promise<string | null> {
+// ── 2. Carrega soul (system prompt) do agente ─────────────────
+async function buscarSoul(agentSlug: string): Promise<string | null> {
   try {
     const { rows } = await pool.query(`
       SELECT ap.conteudo
@@ -71,44 +73,109 @@ async function buscarSoulAgente(agentSlug: string): Promise<string | null> {
       LIMIT 1
     `, [agentSlug]);
     return rows[0]?.conteudo || null;
-  } catch {
-    return null;
+  } catch { return null; }
+}
+
+// ── 3. RAG: busca documentos relevantes em knowledge_base_docs ─
+async function buscarKnowledge(agentSlug: string, texto: string): Promise<{ conteudo: string; fontes: string[] }> {
+  try {
+    // Resolve agent_id
+    const { rows: ag } = await pool.query(
+      'SELECT id FROM agentes WHERE slug=$1 LIMIT 1', [agentSlug]
+    );
+    if (!ag[0]) return { conteudo: '', fontes: [] };
+    const agentId = ag[0].id;
+
+    // Docs sempre ativos (identidade, regras absolutas, etc.)
+    const { rows: sempre } = await pool.query(`
+      SELECT titulo, arquivo, conteudo
+      FROM knowledge_base_docs
+      WHERE agent_id=$1 AND sempre_ativo=true AND ativo=true
+      ORDER BY ordem
+    `, [agentId]);
+
+    // Docs relevantes via full-text search português
+    const palavrasChave = texto.slice(0, 200); // limita a query
+    const { rows: relevantes } = await pool.query(`
+      SELECT titulo, arquivo, conteudo
+      FROM knowledge_base_docs
+      WHERE agent_id=$1 AND ativo=true AND sempre_ativo=false
+        AND to_tsvector('portuguese', coalesce(titulo,'') || ' ' || coalesce(conteudo,''))
+            @@ plainto_tsquery('portuguese', $2)
+      ORDER BY ordem
+      LIMIT 8
+    `, [agentId, palavrasChave]).catch(() => ({ rows: [] }));
+
+    const todos = [...sempre, ...relevantes];
+    if (!todos.length) return { conteudo: '', fontes: [] };
+
+    // Concatena até o limite de chars
+    let totalChars = 0;
+    const partes: string[] = [];
+    const fontes: string[] = [];
+
+    for (const doc of todos) {
+      const bloco = `### ${doc.titulo || doc.arquivo}\n${doc.conteudo}`;
+      if (totalChars + bloco.length > KB_CHAR_LIMIT) break;
+      partes.push(bloco);
+      fontes.push(doc.arquivo);
+      totalChars += bloco.length;
+    }
+
+    return { conteudo: partes.join('\n\n'), fontes };
+  } catch (e: any) {
+    console.warn(`[PIPELINE] ⚠️ Knowledge base indisponível: ${e.message}`);
+    return { conteudo: '', fontes: [] };
   }
 }
 
+// ── PIPELINE PRINCIPAL ────────────────────────────────────────
 export async function processMessage(msg: InternalMessage) {
   const start = Date.now();
-  console.log(`[ORCHESTRATOR] 🚀 Iniciando processamento para ${msg.phone}`);
+  const tag = `[PIPELINE] ${msg.canal}:${msg.phone}`;
+  console.log(`${tag} ▶ Início | texto="${(msg.texto || '').substring(0, 60)}"`);
 
-  // 1. Input Guard
+  // ── ETAPA 1: Input Guard ──────────────────────────────────
   const guardResult = await checkInputGuard(msg);
+  console.log(`${tag} [1/7] InputGuard → action=${guardResult.action} intent=${guardResult.intent} (${guardResult.latencyMs}ms)`);
+
   if (guardResult.action === 'drop') {
-    console.log(`[ORCHESTRATOR] 🛑 Mensagem descartada: ${guardResult.intent}`);
+    console.log(`${tag} 🛑 Mensagem descartada pelo guard`);
     return;
   }
   if (guardResult.action === 'escalate') {
-    console.log(`[ORCHESTRATOR] 🚨 Escalonamento: ${guardResult.intent}`);
+    console.log(`${tag} 🚨 Escalando para humano`);
+    // TODO: notificar supervisor
     return;
   }
 
-  // 2. Buscar soul do agente e histórico em paralelo
-  const [soulPrompt, historico] = await Promise.all([
-    buscarSoulAgente(msg.agentSlug || 'mari'),
+  // ── ETAPA 2: Carregar contexto em paralelo ────────────────
+  const [soulPrompt, historico, kb] = await Promise.all([
+    buscarSoul(msg.agentSlug || 'mari'),
     buscarHistorico(msg.phone, msg.canal),
+    buscarKnowledge(msg.agentSlug || 'mari', msg.texto || ''),
   ]);
 
-  const systemPrompt = soulPrompt ||
-    `Você é a Mari, assistente virtual da Plamev, plano de saúde para pets. Seja simpática, objetiva e ajude o cliente. Responda de forma natural em português. Não se apresente se já tiver contexto de conversa anterior.`;
+  console.log(`${tag} [2/7] Contexto | soul=${soulPrompt ? 'DB' : 'fallback'} | histórico=${historico.length}msgs | kb=${kb.fontes.length} docs (${kb.conteudo.length} chars)`);
+  if (kb.fontes.length) console.log(`${tag}     KB fontes: ${kb.fontes.join(', ')}`);
 
-  console.log(`[ORCHESTRATOR] 📜 Histórico: ${historico.length} msgs | Soul: ${soulPrompt ? 'DB' : 'fallback'}`);
+  // ── ETAPA 3: Montar system prompt ─────────────────────────
+  const baseSoul = soulPrompt ||
+    `Você é a Mari, assistente virtual da Plamev, plano de saúde para pets. Seja simpática, objetiva e natural em português. Não se apresente se já há histórico de conversa.`;
 
-  // 3. Monta messages com histórico + mensagem atual
-  const textoAtual = msg.texto || '';
+  const systemPrompt = kb.conteudo
+    ? `${baseSoul}\n\n# BASE DE CONHECIMENTO\n${kb.conteudo}`
+    : baseSoul;
+
+  // ── ETAPA 4: Montar messages com histórico ────────────────
   const messages: ChatMessage[] = [
     ...historico,
-    { role: 'user', content: textoAtual },
+    { role: 'user', content: msg.texto || '' },
   ];
 
+  console.log(`${tag} [3/7] Prompt montado | ${messages.length} msgs total (${systemPrompt.length} chars system)`);
+
+  // ── ETAPA 5: Geração LLM ──────────────────────────────────
   const config = {
     id: 'agent123',
     org_id: 'org123',
@@ -119,58 +186,56 @@ export async function processMessage(msg: InternalMessage) {
     guard_model: 'claude-haiku-4-5-20251001',
   };
 
-  // 4. Geração LLM
-  const generationStart = Date.now();
+  const t4 = Date.now();
   const generation = await generateResponse(systemPrompt, messages, config);
-  const generationLatency = Date.now() - generationStart;
+  console.log(`${tag} [4/7] LLM gerou em ${Date.now() - t4}ms | tokens_in=${generation?._uso?.input_tokens} out=${generation?._uso?.output_tokens}`);
 
   if (!generation) {
-    console.warn(`[ORCHESTRATOR] ⚠️ Geração falhou`);
+    console.warn(`${tag} ⚠️ Geração retornou null`);
     return;
   }
 
-  // 5. Output Guard
-  const outputGuardStart = Date.now();
+  // ── ETAPA 6: Output Guard ─────────────────────────────────
+  const t5 = Date.now();
   const validation = await validateClaims(generation, systemPrompt, config.guard_model);
-  const outputGuardLatency = Date.now() - outputGuardStart;
+  console.log(`${tag} [5/7] OutputGuard → válido=${validation.isValid} (${Date.now() - t5}ms)${!validation.isValid ? ' | ' + validation.reason : ''}`);
 
   if (!validation.isValid) {
-    console.error(`[ORCHESTRATOR] 🚫 Alucinação detectada: ${validation.reason}`);
     generation.resposta = 'Deixa eu confirmar essa informação pra você, só um minutinho...';
   }
 
   const resposta = generation.resposta;
   if (!resposta) {
-    console.warn(`[ORCHESTRATOR] ⚠️ Resposta vazia`);
+    console.warn(`${tag} ⚠️ Resposta vazia`);
     return;
   }
 
-  console.log(`[ORCHESTRATOR] 💬 Resposta (${generationLatency}ms): "${resposta.substring(0, 60)}..."`);
-
-  // 6. Enviar via channel-service
+  // ── ETAPA 7: Enviar resposta ──────────────────────────────
+  console.log(`${tag} [6/7] Enviando: "${resposta.substring(0, 80)}..."`);
   try {
     await postJson(
       `${CHANNEL_SERVICE_URL}/internal/send`,
       { message: msg, resposta },
       { 'x-internal-secret': INTERNAL_SECRET }
     );
-    console.log(`[ORCHESTRATOR] ✅ Resposta entregue`);
-  } catch (sendErr: any) {
-    console.error(`[ORCHESTRATOR] ❌ Falha ao entregar: ${sendErr.message}`);
+    console.log(`${tag} ✅ Resposta entregue ao channel-service`);
+  } catch (e: any) {
+    console.error(`${tag} ❌ Falha ao entregar resposta: ${e.message}`);
   }
 
-  // 7. Persiste no CRM
+  // ── ETAPA 8: Persistir no CRM ─────────────────────────────
   try {
     await postJson(
       `${CRM_SERVICE_URL}/api/internal/salvar-interacao`,
       { message: msg, resposta },
       { 'x-internal-secret': INTERNAL_SECRET }
     );
-  } catch (crmErr: any) {
-    console.error(`[ORCHESTRATOR] ❌ Falha ao salvar no CRM: ${crmErr.message}`);
+    console.log(`${tag} [7/7] Persistido no CRM`);
+  } catch (e: any) {
+    console.error(`${tag} ❌ Falha ao salvar no CRM: ${e.message}`);
   }
 
-  // 8. Log de métricas
+  // ── Log de métricas ───────────────────────────────────────
   await logInteraction({
     thread_id: msg.phone,
     total_latency_ms: Date.now() - start,
@@ -180,5 +245,5 @@ export async function processMessage(msg: InternalMessage) {
     model: config.model,
   });
 
-  console.log(`[ORCHESTRATOR] ✅ Concluído em ${Date.now() - start}ms`);
+  console.log(`${tag} ✅ Pipeline completo em ${Date.now() - start}ms`);
 }
