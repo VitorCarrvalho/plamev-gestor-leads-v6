@@ -63,7 +63,7 @@ export function detectGreetingOnly(text: string) {
     .trim();
 
   if (!normalized) return false;
-  if (/(plano|planos|pre[cç]o|valor|quanto custa|cobertura|car[eê]ncia|rede|consulta|exame|cirurgia|me explica|quero saber|quais)/i.test(normalized)) {
+  if (/(plano|planos|pre[cç]o|valor|quanto custa|cobertura|car[eê]ncia|rede|consulta|exame|cirurgia|me explica|quais)/i.test(normalized)) {
     return false;
   }
 
