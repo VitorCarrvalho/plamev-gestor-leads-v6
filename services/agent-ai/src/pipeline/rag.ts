@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { RagResult } from '@plamev/shared';
 import { VoyageAIClient } from 'voyageai';
+import { buscarKnowledge as buscarKnowledgeEstruturado } from '../db';
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -8,7 +9,51 @@ export const pool = new Pool({
 
 const KB_CHAR_LIMIT = 8000;
 
-type RagMode = 'vector_rerank' | 'full_text_fallback' | 'none';
+type RagMode = 'vector_rerank' | 'full_text_fallback' | 'structured_fallback' | 'none';
+
+const BASE_PATHS = [
+  'Mari/Identidade',
+  'Mari/Tom-e-Fluxo',
+  'Mari/Anti-Repeticao',
+  'Plamev/Empresa',
+];
+
+const STAGE_PATHS: Record<string, string[]> = {
+  acolhimento: ['Mari/Modo-Rapido', 'Mari/Qualificacao', 'Vendas/Etapas'],
+  qualificacao: ['Mari/Qualificacao', 'Vendas/Etapas'],
+  apresentacao_planos: ['Plamev/Planos', 'Plamev/Recomendacao-Plano', 'Plamev/Precos-Estrategia', 'Plamev/Planos-Plus', 'Mari/Apresentacao', 'Vendas/Etapas'],
+  validacao_cep: ['Plamev/Planos', 'Plamev/Empresa', 'Vendas/Etapas'],
+  negociacao: ['Vendas/Negociacao', 'Vendas/Negociacao-Inteligente', 'Vendas/Objecoes', 'Plamev/Precos-Estrategia', 'Vendas/Etapas'],
+  objecao: ['Vendas/Objecoes', 'Vendas/Negociacao-Inteligente', 'Plamev/Precos-Estrategia', 'Vendas/Etapas'],
+  pre_fechamento: ['Plamev/Planos', 'Plamev/Recomendacao-Plano', 'Vendas/Negociacao', 'Vendas/Etapas'],
+  fechamento: ['Plamev/Planos', 'Plamev/Recomendacao-Plano', 'Vendas/Etapas'],
+};
+
+function inferExtraPaths(query: string) {
+  const text = query.toLowerCase();
+  const extras = new Set<string>();
+
+  if (/(plano|planos|pre[cç]o|precos|valor|quanto custa|quais vc tem|quais vocês têm|me explica quais)/i.test(text)) {
+    extras.add('Plamev/Planos');
+    extras.add('Plamev/Recomendacao-Plano');
+    extras.add('Plamev/Precos-Estrategia');
+    extras.add('Plamev/Planos-Plus');
+    extras.add('Mari/Apresentacao');
+  }
+
+  if (/(cobertura|car[eê]ncia|rede|cl[ií]nica|veterin[aá]rio|hospital)/i.test(text)) {
+    extras.add('Plamev/Empresa');
+    extras.add('Plamev/Planos');
+  }
+
+  if (/(desconto|caro|condi[cç][aã]o|fecha hoje|promo[cç][aã]o)/i.test(text)) {
+    extras.add('Vendas/Objecoes');
+    extras.add('Vendas/Negociacao');
+    extras.add('Vendas/Negociacao-Inteligente');
+  }
+
+  return [...extras];
+}
 
 export interface KnowledgeContextResult {
   conteudo: string;
@@ -45,6 +90,30 @@ function formatKnowledgeDocs(docs: Array<{ text: string; source: string }>, char
     conteudo: partes.join('\n\n'),
     fontes,
   };
+}
+
+async function searchKnowledgeStructured(
+  agentId: string,
+  stage = 'acolhimento',
+  query = '',
+): Promise<RagResult[]> {
+  try {
+    const extrasPaths = [...new Set([
+      ...BASE_PATHS,
+      ...(STAGE_PATHS[stage] || []),
+      ...inferExtraPaths(query),
+    ])];
+
+    const docs = await buscarKnowledgeEstruturado(Number(agentId), stage, extrasPaths);
+    return docs.map((doc, index) => ({
+      text: doc.conteudo,
+      source: `${doc.pasta}/${doc.arquivo}`,
+      score: docs.length - index,
+    }));
+  } catch (error) {
+    console.error('[AGENT-AI] Erro no RAG estruturado:', error);
+    return [];
+  }
 }
 
 export async function searchKnowledgeVector(
@@ -149,27 +218,36 @@ export async function searchKnowledge(
   orgId: string,
   agentId: string,
   limit = 5,
+  options?: { stage?: string },
 ): Promise<KnowledgeContextResult> {
   const start = Date.now();
+  const stage = options?.stage || 'acolhimento';
+  const structuredDocs = await searchKnowledgeStructured(agentId, stage, query);
 
   const vectorDocs = await searchKnowledgeVector(query, orgId, agentId, limit);
   if (vectorDocs.length > 0) {
-    const formatted = formatKnowledgeDocs(vectorDocs.map((doc) => ({ text: doc.text, source: doc.source })));
+    const mergedDocs = [...structuredDocs, ...vectorDocs].filter((doc, index, arr) =>
+      arr.findIndex((item) => item.source === doc.source) === index
+    );
+    const formatted = formatKnowledgeDocs(mergedDocs.map((doc) => ({ text: doc.text, source: doc.source })));
     return {
       ...formatted,
-      docs: vectorDocs,
+      docs: mergedDocs,
       mode: 'vector_rerank',
       latencyMs: Date.now() - start,
     };
   }
 
   const fullTextDocs = await searchKnowledgeFullText(query, agentId, 8);
-  if (fullTextDocs.length > 0) {
-    const formatted = formatKnowledgeDocs(fullTextDocs.map((doc) => ({ text: doc.text, source: doc.source })));
+  const fallbackDocs = [...structuredDocs, ...fullTextDocs].filter((doc, index, arr) =>
+    arr.findIndex((item) => item.source === doc.source) === index
+  );
+  if (fallbackDocs.length > 0) {
+    const formatted = formatKnowledgeDocs(fallbackDocs.map((doc) => ({ text: doc.text, source: doc.source })));
     return {
       ...formatted,
-      docs: fullTextDocs,
-      mode: 'full_text_fallback',
+      docs: fallbackDocs,
+      mode: fullTextDocs.length > 0 ? 'full_text_fallback' : 'structured_fallback',
       latencyMs: Date.now() - start,
     };
   }

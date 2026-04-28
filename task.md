@@ -165,6 +165,12 @@
 - [ ] Refinar com exemplos reais as regras de `coverage-without-rag-support` para evitar bloqueio excessivo em respostas seguras mas genéricas
 - [ ] Avaliar em etapa futura se o `services/judge.ts` deve entrar no caminho assíncrono oficial de auditoria pós-envio
 
+#### Ajuste comportamental apos a Etapa 7
+- [x] Corrigido loop de fallback repetido quando o output guard bloqueava respostas consecutivas sobre catálogo/produto
+- [x] O runtime principal agora injeta etapa atual da conversa e catálogo oficial de planos/preços no system prompt
+- [x] O RAG oficial passou a combinar recuperação por etapa/assunto com o caminho vetorial/full-text, reduzindo respostas fora da sequência comercial da Mari
+- [x] O output guard passou a bloquear menção de planos fora do catálogo oficial presente no contexto
+
 ### Etapa 8 — Criar smoke tests e verificacoes operacionais
 - [ ] Cobrir o funil principal de captacao e resposta
 - [ ] Formalizar checks minimos de saude do pipeline

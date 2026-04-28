@@ -32,6 +32,22 @@ function extractPrices(text: string): string[] {
     .map(normalizeCurrency);
 }
 
+function extractKnownPlanNames(text: string): string[] {
+  const matches = text.match(/##\s+([^\n(]+)\s+\([^)]+\)/g) || [];
+  return matches
+    .map((match) => match.replace(/^##\s+/, '').replace(/\s+\([^)]+\)$/, '').trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function detectMentionedPlanNames(text: string): string[] {
+  const knownCandidates = [
+    'slim', 'advance', 'platinum', 'diamond', 'plus',
+    'essencial', 'premium', 'gold', 'basico', 'básico',
+  ];
+  const lower = text.toLowerCase();
+  return knownCandidates.filter((name) => lower.includes(name));
+}
+
 export async function validateClaims(
   generation: GenerationResult,
   originalContext: string,
@@ -102,6 +118,20 @@ export async function validateClaims(
       isValid: false,
       reason: `Preço fora do contexto recuperado: ${pricesOutsideContext.join(', ')}`,
       rewrittenText: 'Quero te passar esse valor com segurança, então vou confirmar certinho antes de te responder.',
+      matchedRules,
+      severity: 'high',
+    };
+  }
+
+  const contextPlanNames = new Set(extractKnownPlanNames(originalContext));
+  const mentionedPlanNames = detectMentionedPlanNames(response);
+  const plansOutsideContext = mentionedPlanNames.filter((plan) => !contextPlanNames.has(plan));
+  if (plansOutsideContext.length > 0) {
+    matchedRules.push('plan-not-in-context');
+    return {
+      isValid: false,
+      reason: `Plano fora do catálogo oficial no contexto: ${plansOutsideContext.join(', ')}`,
+      rewrittenText: 'Quero te explicar só os planos oficiais da Plamev, então vou organizar isso certinho pra não te passar nada errado.',
       matchedRules,
       severity: 'high',
     };

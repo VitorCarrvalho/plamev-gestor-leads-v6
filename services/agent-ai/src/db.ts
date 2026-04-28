@@ -294,3 +294,50 @@ export async function buscarKnowledge(agentId: number, etapa: string, extrasPath
   ) as any[];
   return rows;
 }
+
+export async function buscarContextoConversaAtiva(orgId: string, phone: string, canal: string) {
+  return one(
+    `SELECT
+       c.id,
+       c.client_id,
+       c.etapa,
+       c.score,
+       c.status,
+       c.ia_silenciada,
+       cl.nome AS tutor_nome,
+       pp.nome AS nome_pet,
+       pp.especie,
+       pp.raca,
+       pp.idade_anos
+     FROM conversas c
+     JOIN clientes cl ON cl.id = c.client_id
+     LEFT JOIN perfil_pet pp ON pp.client_id = c.client_id
+     WHERE c.org_id = $1
+       AND c.numero_externo = $2
+       AND c.canal = $3
+       AND c.status = 'ativa'
+     ORDER BY c.ultima_interacao DESC
+     LIMIT 1`,
+    [orgId, phone, canal]
+  );
+}
+
+export async function buscarTabelaPlanos() {
+  return query(
+    `SELECT
+       p.slug,
+       p.nome,
+       p.descricao,
+       pr.modalidade,
+       pr.valor,
+       pr.valor_tabela,
+       pr.valor_promocional,
+       pr.valor_oferta,
+       pr.valor_limite
+     FROM precos pr
+     JOIN planos p ON p.id = pr.plano_id
+     WHERE pr.ativo = TRUE
+       AND p.ativo = TRUE
+     ORDER BY p.id ASC, pr.modalidade ASC`
+  ) as Promise<any[]>;
+}
