@@ -150,9 +150,20 @@
 - [ ] Revisar futuramente a estrategia de deduplicacao entre chunks vetoriais e documentos sempre ativos para evitar contexto redundante no prompt
 
 ### Etapa 7 — Fortalecer output guardrails e logs
-- [ ] Validar claims com base no contexto usado
-- [ ] Registrar melhor reescritas, bloqueios, latencias e fontes
-- [ ] Reduzir risco de alucinacao na resposta final
+- [x] Validar claims com base no contexto usado
+- [x] Registrar melhor reescritas, bloqueios, latencias e fontes
+- [x] Reduzir risco de alucinacao na resposta final
+
+#### Achados da Etapa 7
+- [x] O output guard do caminho principal deixou de validar apenas faixa absurda de preco e passou a checar preco fora do contexto recuperado, vazamento de marcadores internos, traços de IA e respostas sensiveis sem base RAG
+- [x] O validador estrutural legado foi reintegrado ao runtime oficial para corrigir formatação, perguntas duplicadas e outros sinais de resposta artificial sem depender de outro modelo
+- [x] O pipeline agora diferencia bloqueio e reescrita no output guard, em vez de tratar toda invalidação como a mesma classe de evento
+- [x] Traces e logs agora registram `output_guard_reason`, `output_guard_rules`, `output_guard_severity` e `output_guard_blocked`
+- [x] O score operacional passou a distinguir quando houve bloqueio efetivo da resposta final
+
+#### Risco residual apos a Etapa 7
+- [ ] Refinar com exemplos reais as regras de `coverage-without-rag-support` para evitar bloqueio excessivo em respostas seguras mas genéricas
+- [ ] Avaliar em etapa futura se o `services/judge.ts` deve entrar no caminho assíncrono oficial de auditoria pós-envio
 
 ### Etapa 8 — Criar smoke tests e verificacoes operacionais
 - [ ] Cobrir o funil principal de captacao e resposta
@@ -160,6 +171,6 @@
 - [ ] Deixar base pronta para evoluir para E2E e CI/CD
 
 ## Progresso atual
-- Status geral: Etapa 6 concluida
-- Ultima atualizacao: RAG vetorial com rerank foi integrado ao pipeline principal com fallback automatico para full-text; build do monorepo validado
-- Proxima acao imediata: iniciar Etapa 7 para fortalecer output guardrails e logs
+- Status geral: Etapa 7 concluida
+- Ultima atualizacao: output guard principal foi reforcado com validacao contextual, reaproveitamento do validador estrutural e observabilidade mais rica de bloqueios e reescritas; build do monorepo validado
+- Proxima acao imediata: iniciar Etapa 8 para smoke tests e verificacoes operacionais do funil principal

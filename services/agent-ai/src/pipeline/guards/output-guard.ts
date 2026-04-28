@@ -3,33 +3,135 @@ import { GenerationResult } from '@plamev/shared';
 export interface ValidationResult {
   isValid: boolean;
   reason?: string;
+  rewrittenText?: string;
+  matchedRules?: string[];
+  severity?: 'low' | 'medium' | 'high';
+}
+
+interface OutputGuardContext {
+  historico?: Array<{ role?: string; content?: string; conteudo?: string }>;
+  perfil?: Record<string, any> | null;
+  conversa?: Record<string, any> | null;
+  clinicasReais?: any[] | null;
+  ragSources?: string[];
+  ragMode?: string;
+}
+
+const { validar } = require('./validator');
+
+function normalizeCurrency(value: string): string {
+  return value
+    .replace(/R\$\s*/gi, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .trim();
+}
+
+function extractPrices(text: string): string[] {
+  return (text.match(/R\$\s*\d{1,3}(?:\.\d{3})*(?:,\d{2})/g) || [])
+    .map(normalizeCurrency);
 }
 
 export async function validateClaims(
   generation: GenerationResult,
   originalContext: string,
-  modelName: string
+  modelName: string,
+  context: OutputGuardContext = {},
 ): Promise<ValidationResult> {
   const response = generation.resposta;
   if (!response) return { isValid: true };
 
-  // TODO: Integrar com LLM leve (Haiku) para validação de claims usando o originalContext
-  // Exemplo: verificar se a IA ofereceu um preço diferente da tabela passada no contexto
-  
-  // Por enquanto, validação simples por regex (exemplo: detecção de preços absurdos)
+  const matchedRules: string[] = [];
+  const structuralRewrite = validar(response, {
+    historico: (context.historico || []).map((item) => ({
+      role: item.role,
+      conteudo: item.content || item.conteudo || '',
+    })),
+    perfil: context.perfil || {},
+    conversa: context.conversa || {},
+    clinicasReais: context.clinicasReais || null,
+  });
+
+  const aiTellPattern = /\b(como (uma |um )?(ia|intelig[eê]ncia artificial|modelo de linguagem)|não posso garantir|enquanto ia)\b/i;
+  if (aiTellPattern.test(response)) {
+    matchedRules.push('ai-tell');
+    return {
+      isValid: false,
+      reason: 'Resposta expõe traços de agente de IA',
+      rewrittenText: 'Deixa eu te responder isso de forma mais clara e objetiva 😊',
+      matchedRules,
+      severity: 'high',
+    };
+  }
+
+  const internalLeakPattern = /(\[PDF|\[DOC|\[NOTA\]|system prompt|base de conhecimento|prompt interno|instru[cç][aã]o interna)/i;
+  if (internalLeakPattern.test(response)) {
+    matchedRules.push('internal-context-leak');
+    return {
+      isValid: false,
+      reason: 'Resposta vazou marcadores internos ou placeholders operacionais',
+      rewrittenText: 'Deixa eu confirmar essa informação pra você, só um minutinho...',
+      matchedRules,
+      severity: 'high',
+    };
+  }
+
   const priceMatches = response.match(/R\$\s*(\d+[,.]\d{2})/g);
   if (priceMatches) {
     for (const match of priceMatches) {
       const value = parseFloat(match.replace('R$', '').replace(',', '.').trim());
-      // Se o modelo alucinar um preço de plano menor que R$10 ou maior que R$5000, barrar
       if (value < 10 || value > 5000) {
-        return { 
-          isValid: false, 
-          reason: `Alucinação de preço detectada: ${match}` 
+        matchedRules.push('price-out-of-range');
+        return {
+          isValid: false,
+          reason: `Alucinação de preço detectada: ${match}`,
+          rewrittenText: 'Deixa eu confirmar o valor certinho pra você e já volto com a informação correta.',
+          matchedRules,
+          severity: 'high',
         };
       }
     }
   }
 
-  return { isValid: true };
+  const contextPrices = new Set(extractPrices(originalContext));
+  const responsePrices = extractPrices(response);
+  const pricesOutsideContext = responsePrices.filter((price) => !contextPrices.has(price));
+  if (pricesOutsideContext.length > 0) {
+    matchedRules.push('price-not-in-context');
+    return {
+      isValid: false,
+      reason: `Preço fora do contexto recuperado: ${pricesOutsideContext.join(', ')}`,
+      rewrittenText: 'Quero te passar esse valor com segurança, então vou confirmar certinho antes de te responder.',
+      matchedRules,
+      severity: 'high',
+    };
+  }
+
+  const coverageSensitivePattern = /(car[eê]ncia|cobertura|rede credenciada|cl[ií]nica|hospital|reembolso|coparticipa[cç][aã]o)/i;
+  if (coverageSensitivePattern.test(response) && (!context.ragSources || context.ragSources.length === 0)) {
+    matchedRules.push('coverage-without-rag-support');
+    return {
+      isValid: false,
+      reason: 'Resposta sensível sobre cobertura/rede sem base recuperada no contexto',
+      rewrittenText: 'Deixa eu confirmar essa informação com precisão pra te responder certinho, combinado?',
+      matchedRules,
+      severity: 'medium',
+    };
+  }
+
+  if (structuralRewrite !== response) {
+    matchedRules.push('structural-validator-rewrite');
+    return {
+      isValid: true,
+      reason: 'Resposta ajustada por guard rails estruturais',
+      rewrittenText: structuralRewrite,
+      matchedRules,
+      severity: 'low',
+    };
+  }
+
+  return {
+    isValid: true,
+    matchedRules,
+  };
 }

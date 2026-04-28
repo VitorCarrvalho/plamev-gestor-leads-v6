@@ -264,18 +264,45 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     input: { resposta: generation.resposta },
   });
 
-  const validation = await validateClaims(generation, systemPrompt, config.guard_model);
-  const wasRewritten = !validation.isValid;
+  const validation = await validateClaims(generation, systemPrompt, config.guard_model, {
+    historico,
+    ragSources: kb.fontes,
+    ragMode: kb.mode,
+  });
+  const wasBlocked = !validation.isValid;
+  const wasRewritten = Boolean(validation.rewrittenText && validation.rewrittenText !== generation.resposta);
 
   outGuardSpan.end({
-    output:   { isValid: validation.isValid, reason: validation.reason ?? null },
-    level:    wasRewritten ? 'WARNING' : 'DEFAULT',
-    metadata: { is_valid: validation.isValid, was_rewritten: wasRewritten },
+    output:   {
+      isValid: validation.isValid,
+      reason: validation.reason ?? null,
+      matchedRules: validation.matchedRules ?? [],
+      severity: validation.severity ?? null,
+      wasBlocked,
+      wasRewritten,
+    },
+    level:    wasBlocked ? 'ERROR' : wasRewritten ? 'WARNING' : 'DEFAULT',
+    metadata: {
+      is_valid: validation.isValid,
+      was_blocked: wasBlocked,
+      was_rewritten: wasRewritten,
+      reason: validation.reason ?? null,
+      matched_rules: validation.matchedRules ?? [],
+      severity: validation.severity ?? null,
+    },
   });
 
-  console.log(`${tag} [5/7] OutputGuard → válido=${validation.isValid} (${Date.now() - t5}ms)${!validation.isValid ? ' | ' + validation.reason : ''}`);
+  console.log(
+    `${tag} [5/7] OutputGuard → válido=${validation.isValid}` +
+    `${wasBlocked ? ' blocked=true' : ''}` +
+    `${wasRewritten ? ' rewritten=true' : ''}` +
+    ` (${Date.now() - t5}ms)` +
+    `${validation.reason ? ' | ' + validation.reason : ''}`,
+  );
 
-  if (wasRewritten) {
+  if (validation.rewrittenText) {
+    generation.resposta = validation.rewrittenText;
+  } else if (wasBlocked) {
     generation.resposta = 'Deixa eu confirmar essa informação pra você, só um minutinho...';
   }
 
@@ -317,6 +344,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   // ── Scores Langfuse (alimentam dashboards customizados) ───
   trace.score({ name: 'rag_hit',        value: kb.fontes.length > 0 ? 1 : 0, comment: kb.fontes.join(', ') || 'none' });
   trace.score({ name: 'rag_vector_hit', value: kb.mode === 'vector_rerank' ? 1 : 0, comment: kb.mode });
+  trace.score({ name: 'output_blocked', value: wasBlocked ? 1 : 0, comment: validation.reason || 'none' });
   trace.score({ name: 'was_rewritten',  value: wasRewritten ? 1 : 0 });
   trace.score({ name: 'guard_passed',   value: guardResult.action === 'process' ? 1 : 0 });
   trace.score({ name: 'has_history',    value: historico.length > 0 ? 1 : 0, comment: `${historico.length} msgs` });
@@ -339,6 +367,10 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       guard_reason:       guardResult.reason ?? null,
       guard_rules:        guardResult.matchedRules ?? [],
       guard_fail_open:    guardResult.failOpen ?? false,
+      output_guard_reason: validation.reason ?? null,
+      output_guard_rules: validation.matchedRules ?? [],
+      output_guard_severity: validation.severity ?? null,
+      output_guard_blocked: wasBlocked,
       was_rewritten:      wasRewritten,
       tokens_in:          generation._uso?.input_tokens  ?? 0,
       tokens_out:         generation._uso?.output_tokens ?? 0,
