@@ -235,14 +235,20 @@ export async function processMessage(msg: InternalMessage) {
     guard_model: 'claude-haiku-4-5-20251001',
   };
 
-  const t4 = Date.now();
+  // Preços Claude Haiku 4.5 (USD por token)
+  const PRICE_INPUT  = 0.80  / 1_000_000;
+  const PRICE_OUTPUT = 4.00  / 1_000_000;
 
-  // Langfuse: generation span para a chamada LLM
+  const t4 = Date.now();
+  const llmStartTime = new Date();
+
+  // Langfuse: input no formato OpenAI (system + messages) para que
+  // Cost e Latency dashboards calculem corretamente
   const llmGenSpan = trace.generation({
     name:            '4-llm-generation',
     model:           config.model,
-    input:           messages,
-    systemPrompt,
+    startTime:       llmStartTime,
+    input:           [{ role: 'system', content: systemPrompt }, ...messages],
     modelParameters: { provider: config.provider, temperature: 0.7 },
     metadata:        { agentSlug, canal: msg.canal },
   });
@@ -250,14 +256,22 @@ export async function processMessage(msg: InternalMessage) {
   const generation = await generateResponse(systemPrompt, messages, config);
   const llmLatency = Date.now() - t4;
 
+  const tokensIn  = generation?._uso?.input_tokens  ?? 0;
+  const tokensOut = generation?._uso?.output_tokens ?? 0;
+
   llmGenSpan.end({
-    output: generation?.resposta ?? null,
+    endTime: new Date(),
+    output:  generation?.resposta ?? null,
     usage: {
-      input:  generation?._uso?.input_tokens  ?? 0,
-      output: generation?._uso?.output_tokens ?? 0,
+      input:      tokensIn,
+      output:     tokensOut,
+      total:      tokensIn + tokensOut,
+      unit:       'TOKENS',
+      inputCost:  tokensIn  * PRICE_INPUT,
+      outputCost: tokensOut * PRICE_OUTPUT,
+      totalCost:  (tokensIn * PRICE_INPUT) + (tokensOut * PRICE_OUTPUT),
     },
-    metadata: { latency_ms: llmLatency },
-    level:    generation ? 'DEFAULT' : 'ERROR',
+    level: generation ? 'DEFAULT' : 'ERROR',
   });
 
   console.log(`${tag} [4/7] LLM ${llmLatency}ms | tokens_in=${generation?._uso?.input_tokens} out=${generation?._uso?.output_tokens}`);
