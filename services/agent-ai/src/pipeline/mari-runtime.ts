@@ -78,6 +78,10 @@ export function detectPriceIntent(text: string) {
   return /(quanto custa|qual valor|quais os valores|pre[cç]o|precos|mensalidade)/i.test(text);
 }
 
+export function detectPlusIntent(text: string) {
+  return /(plus|castra[cç][aã]o|castrado|castrar|t[aá]rtaro|seda[cç][aã]o)/i.test(text);
+}
+
 export function inferTargetStage(messageText: string, conversaAtual?: ConversationSnapshot | null) {
   const text = (messageText || '').toLowerCase();
   if (detectGreetingOnly(text)) return 'acolhimento';
@@ -178,27 +182,76 @@ export function formatConversationStatePrompt(conversa: ConversationSnapshot | n
   ].join('\n');
 }
 
-export function buildDeterministicCatalogResponse(rows: CatalogRow[], conversaAtual?: ConversationSnapshot | null) {
+const PLAN_SUMMARIES: Record<string, string> = {
+  slim: 'entrada inteligente para quem quer o básico essencial',
+  advance: 'mais escolhido para quem quer cuidar bem sem pesar',
+  platinum: 'mais robusto para pets que pedem acompanhamento maior',
+  diamond: 'máxima cobertura para quem busca mais tranquilidade',
+  advance_plus: 'aditivo do Advance com castração, tártaro e sedação',
+  platinum_plus: 'aditivo do Platinum com castração, tártaro e sedação',
+  diamond_plus: 'aditivo do Diamond com castração, tártaro e sedação',
+};
+
+function getPriceHighlight(rowGroup: { modalidades: CatalogRow[] }) {
+  const preferred = rowGroup.modalidades.find((item) => item.modalidade === 'cartao') || rowGroup.modalidades[0];
+  if (!preferred) return null;
+  const tabela = preferred.valor_tabela;
+  const promo = preferred.valor_promocional ?? preferred.valor;
+  if (tabela && promo) {
+    return `de ~${formatCurrency(tabela)}~ por *${formatCurrency(promo)}*/mês`;
+  }
+  return `a partir de *${formatCurrency(getPrimaryPrice(rowGroup))}*/mês`;
+}
+
+function sortCatalogEntries(rows: CatalogRow[], includePlus: boolean) {
+  const desired = includePlus
+    ? ['slim', 'advance', 'platinum', 'diamond', 'advance_plus', 'platinum_plus', 'diamond_plus']
+    : ['slim', 'advance', 'platinum', 'diamond'];
+  const grouped = byPlan(rows);
+  return desired
+    .filter((slug) => grouped.has(slug))
+    .map((slug) => ({ slug, plan: grouped.get(slug)! }));
+}
+
+export function buildDeterministicCatalogResponse(
+  rows: CatalogRow[],
+  conversaAtual?: ConversationSnapshot | null,
+  options?: { includePlus?: boolean },
+) {
   if (!rows.length) return null;
 
-  const grouped = byPlan(rows);
-  const introName = conversaAtual?.nome_pet ? `pro ${conversaAtual.nome_pet}` : 'pra te explicar certinho';
-  const lines = [`Hoje os planos oficiais da Plamev ${introName} são estes:`];
+  const includePlus = options?.includePlus ?? false;
+  const entries = sortCatalogEntries(rows, includePlus);
+  if (!entries.length) return null;
 
-  for (const [slug, plan] of grouped.entries()) {
-    const primaryPrice = getPrimaryPrice(plan);
-    const description = plan.descricao ? ` ${plan.descricao}` : '';
-    lines.push(`- ${plan.nome}${description} Valor inicial: ${formatCurrency(primaryPrice)}.`);
+  const introName = conversaAtual?.nome_pet ? `pro ${conversaAtual.nome_pet}` : 'pra você';
+  const lines = [
+    `Hoje os planos oficiais da Plamev ${introName} são estes:`,
+    '',
+  ];
+
+  for (const { slug, plan } of entries) {
+    const summary = PLAN_SUMMARIES[slug] || plan.descricao || 'plano oficial da Plamev';
+    const highlight = getPriceHighlight(plan);
+    lines.push(`*${plan.nome}*`);
+    lines.push(`- ${summary}`);
+    if (highlight) lines.push(`- ${highlight}`);
+    lines.push('');
+  }
+
+  if (!includePlus) {
+    lines.push('Se fizer sentido pro perfil do seu pet, eu também te explico depois as versões *Plus*, que entram quando há interesse em castração.');
+    lines.push('');
   }
 
   const missingProfile = !conversaAtual?.idade_anos || !conversaAtual?.raca;
   if (missingProfile) {
-    lines.push('Se você quiser, eu já posso te dizer qual deles faz mais sentido. Me conta só a raça e a idade do seu pet?');
+    lines.push('Me conta só a raça e a idade do seu pet que eu já te digo qual faz mais sentido, sem te empurrar o mais caro.');
   } else {
-    lines.push(`Se quiser, eu também já posso te dizer qual desses faz mais sentido pro ${conversaAtual?.nome_pet || 'seu pet'}.`);
+    lines.push(`Se quiser, eu já te digo qual desses faz mais sentido pro ${conversaAtual?.nome_pet || 'seu pet'}.`);
   }
 
-  return lines.join('\n');
+  return lines.join('\n').trim();
 }
 
 export function chooseNonRepeatingFallback(reason: string | undefined, historico: Array<{ role: string; content: string }>) {

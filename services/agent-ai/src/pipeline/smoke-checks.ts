@@ -5,6 +5,7 @@ import {
   chooseNonRepeatingFallback,
   detectCatalogIntent,
   detectGreetingOnly,
+  detectPlusIntent,
   formatConversationStatePrompt,
   formatProductCatalogPrompt,
 } from './mari-runtime';
@@ -16,15 +17,16 @@ function assert(condition: any, message: string) {
 
 async function run() {
   const catalogRows = [
-    { slug: 'slim', nome: 'Slim', descricao: 'Plano de entrada', modalidade: 'cartao', valor: 59.99, valor_promocional: 59.99 },
-    { slug: 'advance', nome: 'Advance', descricao: 'Plano intermediário', modalidade: 'cartao', valor: 119.99, valor_promocional: 119.99 },
-    { slug: 'platinum', nome: 'Platinum', descricao: 'Plano robusto', modalidade: 'cartao', valor: 189.99, valor_promocional: 189.99 },
-    { slug: 'diamond', nome: 'Diamond', descricao: 'Plano premium', modalidade: 'cartao', valor: 359.99, valor_promocional: 359.99 },
+    { slug: 'slim', nome: 'Slim', descricao: 'Plano de entrada', modalidade: 'cartao', valor: 54.90, valor_tabela: 59.99, valor_promocional: 54.90 },
+    { slug: 'advance', nome: 'Advance', descricao: 'Plano intermediário', modalidade: 'cartao', valor: 119.99, valor_tabela: 149.99, valor_promocional: 119.99 },
+    { slug: 'platinum', nome: 'Platinum', descricao: 'Plano robusto', modalidade: 'cartao', valor: 189.99, valor_tabela: 239.99, valor_promocional: 189.99 },
+    { slug: 'diamond', nome: 'Diamond', descricao: 'Plano premium', modalidade: 'cartao', valor: 359.99, valor_tabela: 399.99, valor_promocional: 359.99 },
   ];
 
   assert(detectCatalogIntent('quero saber quais planos existe hoje ai'), 'Deveria detectar intent de catálogo');
   assert(detectGreetingOnly('boa tarde'), 'Deveria detectar saudação simples');
   assert(!detectGreetingOnly('boa tarde, quero saber os planos'), 'Não deveria tratar saudação com intenção comercial como greeting-only');
+  assert(detectPlusIntent('me explica o plus e a castração'), 'Deveria detectar contexto de Plus');
 
   const catalogPrompt = formatProductCatalogPrompt(catalogRows as any);
   assert(catalogPrompt.includes('Slim') && catalogPrompt.includes('Diamond'), 'Prompt de catálogo precisa listar planos oficiais');
@@ -42,6 +44,7 @@ async function run() {
     productCatalog: catalogPrompt,
     knowledgeBase: '### Plamev/Planos\nUse os planos oficiais.',
     catalogIntent: true,
+    includePlanContext: true,
   });
   assert(prompt.includes('# SOUL') && prompt.includes('# PLANOS E PRODUTOS'), 'Prompt final precisa incluir bundle da Mari');
   assert(prompt.includes('Etapa atual: apresentacao_planos'), 'Prompt final precisa incluir etapa comercial');
@@ -73,6 +76,13 @@ async function run() {
   });
   assert(deterministic?.includes('Slim') && deterministic?.includes('Diamond'), 'Resposta determinística precisa listar catálogo oficial');
   assert(!deterministic?.toLowerCase().includes('gold'), 'Resposta determinística não pode inventar plano');
+  assert(!deterministic?.includes('Advance Plus'), 'Resposta determinística padrão não deve empurrar Plus sem contexto');
+  assert(deterministic?.includes('~R$59,99~') && deterministic?.includes('*R$54,90*/mês'), 'Resposta determinística precisa destacar preço oficial no formato comercial');
+
+  const deterministicPlus = buildDeterministicCatalogResponse(catalogRows as any, {
+    etapa: 'apresentacao_planos',
+  }, { includePlus: true });
+  assert(deterministicPlus?.includes('Advance Plus') === false, 'Sem linhas de Plus no seed base de smoke');
 
   const greeting = buildGreetingResponse({ tutor_nome: 'Vitor', nome_pet: 'Lilás' });
   assert(greeting.includes('Vitor') && greeting.includes('Lilás'), 'Saudação determinística deve usar contexto disponível');

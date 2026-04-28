@@ -184,6 +184,8 @@
 - [x] Adicionada resposta determinística de saudação para impedir loop logo na abertura da conversa
 - [x] Output guard deixou de tratar palavras genéricas como `premium`/`gold` como nomes de plano e passou a confiar melhor em nomes oficiais vindos do banco/KB
 - [x] Smoke checks ampliados para cobrir o caso real de `boa tarde` sem disparar catálogo nem bloqueio indevido
+- [x] Resposta determinística de catálogo foi encurtada e formatada para WhatsApp, com foco nos 4 planos-base e preço comercial em destaque
+- [x] Versões `Plus` deixaram de ser exibidas por padrão no catálogo aberto e agora só entram com contexto específico de castração/`Plus`
 
 #### Seed operacional de produto
 - [x] Criada migration idempotente para popular a tabela `planos` com `Slim`, `Advance`, `Platinum` e `Diamond` no próximo deploy

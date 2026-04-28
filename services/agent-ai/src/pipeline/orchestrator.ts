@@ -20,6 +20,7 @@ import {
   chooseNonRepeatingFallback,
   detectCatalogIntent,
   detectGreetingOnly,
+  detectPlusIntent,
   detectPriceIntent,
   formatConversationStatePrompt,
   formatProductCatalogPrompt,
@@ -254,7 +255,9 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   }
 
   if (catalogIntent) {
-    const deterministicCatalog = buildDeterministicCatalogResponse(tabelaPlanos, conversaAtual);
+    const deterministicCatalog = buildDeterministicCatalogResponse(tabelaPlanos, conversaAtual, {
+      includePlus: detectPlusIntent(msg.texto || ''),
+    });
     if (deterministicCatalog) {
       if (conversaAtual?.id && targetStage !== conversaAtual?.etapa) {
         await atualizarConversa(orgId, conversaAtual.id, { etapa: targetStage }).catch(() => {});
