@@ -2,9 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
 import path from 'path';
-import { pool, testar } from './config/db';
+import { pool, testar, query } from './config/db';
 import { runMigrations } from '../../../infra/migrate';
-import analisarRouter from './routes/analisar';
+import analisarRouter  from './routes/analisar';
+import auditoriaRouter from './routes/auditoria';
 
 config({ path: path.join(__dirname, '../../.env') });
 
@@ -12,52 +13,53 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// TODO: Auth Middleware (validar JWT e injetar x-org-id)
-app.use((req, res, next) => {
-  req.headers['x-org-id'] = req.headers['x-org-id'] || '00000000-0000-0000-0000-000000000000';
-  next();
-});
-
-// Middleware para repassar orgId pro router local
-app.use((req, res, next) => {
-  (req as any).orgId = req.headers['x-org-id'];
-  next();
-});
-
-app.use((req, res, next) => {
+app.use((req, _res, next) => {
   console.log(`[ANALYTICS] 📥 ${req.method} ${req.url}`);
   next();
 });
 
-app.get('/health', (req, res) => res.json({ status: 'ok', service: 'analytics' }));
+app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'analytics' }));
 
-app.use('/api/analisar', analisarRouter);
+app.get('/api/stats', async (_req, res) => {
+  try {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
 
-app.get('/api/stats', async (req, res) => {
-  // TODO: Implementar busca real de estatísticas no DB
-  res.json({
-    leads_hoje: 0,
-    conversoes: 0,
-    tempo_medio: '0m',
-    custo_ia: 0
-  });
+    const [leadsHoje, convs30d, mensagens30d, agentes] = await Promise.all([
+      query<any>(`SELECT COUNT(*)::int AS n FROM conversas WHERE criado_em >= $1`, [hoje]),
+      query<any>(`SELECT COUNT(*)::int AS n FROM conversas WHERE criado_em >= NOW() - INTERVAL '30 days'`),
+      query<any>(`SELECT COUNT(*)::int AS n FROM mensagens WHERE timestamp >= NOW() - INTERVAL '30 days'`),
+      query<any>(`SELECT COUNT(*)::int AS n FROM agentes WHERE ativo = true`),
+    ]);
+
+    const fechamentos = await query<any>(
+      `SELECT COUNT(*)::int AS n FROM conversas WHERE etapa = 'fechamento' AND criado_em >= NOW() - INTERVAL '30 days'`
+    );
+    const latencia = await query<any>(
+      `SELECT ROUND(AVG(total_latency_ms))::int AS media_ms FROM ai_interaction_logs WHERE criado_em >= NOW() - INTERVAL '7 days'`
+    ).catch(() => [{ media_ms: 0 }]);
+
+    res.json({
+      leads_hoje:        leadsHoje[0]?.n ?? 0,
+      conversas_30d:     convs30d[0]?.n ?? 0,
+      mensagens_30d:     mensagens30d[0]?.n ?? 0,
+      fechamentos_30d:   fechamentos[0]?.n ?? 0,
+      agentes_ativos:    agentes[0]?.n ?? 0,
+      latencia_media_ms: latencia[0]?.media_ms ?? 0,
+    });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
 
-app.get(['/api/auditoria', '/api/auditoria/acoes'], async (req, res) => {
-  // TODO: Implementar busca de logs de auditoria
-  res.json([]);
-});
+app.use('/api/analisar',  analisarRouter);
+app.use('/api/auditoria', auditoriaRouter);
 
-const INTERNAL_PORT = 8080;
-const PORT = process.env.PORT || INTERNAL_PORT;
+const PORT = process.env.PORT || 8080;
 
 async function bootstrap() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[ANALYTICS] 🚀 HTTP Server ready on port ${PORT}`);
   });
-
   try {
-    console.log('[ANALYTICS] 🔄 Iniciando banco de dados...');
     await runMigrations(pool);
     await testar();
     console.log('[ANALYTICS] ✅ Banco de dados pronto.');

@@ -74,7 +74,13 @@ app.use(makeProxy(CHANNEL_SERVICE_URL, (p) => p.startsWith('/webhooks')));
 // Agent AI
 app.use(makeProxy(AGENT_AI_URL, (p) => p.startsWith('/ai')));
 
-// CRM — /auth, /api/* e /db/* (com rewrite de /db → /api/db)
+// Analytics — /api/analisar/*, /api/auditoria/*, /api/stats
+// Deve vir ANTES do CRM para interceptar esses paths específicos
+const analyticsPathFilter = (p: string) =>
+  p.startsWith('/api/analisar') || p.startsWith('/api/auditoria') || p === '/api/stats';
+app.use(makeProxy(ANALYTICS_SERVICE_URL, analyticsPathFilter));
+
+// CRM — /auth, /api/* restante e /db/*
 app.use(makeProxy(
   CRM_SERVICE_URL,
   (p) => p.startsWith('/auth') || p.startsWith('/api') || p.startsWith('/db'),
