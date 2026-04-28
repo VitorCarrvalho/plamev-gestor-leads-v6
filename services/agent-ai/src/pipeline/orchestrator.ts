@@ -5,6 +5,7 @@ import { validateClaims } from './guards/output-guard';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
 import { langfuse } from '../clients/langfuse-client';
 import { sendResponse, persistInteraction } from './delivery';
+import { carregar as vaultCarregar } from '../services/vault';
 import {
   resolverConfigRuntimeAgente,
   ResolvedAgentRuntimeConfig,
@@ -165,12 +166,31 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     input: { agentSlug, orgId, phone: msg.phone, canal: msg.canal },
   });
 
-  const [promptBundle, historico, conversaAtual, tabelaPlanos] = await Promise.all([
+  // Carrega prompts em paralelo: vault (primário) + banco (fallback) + contexto
+  const [vaultSoul, vaultTom, vaultRegras, vaultAntiRep, vaultPensamentos, vaultModoRapido,
+         promptBundle, historico, conversaAtual, tabelaPlanos] = await Promise.all([
+    vaultCarregar('Mari/Soul.md'),
+    vaultCarregar('Mari/Tom-e-Fluxo.md'),
+    vaultCarregar('Mari/Regras-Gerais.md'),
+    vaultCarregar('Mari/Anti-Repeticao.md'),
+    vaultCarregar('Mari/Pensamentos.md'),
+    vaultCarregar('Mari/Modo-Rapido.md'),
     buscarPrompts(Number(config.id)).catch(() => ({})),
     buscarHistorico(orgId, msg.phone, msg.canal),
     buscarContextoConversaAtiva(orgId, msg.phone, msg.canal),
     buscarTabelaPlanos().catch(() => []),
   ]);
+
+  // Vault tem prioridade; banco serve de fallback quando arquivo ainda não existe
+  const promptsResolvidos = {
+    soul:           vaultSoul           || (promptBundle as any)?.soul           || '',
+    tom:            vaultTom            || (promptBundle as any)?.tom            || '',
+    regras:         vaultRegras         || (promptBundle as any)?.regras         || '',
+    anti_repeticao: vaultAntiRep        || (promptBundle as any)?.anti_repeticao || '',
+    pensamentos:    vaultPensamentos    || (promptBundle as any)?.pensamentos    || '',
+    modo_rapido:    vaultModoRapido     || (promptBundle as any)?.modo_rapido    || '',
+  };
+  const vaultAtivo = !!(vaultSoul || vaultTom || vaultRegras);
   const targetStage = inferTargetStage(msg.texto || '', conversaAtual);
   const greetingOnly = detectGreetingOnly(msg.texto || '');
   const catalogIntent = detectCatalogIntent(msg.texto || '');
@@ -184,9 +204,11 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     stage: targetStage,
   });
 
+  const soulSource = vaultAtivo ? 'vault' : promptsResolvidos.soul ? 'db' : 'fallback';
+
   ctxSpan.end({
     output: {
-      soul_source:    promptBundle?.soul ? 'db' : 'fallback',
+      soul_source:    soulSource,
       history_count:  historico.length,
       target_stage:   targetStage,
       rag_mode:       kb.mode,
@@ -196,7 +218,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       rag_sources:    kb.fontes,
     },
     metadata: {
-      soul_source:    promptBundle?.soul ? 'db' : 'fallback',
+      soul_source:    soulSource,
       history_count:  historico.length,
       target_stage:   targetStage,
       rag_mode:       kb.mode,
@@ -207,18 +229,18 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   });
 
   console.log(
-    `${tag} [2/7] Contexto | soul=${promptBundle?.soul ? 'DB' : 'fallback'} | etapa=${targetStage} | histórico=${historico.length}msgs` +
+    `${tag} [2/7] Contexto | soul=${soulSource} | etapa=${targetStage} | histórico=${historico.length}msgs` +
     ` | rag=${kb.mode} ${kb.fontes.length} docs (${kb.conteudo.length} chars, ${kb.latencyMs}ms)` +
     ` | ${Date.now() - t2}ms`,
   );
   if (kb.fontes.length) console.log(`${tag}     KB fontes: ${kb.fontes.join(', ')}`);
 
   // ── ETAPA 3: System prompt ────────────────────────────────
-  const baseSoul = promptBundle?.soul ||
+  const baseSoul = promptsResolvidos.soul ||
     `Você é ${config.nome || 'a assistente virtual da Plamev'}, assistente virtual da Plamev, plano de saúde para pets. Seja simpática, objetiva e natural em português. Não se apresente se já há histórico de conversa.`;
 
   const systemPrompt = buildMariPrompt({
-    prompts: { ...promptBundle, soul: baseSoul },
+    prompts: { ...promptsResolvidos, soul: baseSoul },
     stage: targetStage,
     conversationState: formatConversationStatePrompt(conversaAtual),
     productCatalog: includePlanContext ? formatProductCatalogPrompt(tabelaPlanos) : '',

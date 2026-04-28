@@ -1,7 +1,7 @@
 {
   "name": "obsidian-sync",
-  "version": "1.0.0",
-  "description": "Sincroniza vault do Obsidian com o banco de dados da Plamev",
+  "version": "2.0.0",
+  "description": "Sincroniza vault do Obsidian com services/vault-server/vault/ e faz git push",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "chokidar": "^3.6.0",
-    "dotenv": "^16.4.0",
-    "pg": "^8.11.0"
+    "dotenv": "^16.4.0"
   }
 }
