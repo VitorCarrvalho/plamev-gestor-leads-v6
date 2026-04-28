@@ -5,8 +5,9 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsup src/index.ts --watch --onSuccess \"node dist/index.js\"",
-    "build": "tsup src/index.ts",
-    "start": "node dist/index.js"
+    "build": "tsup src/index.ts src/pipeline/smoke-checks.ts",
+    "start": "node dist/index.js",
+    "smoke": "node dist/pipeline/smoke-checks.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.1",

@@ -171,6 +171,13 @@
 - [x] O RAG oficial passou a combinar recuperação por etapa/assunto com o caminho vetorial/full-text, reduzindo respostas fora da sequência comercial da Mari
 - [x] O output guard passou a bloquear menção de planos fora do catálogo oficial presente no contexto
 
+#### Pacote corretivo da Mari
+- [x] Runtime oficial voltou a montar o contexto com Soul + prompts configuráveis (`tom`, `regras`, `planos`, `pensamentos`, `anti_repeticao`, `modo_rapido`)
+- [x] Perguntas de catálogo agora têm resposta determinística a partir do banco, sem depender do LLM para listar planos oficiais
+- [x] O runtime passou a inferir etapa-alvo mínima para perguntas comerciais sobre planos e preços
+- [x] Fallbacks passaram a evitar repetição imediata da mesma frase em bloqueios sucessivos
+- [x] Smoke check local do cenário de catálogo/plano adicionado ao `agent-ai`
+
 ### Etapa 8 — Criar smoke tests e verificacoes operacionais
 - [ ] Cobrir o funil principal de captacao e resposta
 - [ ] Formalizar checks minimos de saude do pipeline
@@ -178,5 +185,5 @@
 
 ## Progresso atual
 - Status geral: Etapa 7 concluida
-- Ultima atualizacao: output guard principal foi reforcado com validacao contextual, reaproveitamento do validador estrutural e observabilidade mais rica de bloqueios e reescritas; build do monorepo validado
-- Proxima acao imediata: iniciar Etapa 8 para smoke tests e verificacoes operacionais do funil principal
+- Ultima atualizacao: pacote corretivo da Mari implementado no runtime oficial com montagem completa de prompts, catálogo determinístico, etapa comercial mínima, anti-loop e smoke check; build do monorepo validado
+- Proxima acao imediata: redeploy do `agent-ai` e validação em conversa real; depois disso retomar Etapa 8 com checks operacionais mais amplos

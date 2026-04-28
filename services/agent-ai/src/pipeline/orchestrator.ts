@@ -5,7 +5,23 @@ import { validateClaims } from './guards/output-guard';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
 import { langfuse } from '../clients/langfuse-client';
 import { sendResponse, persistInteraction } from './delivery';
-import { resolverConfigRuntimeAgente, ResolvedAgentRuntimeConfig, buscarContextoConversaAtiva, buscarTabelaPlanos } from '../db';
+import {
+  resolverConfigRuntimeAgente,
+  ResolvedAgentRuntimeConfig,
+  buscarContextoConversaAtiva,
+  buscarTabelaPlanos,
+  buscarPrompts,
+  atualizarConversa,
+} from '../db';
+import {
+  buildDeterministicCatalogResponse,
+  buildMariPrompt,
+  chooseNonRepeatingFallback,
+  detectCatalogIntent,
+  formatConversationStatePrompt,
+  formatProductCatalogPrompt,
+  inferTargetStage,
+} from './mari-runtime';
 
 async function lf_flush() {
   try { await langfuse.flushAsync(); }
@@ -39,93 +55,9 @@ async function buscarHistorico(orgId: string, phone: string, canal: string): Pro
   }
 }
 
-// ── 2. Soul (system prompt) do agente ────────────────────────
-async function buscarSoul(agentId: string): Promise<string | null> {
-  try {
-    const { rows } = await pool.query(`
-      SELECT conteudo
-      FROM agente_prompts
-      WHERE agent_id = $1 AND tipo = 'soul' AND ativo = true
-      LIMIT 1
-    `, [agentId]);
-    return rows[0]?.conteudo || null;
-  } catch { return null; }
-}
-
 export interface PipelineRuntimeContext {
   orgId: string;
   agentConfig: ResolvedAgentRuntimeConfig;
-}
-
-function formatConversationState(conversa: any | null) {
-  if (!conversa) return '';
-  const linhas = [
-    '# ESTADO DO ATENDIMENTO',
-    `Etapa atual: ${conversa.etapa || 'acolhimento'}`,
-    `Tutor: ${conversa.tutor_nome || 'não informado'}`,
-    `Pet: ${[
-      conversa.nome_pet || null,
-      conversa.especie || null,
-      conversa.raca || null,
-      conversa.idade_anos ? `${conversa.idade_anos} anos` : null,
-    ].filter(Boolean).join(', ') || 'não informado'}`,
-  ];
-  return linhas.join('\n');
-}
-
-function formatProductCatalog(rows: any[]) {
-  if (!rows.length) return '';
-
-  const porPlano = new Map<string, any>();
-  for (const row of rows) {
-    if (!porPlano.has(row.slug)) {
-      porPlano.set(row.slug, {
-        nome: row.nome,
-        descricao: row.descricao,
-        modalidades: [],
-      });
-    }
-    porPlano.get(row.slug).modalidades.push(row);
-  }
-
-  const fmt = (value: any) => {
-    if (value == null || value === '') return '—';
-    return `R$${Number(value).toFixed(2).replace('.', ',')}`;
-  };
-
-  const linhas = [
-    '# DADOS DO PRODUTO',
-    'Use APENAS os planos e preços abaixo. Nunca invente nomes de plano, faixas ou valores fora desta tabela.',
-  ];
-
-  for (const [slug, plano] of porPlano.entries()) {
-    linhas.push(`## ${plano.nome} (${slug})`);
-    if (plano.descricao) linhas.push(plano.descricao);
-    for (const modalidade of plano.modalidades) {
-      linhas.push(
-        `- ${modalidade.modalidade}: vigente ${fmt(modalidade.valor)} | tabela ${fmt(modalidade.valor_tabela)} | promocional ${fmt(modalidade.valor_promocional)} | oferta ${fmt(modalidade.valor_oferta)} | limite ${fmt(modalidade.valor_limite)}`
-      );
-    }
-  }
-
-  linhas.push('Regra comercial: primeiro explique os planos disponíveis; só recomende um plano depois de entender minimamente o perfil do pet e a necessidade do tutor.');
-  return linhas.join('\n');
-}
-
-function chooseFallbackResponse(validation: { reason?: string }, historico: ChatMessage[]) {
-  const lastAssistant = [...historico].reverse().find((item) => item.role === 'assistant')?.content?.trim().toLowerCase() || '';
-  const defaultFallback = 'Deixa eu confirmar essa informação com precisão pra te responder certinho, combinado?';
-  const defaultFallbackNorm = defaultFallback.toLowerCase();
-
-  if (lastAssistant === defaultFallbackNorm) {
-    return 'Quero te responder sem te enrolar: estou conferindo certinho aqui para te passar só os planos e informações corretas, sem te fazer perder tempo.';
-  }
-
-  if (validation.reason?.includes('Preço fora do contexto')) {
-    return 'Quero te passar os valores certos, então vou te responder só com a tabela oficial da Plamev, sem correr o risco de te informar algo errado.';
-  }
-
-  return defaultFallback;
 }
 
 // ── PIPELINE PRINCIPAL ────────────────────────────────────────
@@ -231,20 +163,22 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     input: { agentSlug, orgId, phone: msg.phone, canal: msg.canal },
   });
 
-  const [soulPrompt, historico, conversaAtual, tabelaPlanos] = await Promise.all([
-    buscarSoul(config.id),
+  const [promptBundle, historico, conversaAtual, tabelaPlanos] = await Promise.all([
+    buscarPrompts(Number(config.id)).catch(() => ({})),
     buscarHistorico(orgId, msg.phone, msg.canal),
     buscarContextoConversaAtiva(orgId, msg.phone, msg.canal),
     buscarTabelaPlanos().catch(() => []),
   ]);
+  const targetStage = inferTargetStage(msg.texto || '', conversaAtual);
   const kb = await searchKnowledge(msg.texto || '', orgId, config.id, 5, {
-    stage: conversaAtual?.etapa || 'acolhimento',
+    stage: targetStage,
   });
 
   ctxSpan.end({
     output: {
-      soul_source:    soulPrompt ? 'db' : 'fallback',
+      soul_source:    promptBundle?.soul ? 'db' : 'fallback',
       history_count:  historico.length,
+      target_stage:   targetStage,
       rag_mode:       kb.mode,
       rag_latency_ms: kb.latencyMs,
       rag_docs_count: kb.fontes.length,
@@ -252,8 +186,9 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       rag_sources:    kb.fontes,
     },
     metadata: {
-      soul_source:    soulPrompt ? 'db' : 'fallback',
+      soul_source:    promptBundle?.soul ? 'db' : 'fallback',
       history_count:  historico.length,
+      target_stage:   targetStage,
       rag_mode:       kb.mode,
       rag_latency_ms: kb.latencyMs,
       rag_docs_count: kb.fontes.length,
@@ -262,23 +197,24 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   });
 
   console.log(
-    `${tag} [2/7] Contexto | soul=${soulPrompt ? 'DB' : 'fallback'} | histórico=${historico.length}msgs` +
+    `${tag} [2/7] Contexto | soul=${promptBundle?.soul ? 'DB' : 'fallback'} | etapa=${targetStage} | histórico=${historico.length}msgs` +
     ` | rag=${kb.mode} ${kb.fontes.length} docs (${kb.conteudo.length} chars, ${kb.latencyMs}ms)` +
     ` | ${Date.now() - t2}ms`,
   );
   if (kb.fontes.length) console.log(`${tag}     KB fontes: ${kb.fontes.join(', ')}`);
 
   // ── ETAPA 3: System prompt ────────────────────────────────
-  const baseSoul = soulPrompt ||
+  const baseSoul = promptBundle?.soul ||
     `Você é ${config.nome || 'a assistente virtual da Plamev'}, assistente virtual da Plamev, plano de saúde para pets. Seja simpática, objetiva e natural em português. Não se apresente se já há histórico de conversa.`;
 
-  const systemParts = [
-    baseSoul,
-    formatConversationState(conversaAtual),
-    formatProductCatalog(tabelaPlanos),
-    kb.conteudo ? `# BASE DE CONHECIMENTO\n${kb.conteudo}` : '',
-  ].filter(Boolean);
-  const systemPrompt = systemParts.join('\n\n');
+  const systemPrompt = buildMariPrompt({
+    prompts: { ...promptBundle, soul: baseSoul },
+    stage: targetStage,
+    conversationState: formatConversationStatePrompt(conversaAtual),
+    productCatalog: formatProductCatalogPrompt(tabelaPlanos),
+    knowledgeBase: kb.conteudo,
+    catalogIntent: detectCatalogIntent(msg.texto || ''),
+  });
 
   const messages: ChatMessage[] = [
     ...historico,
@@ -286,6 +222,33 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   ];
 
   console.log(`${tag} [3/7] Prompt | ${messages.length} msgs (${systemPrompt.length} chars system)`);
+
+  const catalogIntent = detectCatalogIntent(msg.texto || '');
+  if (catalogIntent) {
+    const deterministicCatalog = buildDeterministicCatalogResponse(tabelaPlanos, conversaAtual);
+    if (deterministicCatalog) {
+      if (conversaAtual?.id && targetStage !== conversaAtual?.etapa) {
+        await atualizarConversa(orgId, conversaAtual.id, { etapa: targetStage }).catch(() => {});
+      }
+      console.log(`${tag} [3.5/7] Catálogo determinístico acionado`);
+      await sendResponse(msg, deterministicCatalog);
+      await persistInteraction(msg, deterministicCatalog);
+      trace.update({
+        output: deterministicCatalog,
+        metadata: {
+          total_latency_ms: Date.now() - start,
+          deterministic_catalog: true,
+          rag_mode: kb.mode,
+          rag_sources: kb.fontes,
+          target_stage: targetStage,
+        },
+      });
+      trace.score({ name: 'deterministic_catalog', value: 1 });
+      await lf_flush();
+      console.log(`${tag} ✅ Pipeline completo em ${Date.now() - start}ms (catálogo determinístico)`);
+      return;
+    }
+  }
 
   // ── ETAPA 4: Geração LLM ──────────────────────────────────
   // Preços Claude Haiku 4.5 (USD por token)
@@ -383,7 +346,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   if (validation.rewrittenText) {
     generation.resposta = validation.rewrittenText;
   } else if (wasBlocked) {
-    generation.resposta = chooseFallbackResponse(validation, historico);
+    generation.resposta = chooseNonRepeatingFallback(validation.reason, historico);
   }
 
   const resposta = generation.resposta;
@@ -441,6 +404,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       rag_docs_count:     kb.fontes.length,
       kb_chars_injected:  kb.conteudo.length,
       rag_sources:        kb.fontes,
+      target_stage:       targetStage,
       history_msgs_count: historico.length,
       guard_intent:       guardResult.intent,
       guard_action:       guardResult.action,
