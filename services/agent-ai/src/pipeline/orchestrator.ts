@@ -15,12 +15,10 @@ import {
 } from '../db';
 import {
   buildGreetingResponse,
-  buildDeterministicCatalogResponse,
   buildMariPrompt,
   chooseNonRepeatingFallback,
   detectCatalogIntent,
   detectGreetingOnly,
-  detectPlusIntent,
   detectPriceIntent,
   formatConversationStatePrompt,
   formatProductCatalogPrompt,
@@ -255,34 +253,6 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     await lf_flush();
     console.log(`${tag} ✅ Pipeline completo em ${Date.now() - start}ms (saudação determinística)`);
     return;
-  }
-
-  if (catalogIntent) {
-    const deterministicCatalog = buildDeterministicCatalogResponse(tabelaPlanos, conversaAtual, {
-      includePlus: detectPlusIntent(msg.texto || ''),
-    });
-    if (deterministicCatalog) {
-      if (conversaAtual?.id && targetStage !== conversaAtual?.etapa) {
-        await atualizarConversa(orgId, conversaAtual.id, { etapa: targetStage }).catch(() => {});
-      }
-      console.log(`${tag} [3.5/7] Catálogo determinístico acionado`);
-      await sendResponse(msg, deterministicCatalog);
-      await persistInteraction(msg, deterministicCatalog);
-      trace.update({
-        output: deterministicCatalog,
-        metadata: {
-          total_latency_ms: Date.now() - start,
-          deterministic_catalog: true,
-          rag_mode: kb.mode,
-          rag_sources: kb.fontes,
-          target_stage: targetStage,
-        },
-      });
-      trace.score({ name: 'deterministic_catalog', value: 1 });
-      await lf_flush();
-      console.log(`${tag} ✅ Pipeline completo em ${Date.now() - start}ms (catálogo determinístico)`);
-      return;
-    }
   }
 
   // ── ETAPA 4: Geração LLM ──────────────────────────────────

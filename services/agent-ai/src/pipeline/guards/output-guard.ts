@@ -69,6 +69,10 @@ export async function validateClaims(
   modelName: string,
   context: OutputGuardContext = {},
 ): Promise<ValidationResult> {
+  if (process.env.OUTPUT_GUARD_DISABLED === 'true') {
+    return { isValid: true };
+  }
+
   const response = generation.resposta;
   if (!response) return { isValid: true };
 
