@@ -187,7 +187,9 @@
 
 #### Seed operacional de produto
 - [x] Criada migration idempotente para popular a tabela `planos` com `Slim`, `Advance`, `Platinum` e `Diamond` no próximo deploy
-- [ ] Confirmar no ambiente Railway se a tabela `precos` também já está populada; sem isso o catálogo com valores continua incompleto no runtime atual
+- [x] Criada migration idempotente para completar o schema de `precos` e cadastrar os valores oficiais dos planos base e `plus`
+- [x] Garantidos os planos `advance_plus`, `platinum_plus` e `diamond_plus` apenas para suportar o seed oficial de preços
+- [ ] Validar no Railway se a tabela `precos` foi populada e se o catálogo determinístico da Mari passou a responder sem cair no fallback
 
 ### Etapa 8 — Criar smoke tests e verificacoes operacionais
 - [ ] Cobrir o funil principal de captacao e resposta
@@ -196,5 +198,5 @@
 
 ## Progresso atual
 - Status geral: Etapa 7 concluida
-- Ultima atualizacao: migration `014_seed_planos_plamev.sql` adicionada para garantir carga mínima da tabela `planos` no próximo deploy
-- Proxima acao imediata: aplicar deploy/migrations no Railway, validar se `planos` foi populada e checar se `precos` também está carregada antes de novo teste de catálogo
+- Ultima atualizacao: migration `015_seed_precos_plamev.sql` adicionada para completar `precos` com colunas e valores oficiais usados pelo runtime da Mari
+- Proxima acao imediata: aplicar deploy/migrations no Railway e repetir o teste real de catálogo no WhatsApp
