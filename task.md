@@ -132,9 +132,20 @@
 - [ ] Decidir se escalonamentos do input guard devem apenas parar no trace ou tambem abrir algum mecanismo operacional de fila humana
 
 ### Etapa 6 — Conectar RAG real ao fluxo principal
-- [ ] Integrar retrieval vetorial/rerank no pipeline oficial
-- [ ] Manter fallback seguro quando embeddings ou rerank falharem
-- [ ] Validar uso correto da knowledge base existente
+- [x] Integrar retrieval vetorial/rerank no pipeline oficial
+- [x] Manter fallback seguro quando embeddings ou rerank falharem
+- [x] Validar uso correto da knowledge base existente
+
+#### Achados da Etapa 6
+- [x] O pipeline principal agora tenta primeiro o RAG vetorial em `knowledge_chunks`, com embeddings e rerank, antes de cair para a busca full-text em `knowledge_base_docs`
+- [x] A integração foi feita no caminho oficial do `orchestrator`, sem depender de arquivos locais nem de fallback por filesystem
+- [x] Quando `VOYAGE_API_KEY` não estiver configurada, quando não houver chunks vetoriais ou quando a busca vetorial falhar, o pipeline continua operando com o full-text atual
+- [x] O trace do pipeline agora registra `rag_mode` e `rag_latency_ms`, permitindo separar em observabilidade quando houve hit vetorial, fallback textual ou ausência de contexto
+- [x] O endpoint de debug do `agent-ai` passou a refletir o caminho real do RAG ativo
+
+#### Risco residual apos a Etapa 6
+- [ ] Confirmar em ambiente integrado se a tabela `knowledge_chunks` ja esta populada para os agentes ativos; sem isso o runtime vai operar majoritariamente em fallback full-text
+- [ ] Revisar futuramente a estrategia de deduplicacao entre chunks vetoriais e documentos sempre ativos para evitar contexto redundante no prompt
 
 ### Etapa 7 — Fortalecer output guardrails e logs
 - [ ] Validar claims com base no contexto usado
@@ -147,6 +158,6 @@
 - [ ] Deixar base pronta para evoluir para E2E e CI/CD
 
 ## Progresso atual
-- Status geral: Etapa 5 concluida
-- Ultima atualizacao: input guard do caminho principal foi fortalecido com regras deterministicas, descarte antecipado, escalonamento explicito e fail-open observavel; build do monorepo validado
-- Proxima acao imediata: iniciar Etapa 6 para conectar o RAG real ao fluxo principal
+- Status geral: Etapa 6 concluida
+- Ultima atualizacao: RAG vetorial com rerank foi integrado ao pipeline principal com fallback automatico para full-text; build do monorepo validado
+- Proxima acao imediata: iniciar Etapa 7 para fortalecer output guardrails e logs

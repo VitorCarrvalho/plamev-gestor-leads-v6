@@ -1,5 +1,5 @@
 import { InternalMessage } from '@plamev/shared';
-import { pool } from './rag';
+import { pool, searchKnowledge } from './rag';
 import { checkInputGuard } from './guards/input-guard';
 import { validateClaims } from './guards/output-guard';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
@@ -13,7 +13,6 @@ async function lf_flush() {
 }
 
 const HISTORY_LIMIT       = 30;
-const KB_CHAR_LIMIT       = 8000;
 
 // ── 1. Histórico de mensagens ─────────────────────────────────
 async function buscarHistorico(orgId: string, phone: string, canal: string): Promise<ChatMessage[]> {
@@ -51,42 +50,6 @@ async function buscarSoul(agentId: string): Promise<string | null> {
     `, [agentId]);
     return rows[0]?.conteudo || null;
   } catch { return null; }
-}
-
-// ── 3. RAG: knowledge base via full-text search ───────────────
-async function buscarKnowledge(agentId: string, texto: string): Promise<{ conteudo: string; fontes: string[] }> {
-  try {
-    const { rows: sempre } = await pool.query(`
-      SELECT titulo, arquivo, conteudo FROM knowledge_base_docs
-      WHERE agent_id=$1 AND sempre_ativo=true AND ativo=true ORDER BY ordem
-    `, [agentId]);
-
-    const { rows: relevantes } = await pool.query(`
-      SELECT titulo, arquivo, conteudo FROM knowledge_base_docs
-      WHERE agent_id=$1 AND ativo=true AND sempre_ativo=false
-        AND to_tsvector('portuguese', coalesce(titulo,'') || ' ' || coalesce(conteudo,''))
-            @@ plainto_tsquery('portuguese', $2)
-      ORDER BY ordem LIMIT 8
-    `, [agentId, texto.slice(0, 200)]).catch(() => ({ rows: [] }));
-
-    const todos = [...sempre, ...relevantes];
-    if (!todos.length) return { conteudo: '', fontes: [] };
-
-    let totalChars = 0;
-    const partes: string[] = [];
-    const fontes: string[] = [];
-    for (const doc of todos) {
-      const bloco = `### ${doc.titulo || doc.arquivo}\n${doc.conteudo}`;
-      if (totalChars + bloco.length > KB_CHAR_LIMIT) break;
-      partes.push(bloco);
-      fontes.push(doc.arquivo);
-      totalChars += bloco.length;
-    }
-    return { conteudo: partes.join('\n\n'), fontes };
-  } catch (e: any) {
-    console.warn(`[PIPELINE] ⚠️ Knowledge base indisponível: ${e.message}`);
-    return { conteudo: '', fontes: [] };
-  }
 }
 
 export interface PipelineRuntimeContext {
@@ -200,13 +163,15 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   const [soulPrompt, historico, kb] = await Promise.all([
     buscarSoul(config.id),
     buscarHistorico(orgId, msg.phone, msg.canal),
-    buscarKnowledge(config.id, msg.texto || ''),
+    searchKnowledge(msg.texto || '', orgId, config.id, 5),
   ]);
 
   ctxSpan.end({
     output: {
       soul_source:    soulPrompt ? 'db' : 'fallback',
       history_count:  historico.length,
+      rag_mode:       kb.mode,
+      rag_latency_ms: kb.latencyMs,
       rag_docs_count: kb.fontes.length,
       kb_chars:       kb.conteudo.length,
       rag_sources:    kb.fontes,
@@ -214,12 +179,18 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     metadata: {
       soul_source:    soulPrompt ? 'db' : 'fallback',
       history_count:  historico.length,
+      rag_mode:       kb.mode,
+      rag_latency_ms: kb.latencyMs,
       rag_docs_count: kb.fontes.length,
       kb_chars:       kb.conteudo.length,
     },
   });
 
-  console.log(`${tag} [2/7] Contexto | soul=${soulPrompt ? 'DB' : 'fallback'} | histórico=${historico.length}msgs | kb=${kb.fontes.length} docs (${kb.conteudo.length} chars) | ${Date.now() - t2}ms`);
+  console.log(
+    `${tag} [2/7] Contexto | soul=${soulPrompt ? 'DB' : 'fallback'} | histórico=${historico.length}msgs` +
+    ` | rag=${kb.mode} ${kb.fontes.length} docs (${kb.conteudo.length} chars, ${kb.latencyMs}ms)` +
+    ` | ${Date.now() - t2}ms`,
+  );
   if (kb.fontes.length) console.log(`${tag}     KB fontes: ${kb.fontes.join(', ')}`);
 
   // ── ETAPA 3: System prompt ────────────────────────────────
@@ -345,6 +316,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
 
   // ── Scores Langfuse (alimentam dashboards customizados) ───
   trace.score({ name: 'rag_hit',        value: kb.fontes.length > 0 ? 1 : 0, comment: kb.fontes.join(', ') || 'none' });
+  trace.score({ name: 'rag_vector_hit', value: kb.mode === 'vector_rerank' ? 1 : 0, comment: kb.mode });
   trace.score({ name: 'was_rewritten',  value: wasRewritten ? 1 : 0 });
   trace.score({ name: 'guard_passed',   value: guardResult.action === 'process' ? 1 : 0 });
   trace.score({ name: 'has_history',    value: historico.length > 0 ? 1 : 0, comment: `${historico.length} msgs` });
@@ -356,6 +328,8 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     metadata: {
       total_latency_ms:   totalLatency,
       llm_latency_ms:     llmLatency,
+      rag_mode:           kb.mode,
+      rag_latency_ms:     kb.latencyMs,
       rag_docs_count:     kb.fontes.length,
       kb_chars_injected:  kb.conteudo.length,
       rag_sources:        kb.fontes,

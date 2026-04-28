@@ -30,7 +30,7 @@ app.get('/debug/pipeline', (_req, res) => {
       },
       runtimeConfigSource: 'services/agent-ai/src/db.ts::resolverConfigRuntimeAgente(agentes + llm_configs + organizations fallback)',
       inputGuard: 'services/agent-ai/src/pipeline/guards/input-guard.ts',
-      rag: 'services/agent-ai/src/pipeline/orchestrator.ts::buscarKnowledge(full-text on knowledge_base_docs)',
+      rag: 'services/agent-ai/src/pipeline/rag.ts::searchKnowledge(vector+rerank on knowledge_chunks with automatic full-text fallback)',
       llm: 'services/agent-ai/src/clients/llm-client.ts',
       outputGuard: 'services/agent-ai/src/pipeline/guards/output-guard.ts',
       deliveryTarget: `${process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080'}/internal/send`,
