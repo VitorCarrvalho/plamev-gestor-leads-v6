@@ -15,10 +15,10 @@
  */
 import { Server as HttpServer } from 'http';
 import { Server as SocketServer, Socket } from 'socket.io';
-import { validarTokenSocket } from '../../../crm-service/src/middleware/auth';
-import * as repo from '../../../crm-service/src/repositories/conversations.repository';
-import { reescreverComoMari } from '../../../crm-service/src/services/actions.service';
-import { execute, queryOne, query } from '../../../crm-service/src/config/db';
+import { validarTokenSocket } from './auth';
+import * as repo from './conversations.repository';
+import { reescreverComoMari } from './actions.service';
+import { execute, queryOne, query } from '../config/db';
 
 let io: SocketServer;
 const ORG_ID = '00000000-0000-0000-0000-000000000000';

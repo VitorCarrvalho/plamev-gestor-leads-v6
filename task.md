@@ -74,6 +74,11 @@
 - [ ] Reintegrar acoes supervisoras que dependem de envio ativo ao cliente (`provocar`, `instrucao`, `falar_direto`, `enviar_manual`)
 - [ ] Decidir se essas acoes ficam no gateway, voltam para um modulo proprio ou entram na unificacao do pipeline da Etapa 3
 
+#### Incidente corrigido apos a Etapa 2
+- [x] Deploy isolado do `gateway` no Railway quebrou porque o socket passou a importar arquivos-fonte de `crm-service`
+- [x] O `gateway` agora possui camada local minima de `auth`, `db`, `repo` e `actions` para o socket, sem depender de imports cross-service no build
+- [x] Dependencias locais do `gateway` foram alinhadas para o deploy isolado (`pg` + tipos)
+
 ### Etapa 3 — Unificar o caminho ativo do pipeline do Agent AI
 - [x] Definir o caminho oficial de execucao no Agent AI
 - [x] Reaproveitar o que ja existe no processor legado sem reescrever do zero
