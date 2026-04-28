@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import { autenticar, soAdmin } from '../middleware/auth';
 import { query, execute, queryOne } from '../config/db';
+import { excluirContatoPorTelefone } from '../repositories/conversations.repository';
 
 export const agenteRouter = Router();
 
@@ -302,6 +303,30 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
     console.log(`[INTERNAL] ✅ Interação salva — conversa=${conversaId} cliente=${clientId} msgs=${texto ? 1 : 0}+${resposta ? 1 : 0}`);
   } catch (e: any) {
     console.error('[INTERNAL] ❌ Erro ao salvar interação:', e.message);
+  }
+});
+
+internalRouter.post('/reset-contato', async (req, res) => {
+  if (!checkInternalSecret(req, res)) return;
+
+  const phone = String(req.body?.phone || '').trim();
+  const canal = String(req.body?.canal || 'whatsapp').trim();
+  const agentSlug = String(req.body?.agentSlug || 'mari').trim();
+
+  if (!phone) {
+    res.status(400).json({ erro: 'phone obrigatório' });
+    return;
+  }
+
+  try {
+    const agente = await queryOne<any>('SELECT org_id FROM agentes WHERE slug=$1 LIMIT 1', [agentSlug]);
+    const orgId = agente?.org_id || '00000000-0000-0000-0000-000000000000';
+    const removed = await excluirContatoPorTelefone(orgId, canal, phone);
+    console.log(`[INTERNAL] ♻️ Reset contato phone=${phone} canal=${canal} agent=${agentSlug} removed=${removed}`);
+    res.json({ ok: true, removed });
+  } catch (e: any) {
+    console.error('[INTERNAL] ❌ Falha ao resetar contato:', e.message);
+    res.status(500).json({ erro: e.message });
   }
 });
 

@@ -187,6 +187,11 @@
 - [x] Resposta determinística de catálogo foi encurtada e formatada para WhatsApp, com foco nos 4 planos-base e preço comercial em destaque
 - [x] Versões `Plus` deixaram de ser exibidas por padrão no catálogo aberto e agora só entram com contexto específico de castração/`Plus`
 
+#### Facilidades de teste em produção
+- [x] Comando `--reset` adicionado no webhook do WhatsApp para apagar completamente o histórico do contato
+- [x] O reset agora limpa o estado do contato no CRM por telefone/canal/org e remove debounce pendente antes de qualquer nova mensagem
+- [x] O comando de reset não chega à Mari; o usuário recebe apenas uma confirmação operacional curta
+
 #### Seed operacional de produto
 - [x] Criada migration idempotente para popular a tabela `planos` com `Slim`, `Advance`, `Platinum` e `Diamond` no próximo deploy
 - [x] Criada migration idempotente para completar o schema de `precos` e cadastrar os valores oficiais dos planos base e `plus`

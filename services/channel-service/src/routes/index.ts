@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
+import axios from 'axios';
 import { isDuplicate, messageQueue, redisClient } from '../utils/redis';
 import { normalizeMessage } from '../utils/normalizer';
 import { enviar } from '../services/sender';
@@ -7,6 +8,9 @@ import { enviar } from '../services/sender';
 const router = Router();
 
 const DEBOUNCE_DELAY_MS = 8000; // espera 8s após a última mensagem antes de processar
+const CRM_URL = process.env.CRM_SERVICE_URL || 'http://crm-service.railway.internal:8080';
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+const RESET_COMMAND = '--reset';
 
 // Middleware to validate HMAC signature from Gateway
 const validateHmac = (req: Request, res: Response, next: any) => {
@@ -23,6 +27,39 @@ const validateHmac = (req: Request, res: Response, next: any) => {
   }
   next();
 };
+
+async function clearPendingDebounce(canal: string, phone: string) {
+  const listKey = `debounce:msgs:${canal}:${phone}`;
+  await redisClient.del(listKey).catch(() => {});
+
+  const debounceId = `debounce:${canal}:${phone}`;
+  try {
+    const existing = await messageQueue.getJob(debounceId);
+    if (existing) {
+      const state = await existing.getState();
+      if (state === 'delayed' || state === 'waiting') {
+        await existing.remove();
+      }
+    }
+  } catch { /* ignora */ }
+}
+
+async function resetContactState(msg: any) {
+  await clearPendingDebounce(msg.canal, msg.phone);
+  const { data } = await axios.post(
+    `${CRM_URL}/api/internal/reset-contato`,
+    {
+      phone: msg.phone,
+      canal: msg.canal,
+      agentSlug: msg.agentSlug || 'mari',
+    },
+    {
+      headers: { 'x-internal-secret': INTERNAL_SECRET },
+      timeout: 10000,
+    }
+  );
+  return data;
+}
 
 async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
   const logPrefix = `[WH] event=${body.event || '?'} instance=${body.instance || body.instanceName || '?'}`;
@@ -106,6 +143,18 @@ async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
     documento,
     agentSlug,
   });
+
+  if ((msg.texto || '').trim().toLowerCase() === RESET_COMMAND) {
+    try {
+      const result = await resetContactState(msg);
+      console.log(`[CHANNEL-SERVICE] ♻️ Reset por comando executado para ${msg.phone} | removed=${Boolean(result?.removed)}`);
+      await enviar(msg, 'Pronto! Apaguei o histórico desse contato. Pode mandar uma nova mensagem e eu vou tratar como conversa nova.');
+    } catch (e: any) {
+      console.error(`[CHANNEL-SERVICE] ❌ Falha no reset de ${msg.phone}: ${e.message}`);
+      await enviar(msg, 'Não consegui resetar esse contato agora. Tenta de novo em alguns segundos.');
+    }
+    return;
+  }
 
   // ── DEBOUNCE: acumula mensagens do mesmo usuário numa lista Redis ──
   const listKey = `debounce:msgs:${msg.canal}:${msg.phone}`;

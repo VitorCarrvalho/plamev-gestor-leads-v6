@@ -262,6 +262,38 @@ export async function excluirContato(conversaId: string): Promise<void> {
   await execute('DELETE FROM clientes               WHERE id         = $1', [clientId]);
 }
 
+export async function excluirContatoPorTelefone(orgId: string, canal: string, phone: string): Promise<boolean> {
+  const ident = await queryOne<any>(
+    `SELECT ic.client_id
+     FROM identificadores_cliente ic
+     JOIN clientes cl ON cl.id = ic.client_id
+     WHERE ic.tipo = 'phone'
+       AND ic.valor = $1
+       AND cl.org_id = $2
+     LIMIT 1`,
+    [phone, orgId]
+  );
+  if (!ident?.client_id) return false;
+
+  const conv = await queryOne<any>(
+    `SELECT id
+     FROM conversas
+     WHERE client_id = $1
+       AND canal = $2
+     ORDER BY criado_em DESC
+     LIMIT 1`,
+    [ident.client_id, canal]
+  );
+  if (!conv?.id) {
+    await execute('DELETE FROM identificadores_cliente WHERE client_id = $1', [ident.client_id]);
+    await execute('DELETE FROM clientes WHERE id = $1', [ident.client_id]);
+    return true;
+  }
+
+  await excluirContato(conv.id);
+  return true;
+}
+
 // ── Resetar histórico (manter cadastro) ───────────────────────
 export async function resetarCliente(conversaId: string): Promise<void> {
   const conv = await queryOne<any>('SELECT client_id FROM conversas WHERE id = $1', [conversaId]);
