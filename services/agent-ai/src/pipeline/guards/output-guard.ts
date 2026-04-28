@@ -126,16 +126,20 @@ export async function validateClaims(
 
   const contextPrices = new Set(extractPrices(originalContext));
   const responsePrices = extractPrices(response);
-  const pricesOutsideContext = responsePrices.filter((price) => !contextPrices.has(price));
-  if (pricesOutsideContext.length > 0) {
-    matchedRules.push('price-not-in-context');
-    return {
-      isValid: false,
-      reason: `Preço fora do contexto recuperado: ${pricesOutsideContext.join(', ')}`,
-      rewrittenText: 'Quero te passar esse valor com segurança, então vou confirmar certinho antes de te responder.',
-      matchedRules,
-      severity: 'high',
-    };
+  // Só bloqueia se o contexto TEM preços e a resposta usa preços diferentes.
+  // Se o contexto não tem preços (catálogo não foi injetado), não há base de comparação.
+  if (contextPrices.size > 0 && responsePrices.length > 0) {
+    const pricesOutsideContext = responsePrices.filter((price) => !contextPrices.has(price));
+    if (pricesOutsideContext.length > 0) {
+      matchedRules.push('price-not-in-context');
+      return {
+        isValid: false,
+        reason: `Preço fora do contexto recuperado: ${pricesOutsideContext.join(', ')}`,
+        rewrittenText: 'Quero te passar esse valor com segurança, então vou confirmar certinho antes de te responder.',
+        matchedRules,
+        severity: 'high',
+      };
+    }
   }
 
   const contextPlanNames = new Set(extractKnownPlanNames(originalContext));
@@ -154,8 +158,13 @@ export async function validateClaims(
     };
   }
 
-  const coverageSensitivePattern = /(car[eê]ncia|cobertura|rede credenciada|cl[ií]nica|hospital|reembolso|coparticipa[cç][aã]o)/i;
-  if (coverageSensitivePattern.test(response) && (!context.ragSources || context.ragSources.length === 0)) {
+  // Só bloqueia sobre cobertura/rede se não há RAG E o catálogo também não foi injetado no contexto.
+  // Se o contexto tem DADOS DO PRODUTO ou BASE DE CONHECIMENTO, o LLM tem base suficiente.
+  const coverageSensitivePattern = /(car[eê]ncia|rede credenciada|reembolso|coparticipa[cç][aã]o)/i;
+  const contextHasPlanData = /DADOS DO PRODUTO|BASE DE CONHECIMENTO/i.test(originalContext);
+  if (coverageSensitivePattern.test(response)
+      && (!context.ragSources || context.ragSources.length === 0)
+      && !contextHasPlanData) {
     matchedRules.push('coverage-without-rag-support');
     return {
       isValid: false,

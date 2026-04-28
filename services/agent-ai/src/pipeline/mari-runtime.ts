@@ -71,7 +71,7 @@ export function detectGreetingOnly(text: string) {
 }
 
 export function detectCatalogIntent(text: string) {
-  return /(quais planos|quais vc tem|quais vocês têm|quais voces tem|me explica os planos|me explica quais|quero saber os planos|quero saber quais planos|quais existem hoje|cat[aá]logo|catalogo)/i.test(text);
+  return /(quais planos|quais vc tem|quais vocês têm|quais voces tem|me explica os planos|me explica quais|quero saber os planos|quero saber quais planos|quais existem hoje|cat[aá]logo|catalogo|poderia me explicar|pode me explicar|me explica|me fale sobre os planos|me conta (sobre )?os planos|quero conhecer os planos|quero entender os planos|quais s[aã]o os planos|todos os planos|ver os planos|conhecer os planos|n[aã]o conhe[cç]o (todos|os planos)|quero saber mais (sobre )?os planos|como funcionam os planos|o que tem disponível|o que vocês têm|o que voc[eê]s tem)/i.test(text);
 }
 
 export function detectPriceIntent(text: string) {
