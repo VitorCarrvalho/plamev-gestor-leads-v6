@@ -178,6 +178,17 @@
 - [x] Fallbacks passaram a evitar repetição imediata da mesma frase em bloqueios sucessivos
 - [x] Smoke check local do cenário de catálogo/plano adicionado ao `agent-ai`
 
+#### Correcao de regressao apos o pacote da Mari
+- [x] Identificado que saudações simples estavam herdando etapa comercial anterior e entrando no trilho de planos/catálogo sem necessidade
+- [x] Corrigido o prompt principal para não injetar catálogo nem prompt de planos em mensagens de saudação simples
+- [x] Adicionada resposta determinística de saudação para impedir loop logo na abertura da conversa
+- [x] Output guard deixou de tratar palavras genéricas como `premium`/`gold` como nomes de plano e passou a confiar melhor em nomes oficiais vindos do banco/KB
+- [x] Smoke checks ampliados para cobrir o caso real de `boa tarde` sem disparar catálogo nem bloqueio indevido
+
+#### Seed operacional de produto
+- [x] Criada migration idempotente para popular a tabela `planos` com `Slim`, `Advance`, `Platinum` e `Diamond` no próximo deploy
+- [ ] Confirmar no ambiente Railway se a tabela `precos` também já está populada; sem isso o catálogo com valores continua incompleto no runtime atual
+
 ### Etapa 8 — Criar smoke tests e verificacoes operacionais
 - [ ] Cobrir o funil principal de captacao e resposta
 - [ ] Formalizar checks minimos de saude do pipeline
@@ -185,5 +196,5 @@
 
 ## Progresso atual
 - Status geral: Etapa 7 concluida
-- Ultima atualizacao: pacote corretivo da Mari implementado no runtime oficial com montagem completa de prompts, catálogo determinístico, etapa comercial mínima, anti-loop e smoke check; build do monorepo validado
-- Proxima acao imediata: redeploy do `agent-ai` e validação em conversa real; depois disso retomar Etapa 8 com checks operacionais mais amplos
+- Ultima atualizacao: migration `014_seed_planos_plamev.sql` adicionada para garantir carga mínima da tabela `planos` no próximo deploy
+- Proxima acao imediata: aplicar deploy/migrations no Railway, validar se `planos` foi populada e checar se `precos` também está carregada antes de novo teste de catálogo

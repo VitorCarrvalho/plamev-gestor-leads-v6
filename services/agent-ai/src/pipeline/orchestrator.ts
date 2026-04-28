@@ -14,10 +14,13 @@ import {
   atualizarConversa,
 } from '../db';
 import {
+  buildGreetingResponse,
   buildDeterministicCatalogResponse,
   buildMariPrompt,
   chooseNonRepeatingFallback,
   detectCatalogIntent,
+  detectGreetingOnly,
+  detectPriceIntent,
   formatConversationStatePrompt,
   formatProductCatalogPrompt,
   inferTargetStage,
@@ -170,6 +173,11 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     buscarTabelaPlanos().catch(() => []),
   ]);
   const targetStage = inferTargetStage(msg.texto || '', conversaAtual);
+  const greetingOnly = detectGreetingOnly(msg.texto || '');
+  const catalogIntent = detectCatalogIntent(msg.texto || '');
+  const priceIntent = detectPriceIntent(msg.texto || '');
+  const topicalPlanMessage = /(plano|planos|pre[cç]o|valor|cobertura|car[eê]ncia|rede|consulta|exame|cirurgia|manual|pdf)/i.test(msg.texto || '');
+  const includePlanContext = !greetingOnly && (catalogIntent || priceIntent || topicalPlanMessage);
   const kb = await searchKnowledge(msg.texto || '', orgId, config.id, 5, {
     stage: targetStage,
   });
@@ -211,9 +219,10 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     prompts: { ...promptBundle, soul: baseSoul },
     stage: targetStage,
     conversationState: formatConversationStatePrompt(conversaAtual),
-    productCatalog: formatProductCatalogPrompt(tabelaPlanos),
+    productCatalog: includePlanContext ? formatProductCatalogPrompt(tabelaPlanos) : '',
     knowledgeBase: kb.conteudo,
-    catalogIntent: detectCatalogIntent(msg.texto || ''),
+    catalogIntent,
+    includePlanContext,
   });
 
   const messages: ChatMessage[] = [
@@ -223,7 +232,27 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
 
   console.log(`${tag} [3/7] Prompt | ${messages.length} msgs (${systemPrompt.length} chars system)`);
 
-  const catalogIntent = detectCatalogIntent(msg.texto || '');
+  if (greetingOnly) {
+    const greetingResponse = buildGreetingResponse(conversaAtual);
+    console.log(`${tag} [3.2/7] Saudação determinística acionada`);
+    await sendResponse(msg, greetingResponse);
+    await persistInteraction(msg, greetingResponse);
+    trace.update({
+      output: greetingResponse,
+      metadata: {
+        total_latency_ms: Date.now() - start,
+        deterministic_greeting: true,
+        rag_mode: kb.mode,
+        rag_sources: kb.fontes,
+        target_stage: targetStage,
+      },
+    });
+    trace.score({ name: 'deterministic_greeting', value: 1 });
+    await lf_flush();
+    console.log(`${tag} ✅ Pipeline completo em ${Date.now() - start}ms (saudação determinística)`);
+    return;
+  }
+
   if (catalogIntent) {
     const deterministicCatalog = buildDeterministicCatalogResponse(tabelaPlanos, conversaAtual);
     if (deterministicCatalog) {

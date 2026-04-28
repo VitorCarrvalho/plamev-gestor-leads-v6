@@ -33,19 +33,34 @@ function extractPrices(text: string): string[] {
 }
 
 function extractKnownPlanNames(text: string): string[] {
-  const matches = text.match(/##\s+([^\n(]+)\s+\([^)]+\)/g) || [];
-  return matches
-    .map((match) => match.replace(/^##\s+/, '').replace(/\s+\([^)]+\)$/, '').trim().toLowerCase())
-    .filter(Boolean);
+  const names = new Set<string>();
+  const headingRegex = /#{2,6}\s+([^\n(]+?)\s+\(([^)]+)\)/g;
+  let headingMatch: RegExpExecArray | null = null;
+  while ((headingMatch = headingRegex.exec(text)) !== null) {
+    const label = headingMatch[1]?.trim()?.toLowerCase();
+    const slug = headingMatch[2]?.trim()?.toLowerCase();
+    if (label) names.add(label);
+    if (slug) names.add(slug);
+  }
+
+  const slugRegex = /`((?:slim|advance|platinum|diamond)(?:_plus)?|plus)`/gi;
+  let slugMatch: RegExpExecArray | null = null;
+  while ((slugMatch = slugRegex.exec(text)) !== null) {
+    names.add(slugMatch[1].trim().toLowerCase());
+  }
+
+  return [...names];
 }
 
 function detectMentionedPlanNames(text: string): string[] {
   const knownCandidates = [
-    'slim', 'advance', 'platinum', 'diamond', 'plus',
-    'essencial', 'premium', 'gold', 'basico', 'básico',
+    'slim', 'advance', 'platinum', 'diamond',
+    'advance plus', 'platinum plus', 'diamond plus',
+    'advance_plus', 'platinum_plus', 'diamond_plus',
+    'plus',
   ];
   const lower = text.toLowerCase();
-  return knownCandidates.filter((name) => lower.includes(name));
+  return knownCandidates.filter((name) => lower.includes(name)).map((name) => name.toLowerCase());
 }
 
 export async function validateClaims(
@@ -125,7 +140,9 @@ export async function validateClaims(
 
   const contextPlanNames = new Set(extractKnownPlanNames(originalContext));
   const mentionedPlanNames = detectMentionedPlanNames(response);
-  const plansOutsideContext = mentionedPlanNames.filter((plan) => !contextPlanNames.has(plan));
+  const plansOutsideContext = contextPlanNames.size > 0
+    ? mentionedPlanNames.filter((plan) => !contextPlanNames.has(plan))
+    : [];
   if (plansOutsideContext.length > 0) {
     matchedRules.push('plan-not-in-context');
     return {

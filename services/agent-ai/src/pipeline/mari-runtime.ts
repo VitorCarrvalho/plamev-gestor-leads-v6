@@ -55,6 +55,21 @@ function getPrimaryPrice(rowGroup: { modalidades: CatalogRow[] }) {
   return preferred?.valor_promocional ?? preferred?.valor ?? null;
 }
 
+export function detectGreetingOnly(text: string) {
+  const normalized = (text || '')
+    .toLowerCase()
+    .replace(/[!?.,;:]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) return false;
+  if (/(plano|planos|pre[cç]o|valor|quanto custa|cobertura|car[eê]ncia|rede|consulta|exame|cirurgia|me explica|quero saber|quais)/i.test(normalized)) {
+    return false;
+  }
+
+  return /^(oi|ola|olá|bom dia|boa tarde|boa noite|e ai|e aí|tudo bem|tudo bom|opa|joia|jóia|blz|beleza)( .*)?$/i.test(normalized);
+}
+
 export function detectCatalogIntent(text: string) {
   return /(quais planos|quais vc tem|quais vocês têm|quais voces tem|me explica os planos|me explica quais|quero saber os planos|quero saber quais planos|quais existem hoje|cat[aá]logo|catalogo)/i.test(text);
 }
@@ -65,6 +80,7 @@ export function detectPriceIntent(text: string) {
 
 export function inferTargetStage(messageText: string, conversaAtual?: ConversationSnapshot | null) {
   const text = (messageText || '').toLowerCase();
+  if (detectGreetingOnly(text)) return 'acolhimento';
   if (detectCatalogIntent(text) || detectPriceIntent(text)) return 'apresentacao_planos';
   if (/(quero plano|quero pro meu cachorro|me indica|qual melhor plano)/i.test(text)) return 'qualificacao';
   return conversaAtual?.etapa || 'acolhimento';
@@ -77,6 +93,7 @@ export function buildMariPrompt({
   productCatalog,
   knowledgeBase,
   catalogIntent,
+  includePlanContext,
 }: {
   prompts: PromptBundle;
   stage: string;
@@ -84,6 +101,7 @@ export function buildMariPrompt({
   productCatalog?: string;
   knowledgeBase?: string;
   catalogIntent?: boolean;
+  includePlanContext?: boolean;
 }) {
   const sections: string[] = [];
 
@@ -95,11 +113,11 @@ export function buildMariPrompt({
   if (prompts.modo_rapido && ['acolhimento', 'qualificacao'].includes(stage)) {
     sections.push(`# MODO RAPIDO\n${prompts.modo_rapido}`);
   }
-  if (prompts.planos && (catalogIntent || ['apresentacao_planos', 'negociacao', 'pre_fechamento', 'fechamento'].includes(stage))) {
+  if (prompts.planos && includePlanContext && (catalogIntent || ['apresentacao_planos', 'negociacao', 'pre_fechamento', 'fechamento'].includes(stage))) {
     sections.push(`# PLANOS E PRODUTOS\n${prompts.planos}`);
   }
   if (conversationState) sections.push(conversationState);
-  if (productCatalog) sections.push(productCatalog);
+  if (includePlanContext && productCatalog) sections.push(productCatalog);
   if (knowledgeBase) sections.push(`# BASE DE CONHECIMENTO\n${knowledgeBase}`);
 
   sections.push(`# ORIENTACAO COMERCIAL
@@ -111,6 +129,16 @@ Etapa atual: ${stage}
 - Nunca invente nomes de plano, cobertura, clínica ou valor fora do catálogo/contexto.`);
 
   return sections.filter(Boolean).join('\n\n');
+}
+
+export function buildGreetingResponse(conversaAtual?: ConversationSnapshot | null) {
+  const tutor = conversaAtual?.tutor_nome?.trim();
+  const pet = conversaAtual?.nome_pet?.trim();
+  const greeting = tutor ? `Boa tarde, ${tutor}! 😊` : 'Boa tarde! 😊';
+  const followup = pet
+    ? `Como posso te ajudar com o ${pet}?`
+    : 'Como posso te ajudar?';
+  return `${greeting}\n${followup}`;
 }
 
 export function formatProductCatalogPrompt(rows: CatalogRow[]) {
