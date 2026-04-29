@@ -109,8 +109,12 @@ async function dispararCotacao(
     }
     if (!racaId) racaId = petEspecie === '2' ? 'SEMRACA2' : 'SEMRACA1';
 
-    // DDD + número
-    const { ddd, numero } = extrairDdd(telefone);
+    // DDD + número — strip código de país 55 se presente
+    let telefoneBruto = telefone.replace(/\D/g, '');
+    if (telefoneBruto.startsWith('55') && telefoneBruto.length > 11) {
+      telefoneBruto = telefoneBruto.slice(2);
+    }
+    const { ddd, numero } = extrairDdd(telefoneBruto);
 
     const payload: CotacaoPayload = {
       nome: nomeCliente,
@@ -136,7 +140,7 @@ async function dispararCotacao(
       }],
     };
 
-    console.log(`${tag} 🔄 Submetendo cotação para ${nomeCliente} (pet: ${petNome})…`);
+    console.log(`${tag} 🔄 Submetendo cotação para ${nomeCliente} (pet: ${petNome}) | ddd=${ddd} tel=${numero} cep=${endereco.cep} uf=${endereco.uf} ci=${coberturaId} especie=${petEspecie} raca=${racaId}`);
     const resultado = await submeterCotacao(payload);
     console.log(`${tag} ✅ Cotação ${resultado.numeroCotacao} gerada — ${resultado.valorTotalMensalidade}/mês`);
 
@@ -150,6 +154,7 @@ async function dispararCotacao(
     console.log(`${tag} 📤 PDF enviado via WhatsApp`);
   } catch (e: any) {
     console.error(`${tag} ❌ Falha ao disparar cotação:`, e.message);
+    if (e.erros) console.error(`${tag}   Erros de validação:`, JSON.stringify(e.erros));
   }
 }
 
