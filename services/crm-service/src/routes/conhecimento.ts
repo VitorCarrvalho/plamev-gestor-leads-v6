@@ -58,6 +58,15 @@ function splitVaultPath(filePath: string) {
   return { pasta, arquivo, fullPath: normalized };
 }
 
+function makeVaultDocId(filePath: string) {
+  return `vault:${filePath}`;
+}
+
+function parseVaultDocId(docId: string) {
+  if (!String(docId || '').startsWith('vault:')) return null;
+  return String(docId).slice('vault:'.length);
+}
+
 async function fetchVaultFiles() {
   let lastError: Error | null = null;
 
@@ -130,6 +139,28 @@ async function syncVaultToKnowledgeBase(agentId: string) {
   return { discovered: files.length, imported };
 }
 
+function buildVaultGroups(files: string[]) {
+  const grupos: Record<string, any[]> = {};
+  for (const filePath of files) {
+    const { pasta, arquivo, fullPath } = splitVaultPath(filePath);
+    if (!grupos[pasta]) grupos[pasta] = [];
+    grupos[pasta].push({
+      id: makeVaultDocId(fullPath),
+      pasta,
+      arquivo,
+      titulo: arquivo,
+      etapas: [],
+      sempre_ativo: false,
+      ativo: true,
+      ordem: 0,
+      chars: 0,
+      atualizado_em: null,
+      source: 'vault',
+    });
+  }
+  return grupos;
+}
+
 // ── Vault proxy: lista arquivos ───────────────────────────────
 router.get('/vault', autenticar, async (_req, res) => {
   try {
@@ -153,20 +184,36 @@ router.get('/', autenticar, async (req, res) => {
   try {
     const { agenteId } = req.params;
     let vaultSync: { discovered: number; imported: number } | null = null;
+    let vaultFiles: string[] = [];
     try {
       vaultSync = await syncVaultToKnowledgeBase(agenteId);
+      vaultFiles = await fetchVaultFiles();
     } catch (vaultError: any) {
       console.warn(`[CONHECIMENTO] ⚠️ Falha ao sincronizar vault para agente ${agenteId}: ${vaultError.message}`);
+      try {
+        vaultFiles = await fetchVaultFiles();
+      } catch (listError: any) {
+        console.warn(`[CONHECIMENTO] ⚠️ Falha ao listar vault para agente ${agenteId}: ${listError.message}`);
+      }
     }
 
-    const rows = await query<any>(
-      `SELECT id, pasta, arquivo, titulo, etapas, sempre_ativo, ativo, ordem,
-              LENGTH(conteudo) AS chars, atualizado_em
-       FROM knowledge_base_docs
-       WHERE agent_id = $1
-       ORDER BY pasta ASC, ordem ASC, arquivo ASC`,
-      [agenteId]
-    );
+    let rows: any[] = [];
+    try {
+      rows = await query<any>(
+        `SELECT id, pasta, arquivo, titulo, etapas, sempre_ativo, ativo, ordem,
+                LENGTH(conteudo) AS chars, atualizado_em
+         FROM knowledge_base_docs
+         WHERE agent_id = $1
+         ORDER BY pasta ASC, ordem ASC, arquivo ASC`,
+        [agenteId]
+      );
+    } catch (dbError: any) {
+      console.warn(`[CONHECIMENTO] ⚠️ Falha ao ler knowledge_base_docs agente=${agenteId}: ${dbError.message}`);
+      if (!vaultFiles.length) throw dbError;
+      const grupos = buildVaultGroups(vaultFiles);
+      res.json({ ok: true, grupos, total: vaultFiles.length, vaultSync, source: 'vault-fallback' });
+      return;
+    }
 
     const grupos: Record<string, any[]> = {};
     for (const r of rows) {
@@ -184,6 +231,28 @@ router.get('/', autenticar, async (req, res) => {
 // ── Detalhe de um doc (com conteúdo completo) ────────────────
 router.get('/:docId', autenticar, async (req, res) => {
   try {
+    const vaultPath = parseVaultDocId(req.params.docId);
+    if (vaultPath) {
+      const { pasta, arquivo } = splitVaultPath(vaultPath);
+      const conteudo = await fetchVaultFile(vaultPath);
+      res.json({
+        ok: true,
+        doc: {
+          id: req.params.docId,
+          pasta,
+          arquivo,
+          titulo: arquivo,
+          conteudo,
+          etapas: [],
+          sempre_ativo: false,
+          ativo: true,
+          ordem: 0,
+          source: 'vault',
+        },
+      });
+      return;
+    }
+
     const doc = await queryOne<any>(
       `SELECT * FROM knowledge_base_docs WHERE id=$1 AND agent_id=$2`,
       [req.params.docId, req.params.agenteId]

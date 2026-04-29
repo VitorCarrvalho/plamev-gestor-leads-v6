@@ -16,6 +16,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { api } from '@/services/api';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 // ── Tipos ─────────────────────────────────────────────────────
 interface Agente {
@@ -40,6 +42,7 @@ interface KbDocMeta {
   etapas: string[]; sempre_ativo: boolean; ativo: boolean; ordem: number; chars: number;
 }
 interface KbDoc extends KbDocMeta { conteudo: string; }
+interface VaultFile { pasta: string; arquivo: string; path: string; }
 
 interface AgenteDetalhe extends Agente {
   prompts: Prompt[];
@@ -545,63 +548,68 @@ const PASTA_CORES: Record<string, string> = {
 // Aba Conhecimento
 // ════════════════════════════════════════════════════════════════
 const TabConhecimento: React.FC<{ agenteId: number }> = ({ agenteId }) => {
-  const [grupos, setGrupos] = useState<Record<string, KbDocMeta[]>>({});
+  const [arquivos, setArquivos] = useState<VaultFile[]>([]);
+  const [grupos, setGrupos] = useState<Record<string, VaultFile[]>>({});
   const [loading, setLoading] = useState(true);
-  const [selectedDoc, setSelectedDoc] = useState<KbDoc | null>(null);
+  const [selectedFile, setSelectedFile] = useState<VaultFile | null>(null);
+  const [conteudo, setConteudo] = useState('');
   const [loadingDoc, setLoadingDoc] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [busca, setBusca] = useState('');
   const [pastasAbertas, setPastasAbertas] = useState<Set<string>>(new Set(['Mari', 'Plamev', 'Vendas']));
-  const [editForm, setEditForm] = useState({ conteudo: '', etapas: [] as string[], sempre_ativo: false, ativo: true });
-  const { salvo, mostrar } = useSalvo();
 
-  const carregar = async () => {
+  const carregarArquivos = async () => {
     setLoading(true);
     try {
-      const d = await api.get<{ grupos: Record<string, KbDocMeta[]> }>(`/api/config/agentes/${agenteId}/conhecimento`);
-      setGrupos(d.grupos);
-    } catch(e: any) { console.error(e); }
+      const d = await api.get<{ files: string[] }>(`/api/config/agentes/${agenteId}/conhecimento/vault`);
+      const lista: VaultFile[] = (d.files || []).map(f => {
+        const partes = f.split('/');
+        const pasta = partes.length > 1 ? partes[0] : 'root';
+        const arquivo = partes[partes.length - 1].replace('.md', '');
+        return { pasta, arquivo, path: f };
+      });
+      setArquivos(lista);
+      const g: Record<string, VaultFile[]> = {};
+      for (const f of lista) {
+        if (!g[f.pasta]) g[f.pasta] = [];
+        g[f.pasta].push(f);
+      }
+      setGrupos(g);
+      if (Object.keys(g).length > 0) {
+        setPastasAbertas(new Set(Object.keys(g).slice(0, 3)));
+      }
+    } catch(e: any) { console.error('vault list error:', e); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { carregar(); }, [agenteId]);
+  useEffect(() => { carregarArquivos(); }, [agenteId]);
 
-  const abrirDoc = async (meta: KbDocMeta) => {
+  const abrirArquivo = async (file: VaultFile) => {
+    setSelectedFile(file);
     setLoadingDoc(true);
-    setSelectedDoc(null);
+    setConteudo('');
     try {
-      const d = await api.get<{ doc: KbDoc }>(`/api/config/agentes/${agenteId}/conhecimento/${meta.id}`);
-      setSelectedDoc(d.doc);
-      setEditForm({ conteudo: d.doc.conteudo, etapas: d.doc.etapas || [], sempre_ativo: d.doc.sempre_ativo, ativo: d.doc.ativo });
-    } catch(e: any) { console.error(e); }
+      const d = await api.get<{ conteudo: string }>(
+        `/api/config/agentes/${agenteId}/conhecimento/vault/arquivo?path=${encodeURIComponent(file.path)}`
+      );
+      setConteudo(d.conteudo || '');
+    } catch(e: any) { console.error(e); setConteudo('*Erro ao carregar arquivo.*'); }
     finally { setLoadingDoc(false); }
   };
 
-  const salvarDoc = async () => {
-    if (!selectedDoc) return;
-    setSaving(true);
-    try {
-      await api.patch(`/api/config/agentes/${agenteId}/conhecimento/${selectedDoc.id}`, editForm);
-      setGrupos(prev => {
-        const next = { ...prev };
-        if (next[selectedDoc.pasta]) {
-          next[selectedDoc.pasta] = next[selectedDoc.pasta].map(d =>
-            d.id === selectedDoc.id ? { ...d, ...editForm, chars: editForm.conteudo.length } : d
-          );
-        }
-        return next;
-      });
-      mostrar();
-    } catch(e: any) { alert(e.message); }
-    finally { setSaving(false); }
+  const navegarParaWikilink = (nome: string) => {
+    const norm = nome.replace('.md', '');
+    const encontrado = arquivos.find(f =>
+      f.path.replace('.md', '') === norm ||
+      f.arquivo === norm ||
+      f.arquivo === norm.split('/').pop()
+    );
+    if (encontrado) abrirArquivo(encontrado);
   };
 
-  const toggleEtapa = (etapa: string) => {
-    setEditForm(f => ({
-      ...f,
-      etapas: f.etapas.includes(etapa) ? f.etapas.filter(e => e !== etapa) : [...f.etapas, etapa]
-    }));
-  };
+  const processarWikilinks = (md: string) =>
+    md.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, link, alias) =>
+      `[${alias || link}](wikilink:${encodeURIComponent(link)})`
+    );
 
   const togglePasta = (pasta: string) => {
     setPastasAbertas(prev => {
@@ -611,16 +619,15 @@ const TabConhecimento: React.FC<{ agenteId: number }> = ({ agenteId }) => {
     });
   };
 
-  const totalAtivos = Object.values(grupos).flat().filter(d => d.ativo).length;
-  const total = Object.values(grupos).flat().length;
-
   const filteredGrupos = busca.trim()
-    ? Object.fromEntries(
-        (Object.entries(grupos).map(([pasta, docs]) => [
-          pasta,
-          docs.filter(d => d.arquivo.toLowerCase().includes(busca.toLowerCase()) || d.titulo.toLowerCase().includes(busca.toLowerCase()))
-        ]) as [string, KbDocMeta[]][]).filter(([_, docs]) => docs.length > 0)
-      )
+    ? (() => {
+        const result: Record<string, VaultFile[]> = {};
+        for (const [pasta, docs] of Object.entries(grupos)) {
+          const filtered = docs.filter(d => d.arquivo.toLowerCase().includes(busca.toLowerCase()));
+          if (filtered.length) result[pasta] = filtered;
+        }
+        return result;
+      })()
     : grupos;
 
   return (
@@ -630,7 +637,7 @@ const TabConhecimento: React.FC<{ agenteId: number }> = ({ agenteId }) => {
         <div className="p-3 border-b border-slate-100">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-slate-700">Base de Conhecimento</span>
-            <span className="text-[10px] text-slate-400">{totalAtivos}/{total} ativos</span>
+            <span className="text-[10px] text-slate-400">{arquivos.length} arquivos</span>
           </div>
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
@@ -660,22 +667,20 @@ const TabConhecimento: React.FC<{ agenteId: number }> = ({ agenteId }) => {
                     : <ChevronRight className="w-3 h-3 text-slate-400 flex-shrink-0" />}
                   <FolderOpen className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
                   <span className="text-xs font-medium text-slate-700 flex-1 text-left">{pasta}</span>
-                  <span className="text-[10px] text-slate-400">{docs.filter(d => d.ativo).length}/{docs.length}</span>
+                  <span className="text-[10px] text-slate-400">{docs.length}</span>
                 </button>
                 {pastasAbertas.has(pasta) && docs.map(doc => (
                   <button
-                    key={doc.id}
-                    onClick={() => abrirDoc(doc)}
+                    key={doc.path}
+                    onClick={() => abrirArquivo(doc)}
                     className={`w-full flex items-center gap-1.5 pl-7 pr-3 py-1 text-left transition-colors ${
-                      selectedDoc?.id === doc.id
+                      selectedFile?.path === doc.path
                         ? 'bg-indigo-50 text-indigo-700'
                         : 'hover:bg-slate-50 text-slate-600'
                     }`}
                   >
                     <FileText className="w-3 h-3 flex-shrink-0" />
                     <span className="text-xs truncate flex-1">{doc.arquivo}</span>
-                    {!doc.ativo && <span className="w-1.5 h-1.5 rounded-full bg-slate-300 flex-shrink-0" />}
-                    {doc.sempre_ativo && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 flex-shrink-0" title="Sempre ativo" />}
                   </button>
                 ))}
               </div>
@@ -684,12 +689,13 @@ const TabConhecimento: React.FC<{ agenteId: number }> = ({ agenteId }) => {
         )}
       </div>
 
-      {/* ── Editor ───────────────────────────────────────────── */}
+      {/* ── Visualizador Markdown ─────────────────────────────── */}
       <div className="flex-1 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        {!selectedDoc && !loadingDoc && (
+        {!selectedFile && !loadingDoc && (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-2">
             <BookOpen className="w-8 h-8 opacity-30" />
-            <span className="text-sm">Selecione um arquivo para editar</span>
+            <span className="text-sm">Selecione um arquivo para visualizar</span>
+            <span className="text-xs text-slate-300">Edite no Obsidian — sincroniza via Git automaticamente</span>
           </div>
         )}
 
@@ -700,70 +706,59 @@ const TabConhecimento: React.FC<{ agenteId: number }> = ({ agenteId }) => {
           </div>
         )}
 
-        {selectedDoc && !loadingDoc && (
+        {selectedFile && !loadingDoc && (
           <>
-            {/* Header do arquivo */}
             <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${PASTA_CORES[selectedDoc.pasta] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
-                {selectedDoc.pasta}
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${PASTA_CORES[selectedFile.pasta] || 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                {selectedFile.pasta}
               </span>
-              <span className="font-medium text-slate-900 text-sm flex-1">{selectedDoc.arquivo}</span>
-              <span className="text-xs text-slate-400">{editForm.conteudo.length} chars</span>
-
-              {/* Toggle ativo */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-500">Ativo</span>
-                <button
-                  onClick={() => setEditForm(f => ({ ...f, ativo: !f.ativo }))}
-                  className={`h-4 w-7 rounded-full transition-colors ${editForm.ativo ? 'bg-indigo-500' : 'bg-slate-300'}`}
-                >
-                  <span className={`block h-3 w-3 ml-0.5 rounded-full bg-white shadow transition-transform ${editForm.ativo ? 'translate-x-3' : ''}`} />
-                </button>
-              </div>
-
-              {/* Toggle sempre_ativo */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-500">Sempre</span>
-                <button
-                  onClick={() => setEditForm(f => ({ ...f, sempre_ativo: !f.sempre_ativo }))}
-                  className={`h-4 w-7 rounded-full transition-colors ${editForm.sempre_ativo ? 'bg-indigo-500' : 'bg-slate-300'}`}
-                >
-                  <span className={`block h-3 w-3 ml-0.5 rounded-full bg-white shadow transition-transform ${editForm.sempre_ativo ? 'translate-x-3' : ''}`} />
-                </button>
-              </div>
-
-              <Button size="sm" onClick={salvarDoc} disabled={saving} className="gap-1.5 h-7 text-xs">
-                {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : salvo ? <CheckCircle className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-                {salvo ? 'Salvo!' : 'Salvar'}
-              </Button>
+              <span className="font-medium text-slate-900 text-sm flex-1">{selectedFile.arquivo}</span>
+              <span className="text-xs text-slate-400">{conteudo.length} chars</span>
+              <span className="text-xs text-slate-300 italic hidden sm:block">Edite no Obsidian</span>
             </div>
 
-            {/* Etapas do funil */}
-            <div className="px-4 py-2 border-b border-slate-100 flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mr-1">Etapas:</span>
-              {ETAPAS_FUNIL.map(etapa => (
-                <button
-                  key={etapa}
-                  onClick={() => toggleEtapa(etapa)}
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors ${
-                    editForm.etapas.includes(etapa)
-                      ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  {etapa.replace(/_/g, ' ')}
-                </button>
-              ))}
-            </div>
-
-            {/* Textarea do conteúdo */}
-            <div className="flex-1 overflow-hidden p-4">
-              <Textarea
-                value={editForm.conteudo}
-                onChange={e => setEditForm(f => ({ ...f, conteudo: e.target.value }))}
-                className="w-full h-full font-mono text-xs resize-none border-slate-200 bg-slate-50"
-                placeholder="Conteúdo markdown do documento..."
-              />
+            <div className="flex-1 overflow-y-auto p-6">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  a({ href, children }: any) {
+                    if (href?.startsWith('wikilink:')) {
+                      const nome = decodeURIComponent(href.slice(9));
+                      return (
+                        <button
+                          onClick={() => navegarParaWikilink(nome)}
+                          className="text-indigo-600 hover:text-indigo-800 underline decoration-dotted font-medium cursor-pointer"
+                        >
+                          {children}
+                        </button>
+                      );
+                    }
+                    return <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{children}</a>;
+                  },
+                  h1({ children }: any) { return <h1 className="text-xl font-bold text-slate-900 mb-4 mt-6 first:mt-0 pb-2 border-b border-slate-100">{children}</h1>; },
+                  h2({ children }: any) { return <h2 className="text-lg font-semibold text-slate-800 mb-3 mt-5">{children}</h2>; },
+                  h3({ children }: any) { return <h3 className="text-base font-semibold text-slate-700 mb-2 mt-4">{children}</h3>; },
+                  p({ children }: any) { return <p className="text-sm text-slate-700 mb-3 leading-relaxed">{children}</p>; },
+                  ul({ children }: any) { return <ul className="list-disc pl-5 mb-3 space-y-1 text-sm text-slate-700">{children}</ul>; },
+                  ol({ children }: any) { return <ol className="list-decimal pl-5 mb-3 space-y-1 text-sm text-slate-700">{children}</ol>; },
+                  li({ children }: any) { return <li className="leading-relaxed text-sm text-slate-700">{children}</li>; },
+                  pre({ children }: any) { return <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 my-3 overflow-x-auto">{children}</pre>; },
+                  code({ className, children }: any) {
+                    return className
+                      ? <code className={`text-xs font-mono text-slate-800 ${className}`}>{children}</code>
+                      : <code className="bg-slate-100 text-slate-800 px-1 py-0.5 rounded text-xs font-mono">{children}</code>;
+                  },
+                  blockquote({ children }: any) { return <blockquote className="border-l-4 border-indigo-200 pl-4 py-1 my-3 text-slate-500 italic text-sm">{children}</blockquote>; },
+                  hr() { return <hr className="border-slate-200 my-4" />; },
+                  strong({ children }: any) { return <strong className="font-semibold text-slate-900">{children}</strong>; },
+                  table({ children }: any) { return <div className="overflow-x-auto my-3"><table className="w-full text-xs border-collapse">{children}</table></div>; },
+                  thead({ children }: any) { return <thead className="bg-slate-50">{children}</thead>; },
+                  th({ children }: any) { return <th className="border border-slate-200 px-3 py-2 text-left font-semibold text-slate-700">{children}</th>; },
+                  td({ children }: any) { return <td className="border border-slate-200 px-3 py-2 text-slate-600">{children}</td>; },
+                }}
+              >
+                {processarWikilinks(conteudo)}
+              </ReactMarkdown>
             </div>
           </>
         )}
