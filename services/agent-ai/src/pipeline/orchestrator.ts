@@ -101,13 +101,37 @@ async function dispararCotacao(
       return;
     }
 
-    // Raça → UUID
-    let racaId = dados.racas_id || dados.racasId || '';
+    // Raça → UUID (normaliza para lowercase)
+    let racaId = (dados.racas_id || dados.racasId || '').toLowerCase();
     if (!racaId && petRacaNome) {
       const raca = await encontrarRacaPorNome(petRacaNome, petEspecie);
-      racaId = raca?.id || (petEspecie === '2' ? 'SEMRACA2' : 'SEMRACA1');
+      racaId = raca?.id?.toLowerCase() || (petEspecie === '2' ? 'SEMRACA2' : 'SEMRACA1');
     }
     if (!racaId) racaId = petEspecie === '2' ? 'SEMRACA2' : 'SEMRACA1';
+
+    // Cobertura → UUID: se a LLM enviou nome/slug em vez de UUID, resolve pelo nome
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let coberturaIdResolvido = coberturaId;
+    if (coberturaId && !uuidPattern.test(coberturaId)) {
+      console.log(`${tag} 🔍 ci="${coberturaId}" não é UUID — buscando pelo nome em coberturas de ${endereco.uf}…`);
+      try {
+        const coberturas = await buscarCoberturasParaUF(endereco.uf);
+        const slug = coberturaId.toLowerCase().replace(/[-_]/g, ' ');
+        const match = coberturas.find(c =>
+          c.nome.toLowerCase().includes(slug) ||
+          slug.includes(c.nome.toLowerCase().split(' ')[0])
+        );
+        if (match) {
+          coberturaIdResolvido = match.id;
+          console.log(`${tag} ✅ cobertura resolvida: "${coberturaId}" → ${match.id} (${match.nome})`);
+        } else {
+          console.warn(`${tag} ⚠️ Plano "${coberturaId}" não encontrado em ${endereco.uf} — usando o primeiro disponível`);
+          coberturaIdResolvido = coberturas[0]?.id || coberturaId;
+        }
+      } catch (e: any) {
+        console.warn(`${tag} ⚠️ Falha ao resolver cobertura por nome: ${e.message}`);
+      }
+    }
 
     // DDD + número — strip código de país 55 se presente
     let telefoneBruto = telefone.replace(/\D/g, '');
@@ -136,11 +160,11 @@ async function dispararCotacao(
         sexo: ['Macho', 'Fêmea'].includes(petSexo) ? petSexo as 'Macho' | 'Fêmea' : 'Macho',
         especie: petEspecie,
         racasId: racaId,
-        coberturasId: coberturaId,
+        coberturasId: coberturaIdResolvido,
       }],
     };
 
-    console.log(`${tag} 🔄 Submetendo cotação para ${nomeCliente} (pet: ${petNome}) | ddd=${ddd} tel=${numero} cep=${endereco.cep} uf=${endereco.uf} ci=${coberturaId} especie=${petEspecie} raca=${racaId}`);
+    console.log(`${tag} 🔄 Submetendo cotação para ${nomeCliente} (pet: ${petNome}) | ddd=${ddd} tel=${numero} cep=${endereco.cep} uf=${endereco.uf} ci=${coberturaIdResolvido} especie=${petEspecie} raca=${racaId}`);
     const resultado = await submeterCotacao(payload);
     console.log(`${tag} ✅ Cotação ${resultado.numeroCotacao} gerada — ${resultado.valorTotalMensalidade}/mês`);
 
