@@ -169,11 +169,11 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   // Carrega prompts em paralelo: vault (primário) + banco (fallback) + contexto
   const [vaultSoul, vaultTom, vaultRegras, vaultAntiRep, vaultPensamentos, vaultModoRapido,
          promptBundle, historico, conversaAtual, tabelaPlanos, vaultArquivos] = await Promise.all([
-    vaultCarregar('Mari/Soul.md'),
+    vaultCarregar('Mari/Identidade.md'),
     vaultCarregar('Mari/Tom-e-Fluxo.md'),
-    vaultCarregar('Mari/Regras-Gerais.md'),
+    vaultCarregar('Mari/Regras-Absolutas.md'),
     vaultCarregar('Mari/Anti-Repeticao.md'),
-    vaultCarregar('Mari/Pensamentos.md'),
+    vaultCarregar('Mari/Personalidade-Vendas.md'),
     vaultCarregar('Mari/Modo-Rapido.md'),
     buscarPrompts(Number(config.id)).catch(() => ({})),
     buscarHistorico(orgId, msg.phone, msg.canal),

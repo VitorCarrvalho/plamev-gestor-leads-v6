@@ -110,8 +110,8 @@ async function searchKnowledgeStructured(
       source: `${doc.pasta}/${doc.arquivo}`,
       score: docs.length - index,
     }));
-  } catch (error) {
-    console.error('[AGENT-AI] Erro no RAG estruturado:', error);
+  } catch (error: any) {
+    if (error?.code !== '42P01') console.warn('[AGENT-AI] RAG estruturado:', error?.message || error);
     return [];
   }
 }
@@ -207,8 +207,8 @@ export async function searchKnowledgeFullText(
       source: doc.arquivo || doc.titulo || `kb_doc_${index + 1}`,
       score: docs.length - index,
     }));
-  } catch (error) {
-    console.error('[AGENT-AI] Erro no RAG full-text:', error);
+  } catch (error: any) {
+    if (error?.code !== '42P01') console.warn('[AGENT-AI] RAG full-text:', error?.message || error);
     return [];
   }
 }
