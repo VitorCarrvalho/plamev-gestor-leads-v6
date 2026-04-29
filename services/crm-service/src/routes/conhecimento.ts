@@ -7,11 +7,47 @@ import { Router } from 'express';
 import { autenticar, soAdmin } from '../middleware/auth';
 import { query, execute, queryOne } from '../config/db';
 import fs from 'fs';
+import http from 'http';
+import https from 'https';
 import path from 'path';
 
 const router = Router({ mergeParams: true });
 
 const VAULT_SERVER_URL = process.env.VAULT_SERVER_URL || 'http://vault-server.railway.internal:8080';
+
+function getVaultBaseUrls() {
+  return [...new Set([
+    VAULT_SERVER_URL,
+    'http://vault-server.railway.internal:8080',
+    'http://vault-server:8080',
+  ])];
+}
+
+function httpRequest(url: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const lib = parsed.protocol === 'https:' ? https : http;
+    const req = lib.request(
+      {
+        hostname: parsed.hostname,
+        port: parsed.port ? parseInt(parsed.port, 10) : undefined,
+        path: parsed.pathname + (parsed.search || ''),
+        method: 'GET',
+        timeout: 5000,
+      },
+      res => {
+        let data = '';
+        res.on('data', chunk => { data += chunk; });
+        res.on('end', () => resolve({ status: res.statusCode || 500, body: data }));
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy(new Error('Timeout'));
+    });
+    req.end();
+  });
+}
 
 function splitVaultPath(filePath: string) {
   const normalized = String(filePath || '').replace(/^\/+/, '').trim();
@@ -23,17 +59,43 @@ function splitVaultPath(filePath: string) {
 }
 
 async function fetchVaultFiles() {
-  const resp = await fetch(`${VAULT_SERVER_URL}/files`, { signal: AbortSignal.timeout(5000) });
-  if (!resp.ok) throw new Error(`vault-server HTTP ${resp.status}`);
-  const data = await resp.json() as { total: number; files: string[] };
-  return data.files || [];
+  let lastError: Error | null = null;
+
+  for (const baseUrl of getVaultBaseUrls()) {
+    try {
+      const { status, body } = await httpRequest(`${baseUrl}/files`);
+      if (status < 200 || status >= 300) {
+        throw new Error(`vault-server HTTP ${status} via ${baseUrl}`);
+      }
+      const data = JSON.parse(body) as { total: number; files: string[] };
+      return data.files || [];
+    } catch (error: any) {
+      lastError = new Error(`${baseUrl} -> ${error.message}`);
+      console.warn(`[CONHECIMENTO] ⚠️ Vault /files falhou: ${baseUrl} -> ${error.message}`);
+    }
+  }
+
+  throw lastError || new Error('vault-server indisponível');
 }
 
 async function fetchVaultFile(filePath: string) {
-  const url = `${VAULT_SERVER_URL}/file?path=${encodeURIComponent(filePath)}`;
-  const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
-  if (!resp.ok) throw new Error(`vault-server arquivo HTTP ${resp.status}: ${filePath}`);
-  return resp.text();
+  let lastError: Error | null = null;
+
+  for (const baseUrl of getVaultBaseUrls()) {
+    const url = `${baseUrl}/file?path=${encodeURIComponent(filePath)}`;
+    try {
+      const { status, body } = await httpRequest(url);
+      if (status < 200 || status >= 300) {
+        throw new Error(`vault-server arquivo HTTP ${status}: ${filePath}`);
+      }
+      return body;
+    } catch (error: any) {
+      lastError = new Error(`${baseUrl} -> ${error.message}`);
+      console.warn(`[CONHECIMENTO] ⚠️ Vault /file falhou: ${baseUrl} -> ${error.message}`);
+    }
+  }
+
+  throw lastError || new Error(`vault-server indisponível para arquivo: ${filePath}`);
 }
 
 async function syncVaultToKnowledgeBase(agentId: string) {
@@ -71,10 +133,8 @@ async function syncVaultToKnowledgeBase(agentId: string) {
 // ── Vault proxy: lista arquivos ───────────────────────────────
 router.get('/vault', autenticar, async (_req, res) => {
   try {
-    const resp = await fetch(`${VAULT_SERVER_URL}/files`, { signal: AbortSignal.timeout(5000) });
-    if (!resp.ok) { res.status(resp.status).json({ erro: `vault-server HTTP ${resp.status}` }); return; }
-    const data = await resp.json() as { total: number; files: string[] };
-    res.json(data);
+    const files = await fetchVaultFiles();
+    res.json({ total: files.length, files });
   } catch (e: any) { res.status(503).json({ erro: `vault-server indisponível: ${e.message}` }); }
 });
 
@@ -83,10 +143,7 @@ router.get('/vault/arquivo', autenticar, async (req, res) => {
   const filePath = req.query.path as string;
   if (!filePath) { res.status(400).json({ erro: 'query param "path" obrigatório' }); return; }
   try {
-    const url = `${VAULT_SERVER_URL}/file?path=${encodeURIComponent(filePath)}`;
-    const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!resp.ok) { res.status(resp.status).json({ erro: 'arquivo não encontrado' }); return; }
-    const conteudo = await resp.text();
+    const conteudo = await fetchVaultFile(filePath);
     res.json({ conteudo });
   } catch (e: any) { res.status(503).json({ erro: `vault-server indisponível: ${e.message}` }); }
 });
@@ -118,7 +175,10 @@ router.get('/', autenticar, async (req, res) => {
     }
 
     res.json({ ok: true, grupos, total: rows.length, vaultSync });
-  } catch (e: any) { res.status(500).json({ erro: e.message }); }
+  } catch (e: any) {
+    console.error(`[CONHECIMENTO] ❌ Falha em GET /conhecimento agente=${req.params.agenteId}:`, e.message);
+    res.status(500).json({ erro: e.message });
+  }
 });
 
 // ── Detalhe de um doc (com conteúdo completo) ────────────────
