@@ -11,6 +11,31 @@ import path from 'path';
 
 const router = Router({ mergeParams: true });
 
+const VAULT_SERVER_URL = process.env.VAULT_SERVER_URL || 'http://vault-server.railway.internal:8080';
+
+// ── Vault proxy: lista arquivos ───────────────────────────────
+router.get('/vault', autenticar, async (_req, res) => {
+  try {
+    const resp = await fetch(`${VAULT_SERVER_URL}/files`, { signal: AbortSignal.timeout(5000) });
+    if (!resp.ok) { res.status(resp.status).json({ erro: `vault-server HTTP ${resp.status}` }); return; }
+    const data = await resp.json() as { total: number; files: string[] };
+    res.json(data);
+  } catch (e: any) { res.status(503).json({ erro: `vault-server indisponível: ${e.message}` }); }
+});
+
+// ── Vault proxy: conteúdo de um arquivo ──────────────────────
+router.get('/vault/arquivo', autenticar, async (req, res) => {
+  const filePath = req.query.path as string;
+  if (!filePath) { res.status(400).json({ erro: 'query param "path" obrigatório' }); return; }
+  try {
+    const url = `${VAULT_SERVER_URL}/file?path=${encodeURIComponent(filePath)}`;
+    const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!resp.ok) { res.status(resp.status).json({ erro: 'arquivo não encontrado' }); return; }
+    const conteudo = await resp.text();
+    res.json({ conteudo });
+  } catch (e: any) { res.status(503).json({ erro: `vault-server indisponível: ${e.message}` }); }
+});
+
 // ── Lista todos os docs agrupados por pasta ──────────────────
 router.get('/', autenticar, async (req, res) => {
   try {
