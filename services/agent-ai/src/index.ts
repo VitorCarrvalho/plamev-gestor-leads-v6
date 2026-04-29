@@ -3,6 +3,7 @@ import express from 'express';
 import { Pool } from 'pg';
 import { runMigrations } from '../../../infra/migrate';
 import { startConsumer } from './pipeline/consumer';
+import { syncVaultToKb } from './pipeline/vault-sync';
 
 config();
 
@@ -56,6 +57,35 @@ app.get('/health', async (_req, res) => {
 
   res.status(checks.ok ? 200 : 503).json(checks);
 });
+// ── POST /internal/vault-sync ─────────────────────────────────
+// Sincroniza arquivos de conteúdo do vault → knowledge_base_docs + knowledge_chunks
+// Chamado pelo obsidian-sync após push de arquivos não-Mari/
+app.post('/internal/vault-sync', async (req, res) => {
+  const secret = process.env.INTERNAL_SECRET || 'plamev-internal';
+  if (req.headers['x-internal-secret'] !== secret) {
+    res.status(401).json({ erro: 'não autorizado' });
+    return;
+  }
+
+  const agentId = parseInt(req.body?.agent_id ?? '1', 10);
+  const orgId   = req.body?.org_id ?? '00000000-0000-0000-0000-000000000000';
+
+  try {
+    // Busca org_id real se não passado
+    const resolvedOrgId = orgId === '00000000-0000-0000-0000-000000000000'
+      ? (await pool.query('SELECT org_id FROM agentes WHERE id=$1', [agentId])).rows[0]?.org_id ?? orgId
+      : orgId;
+
+    console.log(`[VAULT-SYNC] Iniciando sync agent_id=${agentId} org_id=${resolvedOrgId}`);
+    const result = await syncVaultToKb(agentId, resolvedOrgId);
+    console.log(`[VAULT-SYNC] Concluído: ${JSON.stringify(result)}`);
+    res.json({ ok: true, ...result });
+  } catch (e: any) {
+    console.error('[VAULT-SYNC] ❌', e.message);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 app.get('/debug/pipeline', (_req, res) => {
   res.json({
     ok: true,
