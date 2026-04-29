@@ -11,7 +11,50 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const app = express();
 app.use(express.json());
 
-app.get('/health', (req, res) => res.json({ ok: true, service: 'agent-ai' }));
+app.get('/health', async (_req, res) => {
+  const checks: Record<string, any> = { service: 'agent-ai', ok: true };
+
+  // DB conectividade
+  try {
+    await pool.query('SELECT 1');
+    checks.db = 'ok';
+  } catch (e: any) { checks.db = `erro: ${e.message}`; checks.ok = false; }
+
+  // Tabelas RAG
+  for (const table of ['knowledge_base_docs', 'knowledge_chunks']) {
+    try {
+      await pool.query(`SELECT 1 FROM ${table} LIMIT 1`);
+      checks[table] = 'ok';
+    } catch (e: any) {
+      checks[table] = e.code === '42P01' ? 'tabela não existe' : `erro: ${e.message}`;
+      checks.ok = false;
+    }
+  }
+
+  // pgvector
+  try {
+    const { rows } = await pool.query(`SELECT extname FROM pg_extension WHERE extname='vector'`);
+    checks.pgvector = rows.length > 0 ? 'ok' : 'não instalado';
+    if (!rows.length) checks.ok = false;
+  } catch (e: any) { checks.pgvector = `erro: ${e.message}`; }
+
+  // Env vars críticas
+  checks.env = {
+    DATABASE_URL:     process.env.DATABASE_URL    ? 'definido' : '❌ FALTANDO',
+    VAULT_SERVER_URL: process.env.VAULT_SERVER_URL ? 'definido' : 'usando default',
+    VOYAGE_API_KEY:   process.env.VOYAGE_API_KEY  ? 'definido' : '⚠️ não definido (RAG vetorial desabilitado)',
+    REDIS_URL:        process.env.REDIS_URL        ? 'definido' : '❌ FALTANDO',
+  };
+
+  // Vault reachability
+  try {
+    const vaultUrl = process.env.VAULT_SERVER_URL || 'http://plamev-gestor-leads-v6-fda4.railway.internal:8080';
+    const r = await fetch(`${vaultUrl}/health`, { signal: AbortSignal.timeout(3000) });
+    checks.vault_server = r.ok ? 'ok' : `HTTP ${r.status}`;
+  } catch (e: any) { checks.vault_server = `inacessível: ${e.message}`; checks.ok = false; }
+
+  res.status(checks.ok ? 200 : 503).json(checks);
+});
 app.get('/debug/pipeline', (_req, res) => {
   res.json({
     ok: true,
