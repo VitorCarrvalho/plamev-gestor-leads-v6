@@ -136,6 +136,42 @@ async function bootstrap() {
   } catch (err: any) {
     console.error('[AGENT-AI] ❌ Erro na inicialização:', err.message);
   }
+
+  // 4. Vault → RAG sync automático (não-bloqueante, não impede o boot)
+  autoVaultSync().catch(e => console.error('[VAULT-AUTO-SYNC] ❌ Falha inesperada:', e.message));
+}
+
+async function autoVaultSync() {
+  // Pequeno delay para vault-server ficar disponível após deploy simultâneo
+  await new Promise(r => setTimeout(r, 8000));
+
+  let agentes: Array<{ id: number; org_id: string }>;
+  try {
+    const { rows } = await pool.query('SELECT id, org_id FROM agentes WHERE ativo = true');
+    agentes = rows;
+  } catch (e: any) {
+    console.warn('[VAULT-AUTO-SYNC] Não foi possível listar agentes:', e.message);
+    return;
+  }
+
+  if (agentes.length === 0) {
+    console.log('[VAULT-AUTO-SYNC] Nenhum agente ativo — sync ignorado.');
+    return;
+  }
+
+  for (const agente of agentes) {
+    try {
+      console.log(`[VAULT-AUTO-SYNC] Sincronizando agente ${agente.id}…`);
+      const result = await syncVaultToKb(agente.id, agente.org_id);
+      console.log(
+        `[VAULT-AUTO-SYNC] ✅ Agente ${agente.id}: ${result.docs_upserted} docs, ` +
+        `${result.chunks_upserted} chunks em ${result.duration_ms}ms` +
+        (result.errors.length ? ` | erros: ${result.errors.join(', ')}` : '')
+      );
+    } catch (e: any) {
+      console.error(`[VAULT-AUTO-SYNC] ❌ Agente ${agente.id}:`, e.message);
+    }
+  }
 }
 
 bootstrap();
