@@ -13,14 +13,10 @@ import path from 'path';
 
 const router = Router({ mergeParams: true });
 
-const VAULT_SERVER_URL = process.env.VAULT_SERVER_URL || 'http://vault-server.railway.internal:8080';
+const VAULT_SERVER_URL = process.env.VAULT_SERVER_URL || 'http://plamev-gestor-leads-v6-fda4.railway.internal:8080';
 
 function getVaultBaseUrls() {
-  return [...new Set([
-    VAULT_SERVER_URL,
-    'http://vault-server.railway.internal:8080',
-    'http://vault-server:8080',
-  ])];
+  return [VAULT_SERVER_URL];
 }
 
 function httpRequest(url: string): Promise<{ status: number; body: string }> {
