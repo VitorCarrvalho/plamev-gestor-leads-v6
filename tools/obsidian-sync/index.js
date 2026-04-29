@@ -17,11 +17,16 @@ require('dotenv').config();
 const chokidar  = require('chokidar');
 const fs        = require('fs');
 const path      = require('path');
+const https     = require('https');
+const http      = require('http');
 const { execSync } = require('child_process');
 
 // ── Configuração ────────────────────────────────────────────────
 const OBSIDIAN_VAULT_PATH = process.env.OBSIDIAN_VAULT_PATH;
 const REPO_VAULT_PATH     = process.env.REPO_VAULT_PATH;
+const AGENT_AI_URL        = process.env.AGENT_AI_URL; // ex: https://agent-ai.railway.app
+const INTERNAL_SECRET     = process.env.INTERNAL_SECRET || 'plamev-internal';
+const AGENT_ID            = process.env.AGENT_ID || '1';
 const ONCE_MODE           = process.argv.includes('--once');
 
 if (!OBSIDIAN_VAULT_PATH || !REPO_VAULT_PATH) {
@@ -52,6 +57,39 @@ function copiarArquivo(srcPath) {
   if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
   fs.copyFileSync(srcPath, dest);
   return { rel, dest };
+}
+
+// ── Trigger vault-sync no agent-ai ────────────────────────────
+function triggerVaultSync() {
+  if (!AGENT_AI_URL) return; // opcional — só ativa se AGENT_AI_URL estiver no .env
+
+  const url = new URL('/internal/vault-sync', AGENT_AI_URL);
+  const body = JSON.stringify({ agent_id: AGENT_ID });
+  const lib = url.protocol === 'https:' ? https : http;
+
+  const req = lib.request(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-internal-secret': INTERNAL_SECRET,
+    },
+  }, res => {
+    let data = '';
+    res.on('data', chunk => { data += chunk; });
+    res.on('end', () => {
+      try {
+        const r = JSON.parse(data);
+        if (r.ok) {
+          console.log(`[${timestamp()}] 🤖 vault-sync: ${r.docs_upserted} docs, ${r.chunks_upserted} chunks (${r.duration_ms}ms)`);
+        } else {
+          console.warn(`[${timestamp()}] ⚠️  vault-sync erro:`, data);
+        }
+      } catch { console.warn(`[${timestamp()}] ⚠️  vault-sync resposta inválida:`, data); }
+    });
+  });
+  req.on('error', e => console.warn(`[${timestamp()}] ⚠️  vault-sync falhou:`, e.message));
+  req.write(body);
+  req.end();
 }
 
 // ── git commit + push ──────────────────────────────────────────
@@ -90,6 +128,16 @@ function agendarPush() {
     const ok = gitPush(lista, `vault: atualizar ${nomes}`);
     if (ok) {
       console.log(`[${timestamp()}] 🚀 Push enviado — Railway rebuilda vault-server (~30s)`);
+
+      // Arquivos de conteúdo (não Mari/) → sincroniza RAG
+      const temConteudo = lista.some(f => {
+        const rel = path.relative(REPO_VAULT_PATH, f);
+        return !rel.startsWith('Mari/');
+      });
+      if (temConteudo) {
+        console.log(`[${timestamp()}] 🔄 Arquivos de conteúdo detectados — disparando vault-sync RAG…`);
+        triggerVaultSync();
+      }
     }
   }, 2000);
 }

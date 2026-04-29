@@ -3,6 +3,14 @@ import express from 'express';
 import { Pool } from 'pg';
 import { runMigrations } from '../../../infra/migrate';
 import { startConsumer } from './pipeline/consumer';
+import { syncVaultToKb } from './pipeline/vault-sync';
+import {
+  buscarEstados,
+  buscarCoberturasParaUF,
+  buscarRacas,
+  submeterCotacao,
+  type CotacaoPayload,
+} from './services/cotacao';
 
 config();
 
@@ -14,10 +22,11 @@ app.use(express.json());
 app.get('/health', async (_req, res) => {
   const checks: Record<string, any> = { service: 'agent-ai', ok: true };
 
-  // DB conectividade
+  // DB conectividade + qual banco está conectado
   try {
-    await pool.query('SELECT 1');
+    const { rows } = await pool.query('SELECT current_database() AS db, inet_server_addr() AS host');
     checks.db = 'ok';
+    checks.db_info = `${rows[0].db} @ ${rows[0].host}`;
   } catch (e: any) { checks.db = `erro: ${e.message}`; checks.ok = false; }
 
   // Tabelas RAG
@@ -55,6 +64,35 @@ app.get('/health', async (_req, res) => {
 
   res.status(checks.ok ? 200 : 503).json(checks);
 });
+// ── POST /internal/vault-sync ─────────────────────────────────
+// Sincroniza arquivos de conteúdo do vault → knowledge_base_docs + knowledge_chunks
+// Chamado pelo obsidian-sync após push de arquivos não-Mari/
+app.post('/internal/vault-sync', async (req, res) => {
+  const secret = process.env.INTERNAL_SECRET || 'plamev-internal';
+  if (req.headers['x-internal-secret'] !== secret) {
+    res.status(401).json({ erro: 'não autorizado' });
+    return;
+  }
+
+  const agentId = parseInt(req.body?.agent_id ?? '1', 10);
+  const orgId   = req.body?.org_id ?? '00000000-0000-0000-0000-000000000000';
+
+  try {
+    // Busca org_id real se não passado
+    const resolvedOrgId = orgId === '00000000-0000-0000-0000-000000000000'
+      ? (await pool.query('SELECT org_id FROM agentes WHERE id=$1', [agentId])).rows[0]?.org_id ?? orgId
+      : orgId;
+
+    console.log(`[VAULT-SYNC] Iniciando sync agent_id=${agentId} org_id=${resolvedOrgId}`);
+    const result = await syncVaultToKb(agentId, resolvedOrgId);
+    console.log(`[VAULT-SYNC] Concluído: ${JSON.stringify(result)}`);
+    res.json({ ok: true, ...result });
+  } catch (e: any) {
+    console.error('[VAULT-SYNC] ❌', e.message);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 app.get('/debug/pipeline', (_req, res) => {
   res.json({
     ok: true,
@@ -86,6 +124,94 @@ app.get('/debug/pipeline', (_req, res) => {
   });
 });
 
+// ── Middleware de autenticação interna ────────────────────────────────────
+function autenticarInterno(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const secret = process.env.INTERNAL_SECRET || 'plamev-internal';
+  if (req.headers['x-internal-secret'] !== secret) {
+    res.status(401).json({ erro: 'não autorizado' });
+    return;
+  }
+  next();
+}
+
+// ── GET /internal/cotacao/estados ────────────────────────────────────────
+app.get('/internal/cotacao/estados', autenticarInterno, async (_req, res) => {
+  try {
+    const estados = await buscarEstados();
+    res.json({ ok: true, estados });
+  } catch (e: any) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// ── GET /internal/cotacao/coberturas?uf=SP ───────────────────────────────
+app.get('/internal/cotacao/coberturas', autenticarInterno, async (req, res) => {
+  const uf = String(req.query.uf || '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(uf)) {
+    res.status(400).json({ erro: 'Parâmetro uf inválido (ex: SP, RJ, MG)' });
+    return;
+  }
+  try {
+    const coberturas = await buscarCoberturasParaUF(uf);
+    res.json({ ok: true, uf, coberturas });
+  } catch (e: any) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// ── GET /internal/cotacao/racas?especie=2 ────────────────────────────────
+app.get('/internal/cotacao/racas', autenticarInterno, async (req, res) => {
+  const especie = String(req.query.especie || '');
+  if (!['1', '2'].includes(especie)) {
+    res.status(400).json({ erro: 'especie deve ser "1" (felino) ou "2" (canino)' });
+    return;
+  }
+  try {
+    const racas = await buscarRacas(especie as '1' | '2');
+    res.json({ ok: true, especie, total: racas.length, racas });
+  } catch (e: any) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// ── POST /internal/cotacao ────────────────────────────────────────────────
+app.post('/internal/cotacao', autenticarInterno, async (req, res) => {
+  const payload = req.body as CotacaoPayload;
+  if (!payload?.nome) {
+    res.status(400).json({ erro: 'Payload inválido — campo "nome" obrigatório' });
+    return;
+  }
+
+  try {
+    const result = await submeterCotacao(payload);
+
+    // Persiste no banco (best-effort, não bloqueia resposta)
+    pool.query(
+      `INSERT INTO cotacoes
+         (org_id, nome, email, telefone, cep, estado_uf, cidade,
+          valor_adesao, valor_mensalidade, composicao, descontos, dados_pets, resposta_api, numero_cotacao, data_fidelidade)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+      [
+        req.body.orgId ?? null,
+        payload.nome, payload.email,
+        `${payload.ddd}${payload.telefone}`,
+        payload.cep, payload.estadosId, payload.cidadesId,
+        result.valorAdesao, result.valorTotalMensalidade,
+        JSON.stringify(result.composicaoMensalidade),
+        JSON.stringify(result.descontos),
+        JSON.stringify(payload.pets),
+        JSON.stringify(result),
+        result.numeroCotacao, result.dataFidelidade,
+      ],
+    ).catch(e => console.warn('[COTACAO] ⚠️ Falha ao persistir:', e.message));
+
+    res.json({ ok: true, ...result });
+  } catch (e: any) {
+    const status = e.status && e.status < 500 ? e.status : 500;
+    res.status(status).json({ erro: e.message, detalhes: e.erros ?? e.data ?? undefined });
+  }
+});
+
 const INTERNAL_PORT = 8080;
 const PORT = process.env.PORT || INTERNAL_PORT;
 
@@ -104,6 +230,42 @@ async function bootstrap() {
     console.log('[AGENT-AI] ✅ Inicialização completa.');
   } catch (err: any) {
     console.error('[AGENT-AI] ❌ Erro na inicialização:', err.message);
+  }
+
+  // 4. Vault → RAG sync automático (não-bloqueante, não impede o boot)
+  autoVaultSync().catch(e => console.error('[VAULT-AUTO-SYNC] ❌ Falha inesperada:', e.message));
+}
+
+async function autoVaultSync() {
+  // Pequeno delay para vault-server ficar disponível após deploy simultâneo
+  await new Promise(r => setTimeout(r, 8000));
+
+  let agentes: Array<{ id: number; org_id: string }>;
+  try {
+    const { rows } = await pool.query('SELECT id, org_id FROM agentes WHERE ativo = true');
+    agentes = rows;
+  } catch (e: any) {
+    console.warn('[VAULT-AUTO-SYNC] Não foi possível listar agentes:', e.message);
+    return;
+  }
+
+  if (agentes.length === 0) {
+    console.log('[VAULT-AUTO-SYNC] Nenhum agente ativo — sync ignorado.');
+    return;
+  }
+
+  for (const agente of agentes) {
+    try {
+      console.log(`[VAULT-AUTO-SYNC] Sincronizando agente ${agente.id}…`);
+      const result = await syncVaultToKb(agente.id, agente.org_id);
+      console.log(
+        `[VAULT-AUTO-SYNC] ✅ Agente ${agente.id}: ${result.docs_upserted} docs, ` +
+        `${result.chunks_upserted} chunks em ${result.duration_ms}ms` +
+        (result.errors.length ? ` | erros: ${result.errors.join(', ')}` : '')
+      );
+    } catch (e: any) {
+      console.error(`[VAULT-AUTO-SYNC] ❌ Agente ${agente.id}:`, e.message);
+    }
   }
 }
 

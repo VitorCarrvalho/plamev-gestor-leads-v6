@@ -96,6 +96,8 @@ export function buildMariPrompt({
   conversationState,
   productCatalog,
   knowledgeBase,
+  redeCredenciada,
+  cotacaoPlanos,
   catalogIntent,
   includePlanContext,
 }: {
@@ -104,6 +106,8 @@ export function buildMariPrompt({
   conversationState?: string;
   productCatalog?: string;
   knowledgeBase?: string;
+  redeCredenciada?: string;
+  cotacaoPlanos?: string;
   catalogIntent?: boolean;
   includePlanContext?: boolean;
 }) {
@@ -123,6 +127,8 @@ export function buildMariPrompt({
   if (conversationState) sections.push(conversationState);
   if (includePlanContext && productCatalog) sections.push(productCatalog);
   if (knowledgeBase) sections.push(`# BASE DE CONHECIMENTO\n${knowledgeBase}`);
+  if (redeCredenciada) sections.push(`# REDE CREDENCIADA\n${redeCredenciada}`);
+  if (cotacaoPlanos) sections.push(`# COTAÇÃO — PLANOS DISPONÍVEIS\n${cotacaoPlanos}`);
 
   sections.push(`# CONTEXTO ATUAL
 Etapa: ${stage}

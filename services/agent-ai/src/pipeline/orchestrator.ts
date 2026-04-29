@@ -4,8 +4,21 @@ import { checkInputGuard } from './guards/input-guard';
 import { validateClaims } from './guards/output-guard';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
 import { langfuse } from '../clients/langfuse-client';
-import { sendResponse, persistInteraction } from './delivery';
-import { carregar as vaultCarregar, listar as vaultListar } from '../services/vault';
+import { sendResponse, persistInteraction, sendDocument } from './delivery';
+import { carregar as vaultCarregar } from '../services/vault';
+import { buscarRedeCredenciada, normalizarCep, validarCep, type RedeResult } from '../services/rede-credenciada';
+import {
+  buscarEnderecoPorCep,
+  buscarCoberturasParaUF,
+  formatarCoberturasParaPrompt,
+  encontrarRacaPorNome,
+  submeterCotacao,
+  extrairDdd,
+  formatarDataNascimento,
+  normalizarCidade,
+  type CotacaoPayload,
+} from '../services/cotacao';
+import { gerarCotacaoPdf } from '../services/cotacao-pdf';
 import {
   resolverConfigRuntimeAgente,
   ResolvedAgentRuntimeConfig,
@@ -26,12 +39,124 @@ import {
   inferTargetStage,
 } from './mari-runtime';
 
+function detectarCepNoTexto(texto: string): string | null {
+  const semEspacos = texto.replace(/\s/g, '');
+  const matchHifen = texto.match(/\b(\d{5})-(\d{3})\b/);
+  if (matchHifen) return matchHifen[1] + matchHifen[2];
+  const matchPuro = semEspacos.match(/\b(\d{8})\b/);
+  if (matchPuro) return validarCep(matchPuro[1]) ? matchPuro[1] : null;
+  return null;
+}
+
+function formatarSecaoRede(result: RedeResult, cep: string): string {
+  if (result.status === 'cep_invalido') {
+    return `CEP "${cep}" é inválido. Instrua o cliente a enviar um CEP com 8 números.`;
+  }
+  if (result.status === 'erro_servico') {
+    return 'Serviço de rede credenciada indisponível agora. Informe ao cliente de forma amigável e sugira tentar novamente em instantes.';
+  }
+  if (result.status === 'sem_cobertura') {
+    return `CEP ${cep} consultado agora — sem clínicas credenciadas em até 40 km. Informe com empatia e ofereça cadastro na lista de espera.`;
+  }
+  return `Dados REAIS de rede credenciada consultados agora para o CEP ${cep}. Use EXATAMENTE as clínicas abaixo, sem inventar outras:\n\n${result.texto}`;
+}
+
 async function lf_flush() {
   try { await langfuse.flushAsync(); }
   catch (e: any) { console.error('[LANGFUSE] ❌ Flush falhou:', e?.message ?? e); }
 }
 
-const HISTORY_LIMIT       = 30;
+const HISTORY_LIMIT = 30;
+
+// ── Cotação: disparo não-bloqueante ───────────────────────────
+async function dispararCotacao(
+  msg: InternalMessage,
+  dados: Record<string, any>,
+  conversaAtual: any,
+) {
+  const tag = `[COTACAO] ${msg.phone}`;
+  try {
+    // Extrai dados do lead dos dados_extraidos + conversa
+    // Suporta chaves abreviadas (nc/np/ep/rp/cp/em/dn/sx/ci) e chaves completas
+    const nomeCliente = dados.nome || dados.nc || dados.tutor_nome || conversaAtual?.tutor_nome || msg.nome || '';
+    const email       = dados.email || dados.em || '';
+    const telefone    = dados.telefone || msg.phone || '';
+    const cepRaw      = dados.cep || dados.cp || '';
+    const petNome     = dados.pet_nome || dados.nome_pet || dados.np || conversaAtual?.nome_pet || '';
+    const petNasc     = formatarDataNascimento(dados.pet_nascimento || dados.data_nascimento || dados.dn || '') || '';
+    const petSexo     = dados.pet_sexo || dados.sexo || dados.sx || 'Macho';
+    const petEspecie  = (dados.pet_especie || dados.especie || dados.ep || '2') as '1' | '2';
+    const petRacaNome = dados.pet_raca || dados.raca || dados.rp || conversaAtual?.raca || '';
+    const coberturaId = dados.cobertura_id || dados.coberturasId || dados.ci || '';
+
+    if (!nomeCliente || !email || !coberturaId || !cepRaw) {
+      console.warn(`${tag} ⚠️ Dados insuficientes para cotação (nome=${!!nomeCliente} email=${!!email} cobertura=${!!coberturaId} cep=${!!cepRaw})`);
+      return;
+    }
+
+    // Endereço via ViaCEP
+    const endereco = await buscarEnderecoPorCep(cepRaw);
+    if (!endereco) {
+      console.warn(`${tag} ⚠️ CEP inválido ou não encontrado: ${cepRaw}`);
+      return;
+    }
+
+    // Raça → UUID
+    let racaId = dados.racas_id || dados.racasId || '';
+    if (!racaId && petRacaNome) {
+      const raca = await encontrarRacaPorNome(petRacaNome, petEspecie);
+      racaId = raca?.id || (petEspecie === '2' ? 'SEMRACA2' : 'SEMRACA1');
+    }
+    if (!racaId) racaId = petEspecie === '2' ? 'SEMRACA2' : 'SEMRACA1';
+
+    // DDD + número — strip código de país 55 se presente
+    let telefoneBruto = telefone.replace(/\D/g, '');
+    if (telefoneBruto.startsWith('55') && telefoneBruto.length > 11) {
+      telefoneBruto = telefoneBruto.slice(2);
+    }
+    const { ddd, numero } = extrairDdd(telefoneBruto);
+
+    const payload: CotacaoPayload = {
+      nome: nomeCliente,
+      email,
+      ddd,
+      telefone: numero,
+      cep: endereco.cep,
+      logradouro: endereco.logradouro,
+      numero: dados.numero_endereco || 'S/N',
+      complemento: dados.complemento || '',
+      bairro: endereco.bairro,
+      estadosId: endereco.uf,
+      cidadesId: normalizarCidade(endereco.cidade),
+      formaPagamento: 1,
+      cupomDesconto: '',
+      pets: [{
+        nome: petNome || 'Pet',
+        dataNascimento: petNasc || '01/01/2022',
+        sexo: ['Macho', 'Fêmea'].includes(petSexo) ? petSexo as 'Macho' | 'Fêmea' : 'Macho',
+        especie: petEspecie,
+        racasId: racaId,
+        coberturasId: coberturaId,
+      }],
+    };
+
+    console.log(`${tag} 🔄 Submetendo cotação para ${nomeCliente} (pet: ${petNome}) | ddd=${ddd} tel=${numero} cep=${endereco.cep} uf=${endereco.uf} ci=${coberturaId} especie=${petEspecie} raca=${racaId}`);
+    const resultado = await submeterCotacao(payload);
+    console.log(`${tag} ✅ Cotação ${resultado.numeroCotacao} gerada — ${resultado.valorTotalMensalidade}/mês`);
+
+    // Gera PDF
+    const pdfBuffer = await gerarCotacaoPdf(resultado, payload);
+    const fileName = `cotacao-plamev-${resultado.numeroCotacao.replace(/[^a-zA-Z0-9]/g, '-')}.pdf`;
+    console.log(`${tag} 📄 PDF gerado (${Math.round(pdfBuffer.length / 1024)}KB)`);
+
+    // Envia via WhatsApp
+    await sendDocument(msg, pdfBuffer, fileName, `Aqui está sua cotação Plamev! Nº ${resultado.numeroCotacao} 🐾`);
+    console.log(`${tag} 📤 PDF enviado via WhatsApp`);
+  } catch (e: any) {
+    console.error(`${tag} ❌ Falha ao disparar cotação:`, e.message);
+    if (e.erros) console.error(`${tag}   Erros de validação:`, JSON.stringify(e.erros));
+  }
+}
 
 // ── 1. Histórico de mensagens ─────────────────────────────────
 async function buscarHistorico(orgId: string, phone: string, canal: string): Promise<ChatMessage[]> {
@@ -166,9 +291,12 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     input: { agentSlug, orgId, phone: msg.phone, canal: msg.canal },
   });
 
+  // Detecta CEP na mensagem antes do Promise.all para inclusão condicional
+  const cepDetectado = detectarCepNoTexto(msg.texto || '');
+
   // Carrega prompts em paralelo: vault (primário) + banco (fallback) + contexto
   const [vaultSoul, vaultTom, vaultRegras, vaultAntiRep, vaultPensamentos, vaultModoRapido,
-         promptBundle, historico, conversaAtual, tabelaPlanos, vaultArquivos] = await Promise.all([
+         promptBundle, historico, conversaAtual, tabelaPlanos, redeResult] = await Promise.all([
     vaultCarregar('Mari/Identidade.md'),
     vaultCarregar('Mari/Tom-e-Fluxo.md'),
     vaultCarregar('Mari/Regras-Absolutas.md'),
@@ -179,7 +307,9 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     buscarHistorico(orgId, msg.phone, msg.canal),
     buscarContextoConversaAtiva(orgId, msg.phone, msg.canal),
     buscarTabelaPlanos().catch(() => []),
-    vaultListar().catch(() => [] as string[]),
+    cepDetectado
+      ? buscarRedeCredenciada(cepDetectado).catch(() => ({ status: 'erro_servico' } as RedeResult))
+      : Promise.resolve(null as RedeResult | null),
   ]);
 
   // Vault tem prioridade; banco serve de fallback quando arquivo ainda não existe
@@ -202,28 +332,31 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   const includePlanContext = !greetingOnly && (catalogIntent || priceIntent || topicalPlanMessage || stageRequiresCatalog);
   const isFirstContact = historico.length === 0 && !conversaAtual?.tutor_nome;
 
-  // Seleciona arquivos de conteúdo do vault para KB (exclui pasta Mari/ — já está no system prompt)
-  const arquivosKb = vaultArquivos.filter(f => {
-    if (f.startsWith('Mari/')) return false;
-    // Sempre carrega arquivos da Plamev (identidade da empresa, planos, diferenciais)
-    if (f.startsWith('Plamev/')) return true;
-    // Carrega conteúdo de produto/cobertura/vendas quando há intenção relacionada
-    return includePlanContext || stageRequiresCatalog;
-  });
+  // Endereço via ViaCEP (lightweight — ~200ms)
+  const enderecoPromise = cepDetectado
+    ? buscarEnderecoPorCep(cepDetectado).catch(() => null)
+    : Promise.resolve(null);
 
-  // KB primário: vault. KB secundário: RAG do banco. Rodam em paralelo.
-  const [vaultKbConteudos, kb] = await Promise.all([
-    Promise.all(arquivosKb.map(f => vaultCarregar(f))),
-    searchKnowledge(msg.texto || '', orgId, config.id, 5, { stage: targetStage }),
-  ]);
+  const [endereco] = await Promise.all([enderecoPromise]);
+  const ufDetectada = endereco?.uf || null;
 
-  const vaultKb = arquivosKb
-    .map((f, i) => vaultKbConteudos[i] ? `### ${f}\n${vaultKbConteudos[i]}` : '')
-    .filter(Boolean)
-    .join('\n\n---\n\n');
+  // Coberturas da API Plamev: só carrega quando há intenção de plano E temos UF
+  const coberturasApiSection = await (async () => {
+    if (!includePlanContext || !ufDetectada) return '';
+    try {
+      const coberturas = await buscarCoberturasParaUF(ufDetectada);
+      return formatarCoberturasParaPrompt(coberturas, ufDetectada);
+    } catch {
+      return '';
+    }
+  })();
 
-  // Vault primeiro; banco complementa o que o vault não cobrir
-  const knowledgeBase = [vaultKb, kb.conteudo].filter(Boolean).join('\n\n');
+  // KB via RAG — conteúdo migrado do vault para knowledge_chunks via vault-sync
+  const kb = await searchKnowledge(msg.texto || '', orgId, config.id, 5, { stage: targetStage });
+  const knowledgeBase = kb.conteudo;
+
+  // Rede credenciada: seção de prompt ou null se não havia CEP na mensagem
+  const redeSection = redeResult ? formatarSecaoRede(redeResult, cepDetectado!) : '';
 
   const soulSource = vaultAtivo ? 'vault' : promptsResolvidos.soul ? 'db' : 'fallback';
 
@@ -232,8 +365,6 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       soul_source:       soulSource,
       history_count:     historico.length,
       target_stage:      targetStage,
-      vault_kb_files:    arquivosKb.length,
-      vault_kb_chars:    vaultKb.length,
       rag_mode:          kb.mode,
       rag_latency_ms:    kb.latencyMs,
       rag_docs_count:    kb.fontes.length,
@@ -244,8 +375,6 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       soul_source:       soulSource,
       history_count:     historico.length,
       target_stage:      targetStage,
-      vault_kb_files:    arquivosKb.length,
-      vault_kb_chars:    vaultKb.length,
       rag_mode:          kb.mode,
       rag_latency_ms:    kb.latencyMs,
       rag_docs_count:    kb.fontes.length,
@@ -255,12 +384,12 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
 
   console.log(
     `${tag} [2/7] Contexto | soul=${soulSource} | etapa=${targetStage} | histórico=${historico.length}msgs` +
-    ` | vault_kb=${arquivosKb.length} arquivos (${vaultKb.length} chars)` +
     ` | rag=${kb.mode} ${kb.fontes.length} docs (${kb.conteudo.length} chars, ${kb.latencyMs}ms)` +
+    (cepDetectado ? ` | cep=${cepDetectado} status=${redeResult?.status}` : '') +
     ` | ${Date.now() - t2}ms`,
   );
   if (kb.fontes.length) console.log(`${tag}     KB fontes: ${kb.fontes.join(', ')}`);
-  if (arquivosKb.length) console.log(`${tag}     Vault KB: ${arquivosKb.join(', ')}`);
+  if (cepDetectado) console.log(`${tag}     Rede credenciada: CEP=${cepDetectado} status=${redeResult?.status} total=${redeResult?.total ?? 0}`);
 
   // ── ETAPA 3: System prompt ────────────────────────────────
   if (!promptsResolvidos.soul) {
@@ -279,6 +408,8 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     conversationState: formatConversationStatePrompt(conversaAtual),
     productCatalog: includePlanContext ? formatProductCatalogPrompt(tabelaPlanos) : '',
     knowledgeBase,
+    redeCredenciada: redeSection || undefined,
+    cotacaoPlanos: coberturasApiSection || undefined,
     catalogIntent,
     includePlanContext,
   });
@@ -446,17 +577,14 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   const totalLatency = Date.now() - start;
 
   // ── KB source summary (log + score) ──────────────────────
-  const kbSource =
-    vaultKb.length > 0 && kb.conteudo.length > 0 ? 'vault+rag' :
-    vaultKb.length > 0                            ? 'vault'     :
-    kb.conteudo.length > 0                        ? 'rag'       : 'none';
+  const kbSource = kb.conteudo.length > 0 ? 'rag' : 'none';
   console.log(
-    `${tag} KB injetado: source=${kbSource} | vault=${vaultKb.length} chars (${arquivosKb.length} arquivos) | rag=${kb.conteudo.length} chars (${kb.fontes.length} docs, mode=${kb.mode}) | total=${knowledgeBase.length} chars`
+    `${tag} KB injetado: source=${kbSource} | rag=${kb.conteudo.length} chars (${kb.fontes.length} docs, mode=${kb.mode})`
   );
 
   // ── Scores Langfuse (alimentam dashboards customizados) ───
-  trace.score({ name: 'vault_kb_hit',   value: vaultKb.length > 0 ? 1 : 0, comment: `${arquivosKb.length} arquivos, ${vaultKb.length} chars` });
   trace.score({ name: 'rag_hit',        value: kb.fontes.length > 0 ? 1 : 0, comment: kb.fontes.join(', ') || 'none' });
+  if (cepDetectado) trace.score({ name: 'rede_credenciada_hit', value: redeResult?.status === 'ok' ? 1 : 0, comment: `CEP=${cepDetectado} status=${redeResult?.status} total=${redeResult?.total ?? 0}` });
   trace.score({ name: 'rag_vector_hit', value: kb.mode === 'vector_rerank' ? 1 : 0, comment: kb.mode });
   trace.score({ name: 'output_blocked', value: wasBlocked ? 1 : 0, comment: validation.reason || 'none' });
   trace.score({ name: 'was_rewritten',  value: wasRewritten ? 1 : 0 });
@@ -471,8 +599,6 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       total_latency_ms:   totalLatency,
       llm_latency_ms:     llmLatency,
       kb_source:          kbSource,
-      vault_kb_files:     arquivosKb.length,
-      vault_kb_chars:     vaultKb.length,
       rag_mode:           kb.mode,
       rag_latency_ms:     kb.latencyMs,
       rag_docs_count:     kb.fontes.length,
@@ -496,6 +622,12 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       provider:           config.provider,
     },
   });
+
+  // ── Cotação: disparo não-bloqueante após pipeline ─────────────
+  if (generation.acoes?.includes('solicitar_cotacao')) {
+    console.log(`${tag} 🧾 Ação solicitar_cotacao detectada — disparando cotação`);
+    dispararCotacao(msg, generation.dados_extraidos ?? {}, conversaAtual).catch(() => {});
+  }
 
   lf_flush(); // async, errors already logged inside lf_flush
 

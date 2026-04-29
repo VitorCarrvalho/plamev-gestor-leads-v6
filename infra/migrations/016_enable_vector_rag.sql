@@ -25,7 +25,4 @@ CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_agent
   ON knowledge_chunks (org_id, agent_id);
 
--- 5. Garante que knowledge_base_docs tem índice de texto para full-text fallback
-CREATE INDEX IF NOT EXISTS idx_kbdocs_fts
-  ON knowledge_base_docs
-  USING gin(to_tsvector('portuguese', coalesce(titulo,'') || ' ' || coalesce(conteudo,'')));
+-- 5. (índice FTS em knowledge_base_docs movido para migration 017)

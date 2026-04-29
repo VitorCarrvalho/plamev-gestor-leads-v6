@@ -45,6 +45,24 @@ export async function sendResponse(message: InternalMessage, resposta: string) {
   );
 }
 
+export async function sendDocument(
+  message: InternalMessage,
+  pdfBuffer: Buffer,
+  fileName: string,
+  caption = '',
+) {
+  return postJson(
+    `${CHANNEL_SERVICE_URL}/internal/send-document`,
+    {
+      message,
+      base64: pdfBuffer.toString('base64'),
+      fileName,
+      caption,
+    },
+    { 'x-internal-secret': INTERNAL_SECRET },
+  );
+}
+
 export async function persistInteraction(
   message: InternalMessage,
   resposta: string,
