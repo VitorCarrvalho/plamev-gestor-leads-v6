@@ -5,7 +5,7 @@ import { validateClaims } from './guards/output-guard';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
 import { langfuse } from '../clients/langfuse-client';
 import { sendResponse, persistInteraction } from './delivery';
-import { carregar as vaultCarregar, listar as vaultListar } from '../services/vault';
+import { carregar as vaultCarregar } from '../services/vault';
 import {
   resolverConfigRuntimeAgente,
   ResolvedAgentRuntimeConfig,
@@ -168,7 +168,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
 
   // Carrega prompts em paralelo: vault (primário) + banco (fallback) + contexto
   const [vaultSoul, vaultTom, vaultRegras, vaultAntiRep, vaultPensamentos, vaultModoRapido,
-         promptBundle, historico, conversaAtual, tabelaPlanos, vaultArquivos] = await Promise.all([
+         promptBundle, historico, conversaAtual, tabelaPlanos] = await Promise.all([
     vaultCarregar('Mari/Identidade.md'),
     vaultCarregar('Mari/Tom-e-Fluxo.md'),
     vaultCarregar('Mari/Regras-Absolutas.md'),
@@ -179,7 +179,6 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     buscarHistorico(orgId, msg.phone, msg.canal),
     buscarContextoConversaAtiva(orgId, msg.phone, msg.canal),
     buscarTabelaPlanos().catch(() => []),
-    vaultListar().catch(() => [] as string[]),
   ]);
 
   // Vault tem prioridade; banco serve de fallback quando arquivo ainda não existe
@@ -202,28 +201,9 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   const includePlanContext = !greetingOnly && (catalogIntent || priceIntent || topicalPlanMessage || stageRequiresCatalog);
   const isFirstContact = historico.length === 0 && !conversaAtual?.tutor_nome;
 
-  // Seleciona arquivos de conteúdo do vault para KB (exclui pasta Mari/ — já está no system prompt)
-  const arquivosKb = vaultArquivos.filter(f => {
-    if (f.startsWith('Mari/')) return false;
-    // Sempre carrega arquivos da Plamev (identidade da empresa, planos, diferenciais)
-    if (f.startsWith('Plamev/')) return true;
-    // Carrega conteúdo de produto/cobertura/vendas quando há intenção relacionada
-    return includePlanContext || stageRequiresCatalog;
-  });
-
-  // KB primário: vault. KB secundário: RAG do banco. Rodam em paralelo.
-  const [vaultKbConteudos, kb] = await Promise.all([
-    Promise.all(arquivosKb.map(f => vaultCarregar(f))),
-    searchKnowledge(msg.texto || '', orgId, config.id, 5, { stage: targetStage }),
-  ]);
-
-  const vaultKb = arquivosKb
-    .map((f, i) => vaultKbConteudos[i] ? `### ${f}\n${vaultKbConteudos[i]}` : '')
-    .filter(Boolean)
-    .join('\n\n---\n\n');
-
-  // Vault primeiro; banco complementa o que o vault não cobrir
-  const knowledgeBase = [vaultKb, kb.conteudo].filter(Boolean).join('\n\n');
+  // KB via RAG — conteúdo migrado do vault para knowledge_chunks via vault-sync
+  const kb = await searchKnowledge(msg.texto || '', orgId, config.id, 5, { stage: targetStage });
+  const knowledgeBase = kb.conteudo;
 
   const soulSource = vaultAtivo ? 'vault' : promptsResolvidos.soul ? 'db' : 'fallback';
 
@@ -232,8 +212,6 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       soul_source:       soulSource,
       history_count:     historico.length,
       target_stage:      targetStage,
-      vault_kb_files:    arquivosKb.length,
-      vault_kb_chars:    vaultKb.length,
       rag_mode:          kb.mode,
       rag_latency_ms:    kb.latencyMs,
       rag_docs_count:    kb.fontes.length,
@@ -244,8 +222,6 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       soul_source:       soulSource,
       history_count:     historico.length,
       target_stage:      targetStage,
-      vault_kb_files:    arquivosKb.length,
-      vault_kb_chars:    vaultKb.length,
       rag_mode:          kb.mode,
       rag_latency_ms:    kb.latencyMs,
       rag_docs_count:    kb.fontes.length,
@@ -255,12 +231,10 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
 
   console.log(
     `${tag} [2/7] Contexto | soul=${soulSource} | etapa=${targetStage} | histórico=${historico.length}msgs` +
-    ` | vault_kb=${arquivosKb.length} arquivos (${vaultKb.length} chars)` +
     ` | rag=${kb.mode} ${kb.fontes.length} docs (${kb.conteudo.length} chars, ${kb.latencyMs}ms)` +
     ` | ${Date.now() - t2}ms`,
   );
   if (kb.fontes.length) console.log(`${tag}     KB fontes: ${kb.fontes.join(', ')}`);
-  if (arquivosKb.length) console.log(`${tag}     Vault KB: ${arquivosKb.join(', ')}`);
 
   // ── ETAPA 3: System prompt ────────────────────────────────
   if (!promptsResolvidos.soul) {
@@ -446,16 +420,12 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   const totalLatency = Date.now() - start;
 
   // ── KB source summary (log + score) ──────────────────────
-  const kbSource =
-    vaultKb.length > 0 && kb.conteudo.length > 0 ? 'vault+rag' :
-    vaultKb.length > 0                            ? 'vault'     :
-    kb.conteudo.length > 0                        ? 'rag'       : 'none';
+  const kbSource = kb.conteudo.length > 0 ? 'rag' : 'none';
   console.log(
-    `${tag} KB injetado: source=${kbSource} | vault=${vaultKb.length} chars (${arquivosKb.length} arquivos) | rag=${kb.conteudo.length} chars (${kb.fontes.length} docs, mode=${kb.mode}) | total=${knowledgeBase.length} chars`
+    `${tag} KB injetado: source=${kbSource} | rag=${kb.conteudo.length} chars (${kb.fontes.length} docs, mode=${kb.mode})`
   );
 
   // ── Scores Langfuse (alimentam dashboards customizados) ───
-  trace.score({ name: 'vault_kb_hit',   value: vaultKb.length > 0 ? 1 : 0, comment: `${arquivosKb.length} arquivos, ${vaultKb.length} chars` });
   trace.score({ name: 'rag_hit',        value: kb.fontes.length > 0 ? 1 : 0, comment: kb.fontes.join(', ') || 'none' });
   trace.score({ name: 'rag_vector_hit', value: kb.mode === 'vector_rerank' ? 1 : 0, comment: kb.mode });
   trace.score({ name: 'output_blocked', value: wasBlocked ? 1 : 0, comment: validation.reason || 'none' });
@@ -471,8 +441,6 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       total_latency_ms:   totalLatency,
       llm_latency_ms:     llmLatency,
       kb_source:          kbSource,
-      vault_kb_files:     arquivosKb.length,
-      vault_kb_chars:     vaultKb.length,
       rag_mode:           kb.mode,
       rag_latency_ms:     kb.latencyMs,
       rag_docs_count:     kb.fontes.length,
