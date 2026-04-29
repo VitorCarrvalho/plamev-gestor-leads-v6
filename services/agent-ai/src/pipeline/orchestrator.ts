@@ -5,7 +5,7 @@ import { validateClaims } from './guards/output-guard';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
 import { langfuse } from '../clients/langfuse-client';
 import { sendResponse, persistInteraction } from './delivery';
-import { carregar as vaultCarregar } from '../services/vault';
+import { carregar as vaultCarregar, listar as vaultListar } from '../services/vault';
 import {
   resolverConfigRuntimeAgente,
   ResolvedAgentRuntimeConfig,
@@ -168,7 +168,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
 
   // Carrega prompts em paralelo: vault (primário) + banco (fallback) + contexto
   const [vaultSoul, vaultTom, vaultRegras, vaultAntiRep, vaultPensamentos, vaultModoRapido,
-         promptBundle, historico, conversaAtual, tabelaPlanos] = await Promise.all([
+         promptBundle, historico, conversaAtual, tabelaPlanos, vaultArquivos] = await Promise.all([
     vaultCarregar('Mari/Soul.md'),
     vaultCarregar('Mari/Tom-e-Fluxo.md'),
     vaultCarregar('Mari/Regras-Gerais.md'),
@@ -179,6 +179,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     buscarHistorico(orgId, msg.phone, msg.canal),
     buscarContextoConversaAtiva(orgId, msg.phone, msg.canal),
     buscarTabelaPlanos().catch(() => []),
+    vaultListar().catch(() => [] as string[]),
   ]);
 
   // Vault tem prioridade; banco serve de fallback quando arquivo ainda não existe
@@ -200,40 +201,66 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   const stageRequiresCatalog = CATALOG_STAGES.includes(conversaAtual?.etapa || '');
   const includePlanContext = !greetingOnly && (catalogIntent || priceIntent || topicalPlanMessage || stageRequiresCatalog);
   const isFirstContact = historico.length === 0 && !conversaAtual?.tutor_nome;
-  const kb = await searchKnowledge(msg.texto || '', orgId, config.id, 5, {
-    stage: targetStage,
+
+  // Seleciona arquivos de conteúdo do vault para KB (exclui pasta Mari/ — já está no system prompt)
+  const arquivosKb = vaultArquivos.filter(f => {
+    if (f.startsWith('Mari/')) return false;
+    // Sempre carrega arquivos da Plamev (identidade da empresa, planos, diferenciais)
+    if (f.startsWith('Plamev/')) return true;
+    // Carrega conteúdo de produto/cobertura/vendas quando há intenção relacionada
+    return includePlanContext || stageRequiresCatalog;
   });
+
+  // KB primário: vault. KB secundário: RAG do banco. Rodam em paralelo.
+  const [vaultKbConteudos, kb] = await Promise.all([
+    Promise.all(arquivosKb.map(f => vaultCarregar(f))),
+    searchKnowledge(msg.texto || '', orgId, config.id, 5, { stage: targetStage }),
+  ]);
+
+  const vaultKb = arquivosKb
+    .map((f, i) => vaultKbConteudos[i] ? `### ${f}\n${vaultKbConteudos[i]}` : '')
+    .filter(Boolean)
+    .join('\n\n---\n\n');
+
+  // Vault primeiro; banco complementa o que o vault não cobrir
+  const knowledgeBase = [vaultKb, kb.conteudo].filter(Boolean).join('\n\n');
 
   const soulSource = vaultAtivo ? 'vault' : promptsResolvidos.soul ? 'db' : 'fallback';
 
   ctxSpan.end({
     output: {
-      soul_source:    soulSource,
-      history_count:  historico.length,
-      target_stage:   targetStage,
-      rag_mode:       kb.mode,
-      rag_latency_ms: kb.latencyMs,
-      rag_docs_count: kb.fontes.length,
-      kb_chars:       kb.conteudo.length,
-      rag_sources:    kb.fontes,
+      soul_source:       soulSource,
+      history_count:     historico.length,
+      target_stage:      targetStage,
+      vault_kb_files:    arquivosKb.length,
+      vault_kb_chars:    vaultKb.length,
+      rag_mode:          kb.mode,
+      rag_latency_ms:    kb.latencyMs,
+      rag_docs_count:    kb.fontes.length,
+      kb_chars:          knowledgeBase.length,
+      rag_sources:       kb.fontes,
     },
     metadata: {
-      soul_source:    soulSource,
-      history_count:  historico.length,
-      target_stage:   targetStage,
-      rag_mode:       kb.mode,
-      rag_latency_ms: kb.latencyMs,
-      rag_docs_count: kb.fontes.length,
-      kb_chars:       kb.conteudo.length,
+      soul_source:       soulSource,
+      history_count:     historico.length,
+      target_stage:      targetStage,
+      vault_kb_files:    arquivosKb.length,
+      vault_kb_chars:    vaultKb.length,
+      rag_mode:          kb.mode,
+      rag_latency_ms:    kb.latencyMs,
+      rag_docs_count:    kb.fontes.length,
+      kb_chars:          knowledgeBase.length,
     },
   });
 
   console.log(
     `${tag} [2/7] Contexto | soul=${soulSource} | etapa=${targetStage} | histórico=${historico.length}msgs` +
+    ` | vault_kb=${arquivosKb.length} arquivos (${vaultKb.length} chars)` +
     ` | rag=${kb.mode} ${kb.fontes.length} docs (${kb.conteudo.length} chars, ${kb.latencyMs}ms)` +
     ` | ${Date.now() - t2}ms`,
   );
   if (kb.fontes.length) console.log(`${tag}     KB fontes: ${kb.fontes.join(', ')}`);
+  if (arquivosKb.length) console.log(`${tag}     Vault KB: ${arquivosKb.join(', ')}`);
 
   // ── ETAPA 3: System prompt ────────────────────────────────
   const baseSoul = promptsResolvidos.soul ||
@@ -244,7 +271,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     stage: targetStage,
     conversationState: formatConversationStatePrompt(conversaAtual),
     productCatalog: includePlanContext ? formatProductCatalogPrompt(tabelaPlanos) : '',
-    knowledgeBase: kb.conteudo,
+    knowledgeBase,
     catalogIntent,
     includePlanContext,
   });

@@ -7,10 +7,11 @@
  */
 
 const VAULT_SERVER_URL =
-  process.env.VAULT_SERVER_URL || 'http://vault-server.railway.internal:8080';
+  process.env.VAULT_SERVER_URL || 'http://plamev-gestor-leads-v6-fda4.railway.internal:8080';
 
 const CACHE_TTL_MS = 60_000;
 const _cache = new Map<string, { at: number; conteudo: string }>();
+let _listaCache: { at: number; lista: string[] } | null = null;
 
 export async function carregar(relativo: string, fallback = ''): Promise<string> {
   const cached = _cache.get(relativo);
@@ -39,7 +40,23 @@ export async function carregar(relativo: string, fallback = ''): Promise<string>
   }
 }
 
+export async function listar(): Promise<string[]> {
+  if (_listaCache && Date.now() - _listaCache.at < CACHE_TTL_MS) return _listaCache.lista;
+  try {
+    const url = `${VAULT_SERVER_URL}/files`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json() as { files: string[] };
+    const lista = data.files || [];
+    _listaCache = { at: Date.now(), lista };
+    return lista;
+  } catch (e: any) {
+    console.warn(`[vault] ⚠️ listar() falhou: ${e.message}`);
+    return _listaCache?.lista || [];
+  }
+}
+
 export function invalidar(relativo?: string) {
   if (relativo) _cache.delete(relativo);
-  else _cache.clear();
+  else { _cache.clear(); _listaCache = null; }
 }
