@@ -23,7 +23,7 @@ No momento de consolidar o perfil e apresentar o plano recomendado, *pergunta se
 - *"Me conta uma coisa: ele já foi castrado ou tá pensando em castrar?"*
 - *"Antes de te mandar o plano ideal: seu [nome do pet] já é castrado?"*
 
-*Se a resposta for "não" ou "pensa em castrar"* → apresenta a versão *Plus* do plano (base + R$59/mês).
+*Se a resposta for "não" ou "pensa em castrar"* → apresenta a versão *Plus* do plano (adicional via BD).
 *Se a resposta for "sim, já é castrado"* → mantém o plano base (Advance ou Platinum).
 
 Fonte autoritativa de preço do Plus: tabela `precos` do BD (acessível via Intelligence V1 → Produtos → Preços). *Nunca inventar*.

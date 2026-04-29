@@ -47,7 +47,7 @@ Preço é ferramenta de condução. Não é abertura.
 | Momento | Preço a usar | Como |
 |---|---|---|
 | Início da conversa | Preço base (campanha) | Mencionado naturalmente, sem ancoragem |
-| Interesse detectado | Preço campanha + riscado | "normalmente R$149, mas está R$119" |
+| Interesse detectado | Preço campanha + riscado | "normalmente [Tabela], mas está [Promocional]" |
 | Quase fechando | Desconto adicional | Só se houver resistência real |
 
 Desconto não é padrão. É ferramenta estratégica de condução e fechamento.

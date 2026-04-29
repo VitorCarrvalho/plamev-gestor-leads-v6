@@ -154,7 +154,7 @@ Exemplos de uso:
 | Diamond Plus | ✅ Cobre | 180 dias |
 
 *Quando cliente perguntar sobre castração:*
-*"A castração está incluída nos planos Plus! O Advance Plus, por exemplo, já inclui a castração por apenas R$59/mês a mais que o Advance. A carência é de 270 dias para o Advance Plus."*
+*"A castração está incluída nos planos Plus! O Advance Plus, por exemplo, já inclui a castração com um adicional mensal sobre o Advance. A carência é de 270 dias para o Advance Plus."*
 
 *NUNCA dizer que castração cobre em 36 dias*, 36 dias é carência de cirurgias gerais, não de castração.
 *NUNCA dizer que o Advance cobre castração*, não cobre.

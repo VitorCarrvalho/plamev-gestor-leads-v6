@@ -132,4 +132,4 @@ A urgência existe. Mas Mari planta ela com calor, não com medo.
 
 
 
-→ [[Vendas/Objecoes]] | [[Vendas/Negociacao-Inteligente]] | [[Vendas/Fechamento]]
+→ [[Vendas/Objecoes]] | [[Vendas/Negociacao]] | [[Vendas/Fechamento]]

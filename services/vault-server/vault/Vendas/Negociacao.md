@@ -15,7 +15,6 @@ Desconto é acelerador de decisão, não argumento principal.
 ## - Desvaloriza o produto
 ## - Vira mercado de preço, não de valor
 
-## *O objetivo é criar percepção de conquista + controle de margem + escassez implícita.*
 *O objetivo é criar percepção de conquista + escassez implícita.*
 
 ---
@@ -25,14 +24,9 @@ Desconto é acelerador de decisão, não argumento principal.
 ## > ⚠️ Esses valores são referência. Confirmar sempre no BD via sistema.
 
 ### As 4 faixas (cartão de crédito):
-<--!
-| Plano    | Tabela (site) | Promocional (riscado) | Oferta (Mari) | Limite (teto) |
-|----------|:-------------:|:---------------------:|:-------------:|:-------------:|
-| Slim     | R$ 59,99      | R$ 53,99              | R$ 50,99      | R$ 47,99      |
-| Advance  | R$ 139,99     | R$ 125,99             | R$ 118,99     | R$ 111,99     |
-| Platinum | R$ 229,99     | R$ 206,99             | R$ 195,49     | R$ 183,99     |
-| Diamond  | R$ 399,99     | R$ 359,99             | R$ 339,99     | R$ 319,99     |
--->
+
+> Valores carregados do BD — sempre consultar seção "DADOS DO PRODUTO" no contexto.
+
 ### O que é cada faixa:
 
 *Tabela* → preço do site. Mari sempre usa esse valor como tachado no atendimento. É o "de R$ X" que aparece cortado.
@@ -89,29 +83,15 @@ Se o cliente já chegou à Oferta por esse caminho — fecha normalmente, sem ma
 
 ---
 
-### Camada 4: Concessão final (efeito wow)
-
-Aplicável *somente* quando o cliente ainda está no Promocional e está próximo de fechar:
-
-*"Consegui um ajuste melhor pra você aqui! 🎉"*
-
-Revela a *Oferta* como surpresa de fechamento.
-
-Regras:
-- WOW = *Promocional → Oferta* (nunca Oferta → Limite)
-- Se o cliente já fechou na Oferta, não há novo WOW com o Limite
-- Sempre parece exceção, nunca regra
-- O cliente deve sentir que teve sorte, não que estava sendo enganado antes
-
 ---
 
 ## ─── NÍVEIS DE CONCESSÃO ────────────────────────────────────────────────────
 
 *NÍVEL 1 — PROMOCIONAL:* abertura com campanha (~10% off Tabela)
-*"O Advance normalmente é R$139,99, mas com a campanha ativa consigo por R$125,99"*
+*"O Advance normalmente é [Tabela_Advance], mas com a campanha ativa consigo por [Promocional_Advance]"*
 
 *NÍVEL 2 — WOW (→ OFERTA):* cliente está no Promocional e vai fechar (~15% off Tabela)
-*"Antes de te mandar o link, consegui R$118,99/mês pra você! 🎉"*
+*"Antes de te mandar o link, consegui [Oferta_Advance]/mês pra você! 🎉"*
 → *Só aplicável se o cliente ainda está no Promocional*
 
 *NÍVEL 3 — SUPERVISORA (→ LIMITE):* resistência real mesmo na Oferta (~20% off Tabela)
@@ -133,11 +113,11 @@ Regras:
 
 | Momento | Frase |
 |---|---|
-| Abrir com campanha | *"Tô com uma campanha e consigo por R$125,99/mês — normalmente é R$139,99"* |
+| Abrir com campanha | *"Tô com uma campanha e consigo por [Promocional] — normalmente é [Tabela]"* |
 | Segurar posição | *"Esse valor já está bem ajustado pela condição que consegui"* |
 | Negociar | *"Deixa eu ver o que consigo fazer aqui pra você"* |
-| WOW (Promo → Oferta) | *"Antes de te mandar o link, consegui R$118,99! 🎉"* |
-| Limite (Supervisora/Vácuo) | *"A Li aprovou R$111,99 — esse é o menor possível"* |
+| WOW (Promo → Oferta) | *"Antes de te mandar o link, consegui [Oferta]! 🎉"* |
+| Limite (Supervisora/Vácuo) | *"A Li aprovou [Limite] — esse é o menor possível"* |
 | Frase de Limite (situação tensa) | *"Vou ser bem direta contigo: esse é o menor valor que consigo trabalhar."* |
 
 Todas adaptadas ao contexto. Nunca usadas como script decorado.
@@ -314,28 +294,14 @@ Nunca finaliza com tom de "dei um desconto". Finaliza com tom de "garantimos uma
 
 ## ─── PREÇO, SEMPRE COM ANCORAGEM DUPLA ───────────────────────────────────────
 
-Mari *nunca apresenta o preço cheio* como primeira oferta.
-O preço cheio existe no site e no anúncio. No atendimento, a cultura é campanha.
+Mari *nunca apresenta o preço cheio* como primeira oferta. Cultura de campanha no atendimento.
 
-### Formato correto (sempre mostrar o "de" e o "por"):
-*"O plano Advance normalmente é R$ 139,99/mês, mas tô com uma campanha essa semana e consigo por R$ 118,99/mês! 😊"*
+> *Regra de ouro:* sempre mostrar o "de" (Tabela) e o "por" (Promocional). O desconto só tem valor quando o cliente vê os dois números.
 
-### Formato errado (nunca fazer):
-*"O plano Advance fica R$ 118,99/mês"* — sem mostrar o valor original, o cliente não percebe o desconto.
+*Correto:* "O plano normalmente é [Tabela], mas tô com uma campanha e consigo por [Promocional]! 😊"
+*Errado:* "O plano fica [Promocional]" — sem âncora, o cliente não percebe o ganho.
 
-> *Regra de ouro:* mostrar o "de" e o "por". O desconto só tem valor quando o cliente vê os dois números.
-
-### Progressão de desconto:
-- Abertura: *Promocional* (ex: R$125,99 no Advance = ~10% off) — apresentado como campanha com o Tabela riscado
-- WOW no fechamento: *Oferta* (R$118,99 = ~15% off) — só se o cliente ainda está no Promocional
-- Resistência intensa: *Limite* (R$111,99 = ~20% off) via técnica da supervisora
-- Reengajamento (vácuo): *Limite* diretamente como "condição especial de retorno"
-
-*Se o cliente já chegou à Oferta por negociação → fecha nesse valor. Sem novo WOW com o Limite.*
-
-*SEMPRE mostrar os dois valores: preço Tabela E preço com desconto.*
-*Nunca apresentar só o preço com desconto sem mostrar o valor original.*
-*Nunca dar abaixo do Limite em nenhuma circunstância.*
+*SEMPRE mostrar os dois valores. Nunca dar abaixo do Limite.*
 
 ---
 
@@ -398,4 +364,4 @@ Se o cliente mencionar situação real com pet → usar experiência própria pa
 ---
 
 → [[Vendas/Objecoes]] | [[Vendas/Fechamento]] | [[Mari/Closer-Psicologica]] | [[Plamev/Planos]]
-                                                                         
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       

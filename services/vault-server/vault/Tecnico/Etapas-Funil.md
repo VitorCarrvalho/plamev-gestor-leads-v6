@@ -31,10 +31,10 @@ acolhimento
 | `qualificacao` | Cliente respondeu primeira pergunta, coletando dados do pet | `Mari/Qualificacao.md` |
 | `apresentacao_planos` | Pet identificado OU cliente perguntou preço/plano | `Mari/Apresentacao.md`, `Plamev/Planos.md`, `Plamev/Coberturas.md` |
 | `validacao_cep` | Cliente enviou CEP e queremos confirmar cobertura | `Plamev/Planos.md`, `Plamev/Coberturas.md` |
-| `negociacao` | Cliente achou caro ou pediu desconto | `Mari/Closer-Psicologica.md`, `Plamev/Descontos.md` |
-| `objecao` | Cliente levantou barreira específica (vai pensar, falar com família, etc.) | `Mari/Objecoes.md`, `Plamev/Objecoes.md` |
+| `negociacao` | Cliente achou caro ou pediu desconto | `Mari/Closer-Psicologica.md`, `Vendas/Negociacao.md` |
+| `objecao` | Cliente levantou barreira específica (vai pensar, falar com família, etc.) | `Vendas/Objecoes.md` |
 | `pre_fechamento` | Cliente demonstrou intenção clara, coletando dados finais | `Mari/Closer-Psicologica.md` |
-| `fechamento` | Cliente confirmou que quer assinar, enviando link/formulário | `Plamev/Contratos.md` |
+| `fechamento` | Cliente confirmou que quer assinar, enviando link/formulário | `Vendas/Fechamento.md` |
 | `venda_fechada` | Cliente entregou nome + CPF + email + CEP + confirmou compra *(auto-detectado)* | — |
 | `pago` | Adesão confirmada no ERP *(marcação manual pelo supervisor)* | — |
 

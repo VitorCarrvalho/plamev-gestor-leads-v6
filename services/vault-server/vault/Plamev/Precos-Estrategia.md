@@ -168,5 +168,5 @@ Cliente some → reengaja direto no Limite ("condição de retorno")
 - [[Plamev/Planos]] — descrição dos planos
 - [[Plamev/Recomendacao-Plano]] — qual plano por perfil
 - [[Vendas/Fechamento]] — Efeito WOW, Limite via Supervisora, timing
-- [[Vendas/Negociacao-Inteligente]] — rebater objeções
+- [[Vendas/Negociacao]] — rebater objeções
 - [[Mari/Regras-Absolutas]] — regras globais de comportamento

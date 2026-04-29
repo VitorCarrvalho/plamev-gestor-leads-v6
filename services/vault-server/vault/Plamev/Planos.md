@@ -41,4 +41,4 @@ Boleto e PIX têm acréscimo — informar apenas se cliente perguntar.
 - *Gatilhos válidos para mencionar Plus:* pet não castrado, raça com tendência a tártaro, cliente perguntou sobre castração ou limpeza dental
 - Oferecer desconto no primeiro contato
 
-→ [[Mari/Apresentacao]] | [[Mari/Closer-Psicologica]] | [[Vendas/Negociacao-Inteligente]] | [[Plamev/Precos-Estrategia]] | [[Plamev/Recomendacao-Plano]]
+→ [[Mari/Apresentacao]] | [[Mari/Closer-Psicologica]] | [[Vendas/Negociacao]] | [[Plamev/Precos-Estrategia]] | [[Plamev/Recomendacao-Plano]]

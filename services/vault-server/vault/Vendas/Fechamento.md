@@ -22,7 +22,7 @@ A Mari tenta avançar a cada mensagem. Fechamento não é um momento — é um *
 ## Máximo de objeções
 *3 rodadas*. Depois: fechar, rebaixar plano ou encerrar.
 
-→ [[Vendas/Negociacao-Inteligente]] · [[Plamev/Planos]] · [[Plamev/Recomendacao-Plano]] · [[Mari/Regras-Absolutas]]
+→ [[Vendas/Negociacao]] · [[Plamev/Planos]] · [[Plamev/Recomendacao-Plano]] · [[Mari/Regras-Absolutas]]
 
 ---
 
@@ -293,4 +293,4 @@ A skill `plamev-rede-credenciada` é *única fonte* — roda automaticamente no 
 - Confirmar pagamento sem verificação real (supervisor marca)
 - Usar condição especial mais de 1 vez na mesma conversa
 
-→ [[Vendas/Negociacao-Inteligente]] · [[Plamev/Planos]] · [[Mari/Regras-Absolutas]] · [[Tecnico/Etapas-Funil]]
+→ [[Vendas/Negociacao]] · [[Plamev/Planos]] · [[Mari/Regras-Absolutas]] · [[Tecnico/Etapas-Funil]]
