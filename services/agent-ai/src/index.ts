@@ -14,10 +14,11 @@ app.use(express.json());
 app.get('/health', async (_req, res) => {
   const checks: Record<string, any> = { service: 'agent-ai', ok: true };
 
-  // DB conectividade
+  // DB conectividade + qual banco está conectado
   try {
-    await pool.query('SELECT 1');
+    const { rows } = await pool.query('SELECT current_database() AS db, inet_server_addr() AS host');
     checks.db = 'ok';
+    checks.db_info = `${rows[0].db} @ ${rows[0].host}`;
   } catch (e: any) { checks.db = `erro: ${e.message}`; checks.ok = false; }
 
   // Tabelas RAG
