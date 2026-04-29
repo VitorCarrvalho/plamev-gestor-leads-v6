@@ -445,7 +445,17 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
 
   const totalLatency = Date.now() - start;
 
+  // ── KB source summary (log + score) ──────────────────────
+  const kbSource =
+    vaultKb.length > 0 && kb.conteudo.length > 0 ? 'vault+rag' :
+    vaultKb.length > 0                            ? 'vault'     :
+    kb.conteudo.length > 0                        ? 'rag'       : 'none';
+  console.log(
+    `${tag} KB injetado: source=${kbSource} | vault=${vaultKb.length} chars (${arquivosKb.length} arquivos) | rag=${kb.conteudo.length} chars (${kb.fontes.length} docs, mode=${kb.mode}) | total=${knowledgeBase.length} chars`
+  );
+
   // ── Scores Langfuse (alimentam dashboards customizados) ───
+  trace.score({ name: 'vault_kb_hit',   value: vaultKb.length > 0 ? 1 : 0, comment: `${arquivosKb.length} arquivos, ${vaultKb.length} chars` });
   trace.score({ name: 'rag_hit',        value: kb.fontes.length > 0 ? 1 : 0, comment: kb.fontes.join(', ') || 'none' });
   trace.score({ name: 'rag_vector_hit', value: kb.mode === 'vector_rerank' ? 1 : 0, comment: kb.mode });
   trace.score({ name: 'output_blocked', value: wasBlocked ? 1 : 0, comment: validation.reason || 'none' });
@@ -460,10 +470,13 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     metadata: {
       total_latency_ms:   totalLatency,
       llm_latency_ms:     llmLatency,
+      kb_source:          kbSource,
+      vault_kb_files:     arquivosKb.length,
+      vault_kb_chars:     vaultKb.length,
       rag_mode:           kb.mode,
       rag_latency_ms:     kb.latencyMs,
       rag_docs_count:     kb.fontes.length,
-      kb_chars_injected:  kb.conteudo.length,
+      kb_chars_injected:  knowledgeBase.length,
       rag_sources:        kb.fontes,
       target_stage:       targetStage,
       history_msgs_count: historico.length,
