@@ -263,8 +263,15 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   if (arquivosKb.length) console.log(`${tag}     Vault KB: ${arquivosKb.join(', ')}`);
 
   // ── ETAPA 3: System prompt ────────────────────────────────
-  const baseSoul = promptsResolvidos.soul ||
-    `Você é ${config.nome || 'a assistente virtual da Plamev'}, assistente virtual da Plamev, plano de saúde para pets. Seja simpática, objetiva e natural em português. Não se apresente se já há histórico de conversa.`;
+  if (!promptsResolvidos.soul) {
+    console.error(
+      `${tag} ❌ Mari/Soul.md NÃO carregado do vault — ` +
+      `VAULT_SERVER_URL=${process.env.VAULT_SERVER_URL || 'não definido'} | ` +
+      `vault_ativo=${vaultAtivo} | soul_db=${!!(promptBundle as any)?.soul}`
+    );
+  }
+  // Fallback mínimo: só o nome — sem instruções de comportamento, para evidenciar falha no vault
+  const baseSoul = promptsResolvidos.soul || `Você é ${config.nome || 'Mari'}, assistente da Plamev.`;
 
   const systemPrompt = buildMariPrompt({
     prompts: { ...promptsResolvidos, soul: baseSoul },
