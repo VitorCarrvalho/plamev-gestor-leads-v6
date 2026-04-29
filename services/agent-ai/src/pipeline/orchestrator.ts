@@ -6,6 +6,7 @@ import { generateResponse, ChatMessage } from '../clients/llm-client';
 import { langfuse } from '../clients/langfuse-client';
 import { sendResponse, persistInteraction } from './delivery';
 import { carregar as vaultCarregar } from '../services/vault';
+import { buscarRedeCredenciada, normalizarCep, validarCep, type RedeResult } from '../services/rede-credenciada';
 import {
   resolverConfigRuntimeAgente,
   ResolvedAgentRuntimeConfig,
@@ -25,6 +26,28 @@ import {
   formatProductCatalogPrompt,
   inferTargetStage,
 } from './mari-runtime';
+
+function detectarCepNoTexto(texto: string): string | null {
+  const semEspacos = texto.replace(/\s/g, '');
+  const matchHifen = texto.match(/\b(\d{5})-(\d{3})\b/);
+  if (matchHifen) return matchHifen[1] + matchHifen[2];
+  const matchPuro = semEspacos.match(/\b(\d{8})\b/);
+  if (matchPuro) return validarCep(matchPuro[1]) ? matchPuro[1] : null;
+  return null;
+}
+
+function formatarSecaoRede(result: RedeResult, cep: string): string {
+  if (result.status === 'cep_invalido') {
+    return `CEP "${cep}" é inválido. Instrua o cliente a enviar um CEP com 8 números.`;
+  }
+  if (result.status === 'erro_servico') {
+    return 'Serviço de rede credenciada indisponível agora. Informe ao cliente de forma amigável e sugira tentar novamente em instantes.';
+  }
+  if (result.status === 'sem_cobertura') {
+    return `CEP ${cep} consultado agora — sem clínicas credenciadas em até 40 km. Informe com empatia e ofereça cadastro na lista de espera.`;
+  }
+  return `Dados REAIS de rede credenciada consultados agora para o CEP ${cep}. Use EXATAMENTE as clínicas abaixo, sem inventar outras:\n\n${result.texto}`;
+}
 
 async function lf_flush() {
   try { await langfuse.flushAsync(); }
@@ -166,9 +189,12 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     input: { agentSlug, orgId, phone: msg.phone, canal: msg.canal },
   });
 
+  // Detecta CEP na mensagem antes do Promise.all para inclusão condicional
+  const cepDetectado = detectarCepNoTexto(msg.texto || '');
+
   // Carrega prompts em paralelo: vault (primário) + banco (fallback) + contexto
   const [vaultSoul, vaultTom, vaultRegras, vaultAntiRep, vaultPensamentos, vaultModoRapido,
-         promptBundle, historico, conversaAtual, tabelaPlanos] = await Promise.all([
+         promptBundle, historico, conversaAtual, tabelaPlanos, redeResult] = await Promise.all([
     vaultCarregar('Mari/Identidade.md'),
     vaultCarregar('Mari/Tom-e-Fluxo.md'),
     vaultCarregar('Mari/Regras-Absolutas.md'),
@@ -179,6 +205,9 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     buscarHistorico(orgId, msg.phone, msg.canal),
     buscarContextoConversaAtiva(orgId, msg.phone, msg.canal),
     buscarTabelaPlanos().catch(() => []),
+    cepDetectado
+      ? buscarRedeCredenciada(cepDetectado).catch(() => ({ status: 'erro_servico' } as RedeResult))
+      : Promise.resolve(null as RedeResult | null),
   ]);
 
   // Vault tem prioridade; banco serve de fallback quando arquivo ainda não existe
@@ -204,6 +233,9 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   // KB via RAG — conteúdo migrado do vault para knowledge_chunks via vault-sync
   const kb = await searchKnowledge(msg.texto || '', orgId, config.id, 5, { stage: targetStage });
   const knowledgeBase = kb.conteudo;
+
+  // Rede credenciada: seção de prompt ou null se não havia CEP na mensagem
+  const redeSection = redeResult ? formatarSecaoRede(redeResult, cepDetectado!) : '';
 
   const soulSource = vaultAtivo ? 'vault' : promptsResolvidos.soul ? 'db' : 'fallback';
 
@@ -232,9 +264,11 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   console.log(
     `${tag} [2/7] Contexto | soul=${soulSource} | etapa=${targetStage} | histórico=${historico.length}msgs` +
     ` | rag=${kb.mode} ${kb.fontes.length} docs (${kb.conteudo.length} chars, ${kb.latencyMs}ms)` +
+    (cepDetectado ? ` | cep=${cepDetectado} status=${redeResult?.status}` : '') +
     ` | ${Date.now() - t2}ms`,
   );
   if (kb.fontes.length) console.log(`${tag}     KB fontes: ${kb.fontes.join(', ')}`);
+  if (cepDetectado) console.log(`${tag}     Rede credenciada: CEP=${cepDetectado} status=${redeResult?.status} total=${redeResult?.total ?? 0}`);
 
   // ── ETAPA 3: System prompt ────────────────────────────────
   if (!promptsResolvidos.soul) {
@@ -253,6 +287,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     conversationState: formatConversationStatePrompt(conversaAtual),
     productCatalog: includePlanContext ? formatProductCatalogPrompt(tabelaPlanos) : '',
     knowledgeBase,
+    redeCredenciada: redeSection || undefined,
     catalogIntent,
     includePlanContext,
   });
@@ -427,6 +462,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
 
   // ── Scores Langfuse (alimentam dashboards customizados) ───
   trace.score({ name: 'rag_hit',        value: kb.fontes.length > 0 ? 1 : 0, comment: kb.fontes.join(', ') || 'none' });
+  if (cepDetectado) trace.score({ name: 'rede_credenciada_hit', value: redeResult?.status === 'ok' ? 1 : 0, comment: `CEP=${cepDetectado} status=${redeResult?.status} total=${redeResult?.total ?? 0}` });
   trace.score({ name: 'rag_vector_hit', value: kb.mode === 'vector_rerank' ? 1 : 0, comment: kb.mode });
   trace.score({ name: 'output_blocked', value: wasBlocked ? 1 : 0, comment: validation.reason || 'none' });
   trace.score({ name: 'was_rewritten',  value: wasRewritten ? 1 : 0 });
