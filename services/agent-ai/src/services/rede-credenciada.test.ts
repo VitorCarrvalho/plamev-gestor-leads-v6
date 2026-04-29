@@ -4,6 +4,7 @@ import {
   normalizarTelefone,
   normalizarDistancia,
   formatarResposta,
+  deveExcluir,
   buscarRedeCredenciada,
   type Clinica,
 } from './rede-credenciada';
@@ -36,6 +37,31 @@ describe('normalizarDistancia', () => {
   it('lida com número já arredondado', () => expect(normalizarDistancia(4.3)).toBe(4.3));
   it('retorna 0 para valor inválido', () => expect(normalizarDistancia('abc')).toBe(0));
   it('arredonda corretamente para cima', () => expect(normalizarDistancia('1.95')).toBe(2));
+});
+
+// ── deveExcluir ──────────────────────────────────────────────────────────────
+
+describe('deveExcluir', () => {
+  // Plamev
+  it('exclui nome com "plamev" (maiúsculo)', () => expect(deveExcluir('PLAMEV PET NOME CREDENCIADO')).toBe(true));
+  it('exclui nome com "Plamev" (misto)', () => expect(deveExcluir('Plamev Pet')).toBe(true));
+  it('exclui nome com "plamev" (minúsculo)', () => expect(deveExcluir('plamev pet')).toBe(true));
+
+  // Doutores / Dras
+  it('exclui nome começando com "Dr. "', () => expect(deveExcluir('Dr. João Silva')).toBe(true));
+  it('exclui nome começando com "Dra. "', () => expect(deveExcluir('Dra. Júlia Corrêa')).toBe(true));
+  it('exclui nome começando com "Dr "', () => expect(deveExcluir('Dr José Almeida')).toBe(true));
+  it('exclui nome começando com "Doutor "', () => expect(deveExcluir('Doutor Carlos Mendes')).toBe(true));
+  it('exclui nome começando com "Doutora "', () => expect(deveExcluir('Doutora Ana Paula')).toBe(true));
+
+  // Especialidade em parênteses
+  it('exclui nome com especialidade em parênteses', () => expect(deveExcluir('Dra. Júlia Corrêa (Pneumologia)')).toBe(true));
+  it('exclui qualquer nome com parênteses', () => expect(deveExcluir('Clínica Boa Vista (Cardiologia)')).toBe(true));
+
+  // Clínicas legítimas
+  it('mantém clínica veterinária normal', () => expect(deveExcluir('Afeto Pet Hospital Veterinário')).toBe(false));
+  it('mantém clínica sem parênteses e sem Dr', () => expect(deveExcluir('Clínica Vet Animal')).toBe(false));
+  it('mantém nome com "dr" no meio da palavra', () => expect(deveExcluir('Andrômeda Pet')).toBe(false));
 });
 
 // ── formatarResposta ─────────────────────────────────────────────────────────

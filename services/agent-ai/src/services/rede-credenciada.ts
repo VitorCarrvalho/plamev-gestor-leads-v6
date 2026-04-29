@@ -56,6 +56,18 @@ export function normalizarDistancia(dist: string | number): number {
   return isNaN(num) ? 0 : Math.round(num * 10) / 10;
 }
 
+// Remove registros que não são clínicas reais:
+// 1. Nome da própria Plamev (qualquer variação com "plamev")
+// 2. Profissionais individuais: nomes que começam com Dr./Dra./Doutor/Doutora
+// 3. Registros com especialidade em parênteses (ex: "Dra. Júlia Corrêa (Pneumologia)")
+export function deveExcluir(nome: string): boolean {
+  if (!nome) return true;
+  if (/plamev/i.test(nome)) return true;
+  if (/^(dr\.?\s|dra\.?\s|doutor\s|doutora\s)/i.test(nome)) return true;
+  if (/\(.+\)/.test(nome)) return true;
+  return false;
+}
+
 function mapearClinica(item: any): Clinica {
   return {
     nome: nomeDaClinica(item),
@@ -139,7 +151,14 @@ export async function buscarRedeCredenciada(cepRaw: string): Promise<RedeResult>
     const ordenadas = [...lista].sort(
       (a, b) => parseFloat(a.DistanciaKm || '0') - parseFloat(b.DistanciaKm || '0'),
     );
-    const clinicas = ordenadas.map(mapearClinica);
+    const clinicas = ordenadas
+      .map(mapearClinica)
+      .filter(c => !deveExcluir(c.nome));
+
+    if (clinicas.length > 0) {
+      const removidos = ordenadas.length - clinicas.length;
+      if (removidos > 0) console.log(`[REDE-CREDENCIADA] 🔎 ${removidos} registro(s) filtrado(s) (Plamev/médicos/especialistas)`);
+    }
 
     return {
       status: 'ok',
