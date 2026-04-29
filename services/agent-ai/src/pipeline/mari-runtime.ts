@@ -97,6 +97,7 @@ export function buildMariPrompt({
   productCatalog,
   knowledgeBase,
   redeCredenciada,
+  cotacaoPlanos,
   catalogIntent,
   includePlanContext,
 }: {

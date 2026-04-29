@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { isDuplicate, messageQueue, redisClient } from '../utils/redis';
 import { normalizeMessage } from '../utils/normalizer';
-import { enviar } from '../services/sender';
+import { enviar, enviarDocumentoWA } from '../services/sender';
 
 const router = Router();
 
@@ -244,6 +244,32 @@ internalRouter.post('/send', async (req: Request, res: Response) => {
     await enviar(message, resposta);
   } catch (e: any) {
     console.error('[CHANNEL-SERVICE] ❌ Falha ao enviar resposta:', e.message);
+  }
+});
+
+internalRouter.post('/send-document', async (req: Request, res: Response) => {
+  const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+  if (req.headers['x-internal-secret'] !== INTERNAL_SECRET) {
+    res.status(401).json({ erro: 'Não autorizado' });
+    return;
+  }
+  const { message, base64, fileName, caption } = req.body || {};
+  if (!message?.phone || !base64 || !fileName) {
+    res.status(400).json({ erro: 'message.phone, base64 e fileName são obrigatórios' });
+    return;
+  }
+  res.json({ ok: true });
+  try {
+    await enviarDocumentoWA(
+      message.phone,
+      message.jid ?? null,
+      message.instancia ?? null,
+      base64,
+      fileName,
+      caption ?? '',
+    );
+  } catch (e: any) {
+    console.error('[CHANNEL-SERVICE] ❌ Falha ao enviar documento:', e.message);
   }
 });
 

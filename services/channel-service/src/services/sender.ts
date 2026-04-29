@@ -101,6 +101,39 @@ export async function enviarWA(phone: string, jid: string | null, texto: string,
   return false;
 }
 
+export async function enviarDocumentoWA(
+  phone: string,
+  jid: string | null,
+  instanciaExplicita: string | null,
+  base64: string,
+  fileName: string,
+  caption = '',
+): Promise<boolean> {
+  let inst = instanciaExplicita;
+  if (!inst) inst = getInstancia(phone);
+
+  const { baseUrl, apiKey } = getEvoConfig(inst);
+  const numero = normalizarJID(phone, jid);
+
+  const body = {
+    number: numero,
+    mediatype: 'document',
+    mimetype: 'application/pdf',
+    caption,
+    media: base64,
+    fileName,
+  };
+
+  console.log(`[SENDER] 📎 Doc WA → instância ${inst} via ${baseUrl} (${Math.round(base64.length / 1024)}KB)`);
+  const r = await wppPost(baseUrl, `/message/sendMedia/${inst}`, body, apiKey).catch(() => ({}));
+  if (r.key || r.id) {
+    console.log(`[SENDER] ✅ Doc WA ${inst} → ${numero}`);
+    return true;
+  }
+  console.log(`[SENDER] ❌ Doc WA falhou para ${phone}:`, JSON.stringify(r).substring(0, 120));
+  return false;
+}
+
 function tgPost(path: string, body: any, token: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const b = JSON.stringify(body);

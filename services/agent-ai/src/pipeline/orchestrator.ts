@@ -4,10 +4,21 @@ import { checkInputGuard } from './guards/input-guard';
 import { validateClaims } from './guards/output-guard';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
 import { langfuse } from '../clients/langfuse-client';
-import { sendResponse, persistInteraction } from './delivery';
+import { sendResponse, persistInteraction, sendDocument } from './delivery';
 import { carregar as vaultCarregar } from '../services/vault';
 import { buscarRedeCredenciada, normalizarCep, validarCep, type RedeResult } from '../services/rede-credenciada';
-import { buscarEnderecoPorCep, buscarCoberturasParaUF, formatarCoberturasParaPrompt } from '../services/cotacao';
+import {
+  buscarEnderecoPorCep,
+  buscarCoberturasParaUF,
+  formatarCoberturasParaPrompt,
+  encontrarRacaPorNome,
+  submeterCotacao,
+  extrairDdd,
+  formatarDataNascimento,
+  normalizarCidade,
+  type CotacaoPayload,
+} from '../services/cotacao';
+import { gerarCotacaoPdf } from '../services/cotacao-pdf';
 import {
   resolverConfigRuntimeAgente,
   ResolvedAgentRuntimeConfig,
@@ -55,7 +66,92 @@ async function lf_flush() {
   catch (e: any) { console.error('[LANGFUSE] ❌ Flush falhou:', e?.message ?? e); }
 }
 
-const HISTORY_LIMIT       = 30;
+const HISTORY_LIMIT = 30;
+
+// ── Cotação: disparo não-bloqueante ───────────────────────────
+async function dispararCotacao(
+  msg: InternalMessage,
+  dados: Record<string, any>,
+  conversaAtual: any,
+) {
+  const tag = `[COTACAO] ${msg.phone}`;
+  try {
+    // Extrai dados do lead dos dados_extraidos + conversa
+    // Suporta chaves abreviadas (nc/np/ep/rp/cp/em/dn/sx/ci) e chaves completas
+    const nomeCliente = dados.nome || dados.nc || dados.tutor_nome || conversaAtual?.tutor_nome || msg.nome || '';
+    const email       = dados.email || dados.em || '';
+    const telefone    = dados.telefone || msg.phone || '';
+    const cepRaw      = dados.cep || dados.cp || '';
+    const petNome     = dados.pet_nome || dados.nome_pet || dados.np || conversaAtual?.nome_pet || '';
+    const petNasc     = formatarDataNascimento(dados.pet_nascimento || dados.data_nascimento || dados.dn || '') || '';
+    const petSexo     = dados.pet_sexo || dados.sexo || dados.sx || 'Macho';
+    const petEspecie  = (dados.pet_especie || dados.especie || dados.ep || '2') as '1' | '2';
+    const petRacaNome = dados.pet_raca || dados.raca || dados.rp || conversaAtual?.raca || '';
+    const coberturaId = dados.cobertura_id || dados.coberturasId || dados.ci || '';
+
+    if (!nomeCliente || !email || !coberturaId || !cepRaw) {
+      console.warn(`${tag} ⚠️ Dados insuficientes para cotação (nome=${!!nomeCliente} email=${!!email} cobertura=${!!coberturaId} cep=${!!cepRaw})`);
+      return;
+    }
+
+    // Endereço via ViaCEP
+    const endereco = await buscarEnderecoPorCep(cepRaw);
+    if (!endereco) {
+      console.warn(`${tag} ⚠️ CEP inválido ou não encontrado: ${cepRaw}`);
+      return;
+    }
+
+    // Raça → UUID
+    let racaId = dados.racas_id || dados.racasId || '';
+    if (!racaId && petRacaNome) {
+      const raca = await encontrarRacaPorNome(petRacaNome, petEspecie);
+      racaId = raca?.id || (petEspecie === '2' ? 'SEMRACA2' : 'SEMRACA1');
+    }
+    if (!racaId) racaId = petEspecie === '2' ? 'SEMRACA2' : 'SEMRACA1';
+
+    // DDD + número
+    const { ddd, numero } = extrairDdd(telefone);
+
+    const payload: CotacaoPayload = {
+      nome: nomeCliente,
+      email,
+      ddd,
+      telefone: numero,
+      cep: endereco.cep,
+      logradouro: endereco.logradouro,
+      numero: dados.numero_endereco || 'S/N',
+      complemento: dados.complemento || '',
+      bairro: endereco.bairro,
+      estadosId: endereco.uf,
+      cidadesId: normalizarCidade(endereco.cidade),
+      formaPagamento: 1,
+      cupomDesconto: '',
+      pets: [{
+        nome: petNome || 'Pet',
+        dataNascimento: petNasc || '01/01/2022',
+        sexo: ['Macho', 'Fêmea'].includes(petSexo) ? petSexo as 'Macho' | 'Fêmea' : 'Macho',
+        especie: petEspecie,
+        racasId: racaId,
+        coberturasId: coberturaId,
+      }],
+    };
+
+    console.log(`${tag} 🔄 Submetendo cotação para ${nomeCliente} (pet: ${petNome})…`);
+    const resultado = await submeterCotacao(payload);
+    console.log(`${tag} ✅ Cotação ${resultado.numeroCotacao} gerada — ${resultado.valorTotalMensalidade}/mês`);
+
+    // Gera PDF
+    const pdfBuffer = await gerarCotacaoPdf(resultado, payload);
+    const fileName = `cotacao-plamev-${resultado.numeroCotacao.replace(/[^a-zA-Z0-9]/g, '-')}.pdf`;
+    console.log(`${tag} 📄 PDF gerado (${Math.round(pdfBuffer.length / 1024)}KB)`);
+
+    // Envia via WhatsApp
+    await sendDocument(msg, pdfBuffer, fileName, `Aqui está sua cotação Plamev! Nº ${resultado.numeroCotacao} 🐾`);
+    console.log(`${tag} 📤 PDF enviado via WhatsApp`);
+  } catch (e: any) {
+    console.error(`${tag} ❌ Falha ao disparar cotação:`, e.message);
+  }
+}
 
 // ── 1. Histórico de mensagens ─────────────────────────────────
 async function buscarHistorico(orgId: string, phone: string, canal: string): Promise<ChatMessage[]> {
@@ -211,26 +307,6 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       : Promise.resolve(null as RedeResult | null),
   ]);
 
-  // Endereço via ViaCEP (em paralelo após Promise.all — lightweight)
-  const enderecoPromise = cepDetectado
-    ? buscarEnderecoPorCep(cepDetectado).catch(() => null)
-    : Promise.resolve(null);
-
-  // Coberturas da API Plamev: só carrega quando há intenção de plano E temos UF
-  // Resolve endereco primeiro (rápido, ~200ms), depois busca coberturas se necessário
-  const [endereco] = await Promise.all([enderecoPromise]);
-  const ufDetectada = endereco?.uf || null;
-
-  const coberturasApiSection = await (async () => {
-    if (!includePlanContext || !ufDetectada) return '';
-    try {
-      const coberturas = await buscarCoberturasParaUF(ufDetectada);
-      return formatarCoberturasParaPrompt(coberturas, ufDetectada);
-    } catch {
-      return '';
-    }
-  })();
-
   // Vault tem prioridade; banco serve de fallback quando arquivo ainda não existe
   const promptsResolvidos = {
     soul:           vaultSoul           || (promptBundle as any)?.soul           || '',
@@ -250,6 +326,25 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   const stageRequiresCatalog = CATALOG_STAGES.includes(conversaAtual?.etapa || '');
   const includePlanContext = !greetingOnly && (catalogIntent || priceIntent || topicalPlanMessage || stageRequiresCatalog);
   const isFirstContact = historico.length === 0 && !conversaAtual?.tutor_nome;
+
+  // Endereço via ViaCEP (lightweight — ~200ms)
+  const enderecoPromise = cepDetectado
+    ? buscarEnderecoPorCep(cepDetectado).catch(() => null)
+    : Promise.resolve(null);
+
+  const [endereco] = await Promise.all([enderecoPromise]);
+  const ufDetectada = endereco?.uf || null;
+
+  // Coberturas da API Plamev: só carrega quando há intenção de plano E temos UF
+  const coberturasApiSection = await (async () => {
+    if (!includePlanContext || !ufDetectada) return '';
+    try {
+      const coberturas = await buscarCoberturasParaUF(ufDetectada);
+      return formatarCoberturasParaPrompt(coberturas, ufDetectada);
+    } catch {
+      return '';
+    }
+  })();
 
   // KB via RAG — conteúdo migrado do vault para knowledge_chunks via vault-sync
   const kb = await searchKnowledge(msg.texto || '', orgId, config.id, 5, { stage: targetStage });
@@ -522,6 +617,12 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       provider:           config.provider,
     },
   });
+
+  // ── Cotação: disparo não-bloqueante após pipeline ─────────────
+  if (generation.acoes?.includes('solicitar_cotacao')) {
+    console.log(`${tag} 🧾 Ação solicitar_cotacao detectada — disparando cotação`);
+    dispararCotacao(msg, generation.dados_extraidos ?? {}, conversaAtual).catch(() => {});
+  }
 
   lf_flush(); // async, errors already logged inside lf_flush
 

@@ -86,16 +86,34 @@ export interface CotacaoPayload {
 export interface CotacaoResultItem {
   nome: string;
   valor: number;
+  tipo?: string;
+}
+
+export interface PetPlano {
+  nome: string;       // nome do plano (ex: "Advance")
+  fidelidade: string; // ex: "12 meses"
+  valor: number;
+  descontoCartao: number;
+}
+
+export interface PetResult {
+  nome: string;
+  plano: PetPlano;
 }
 
 export interface CotacaoResult {
+  id: string;
   numeroCotacao: string;
-  dataFidelidade: string;
+  dataFidelidade: string;           // YYYY-MM-DD
   valorAdesao: number;
-  valorTotalMensalidade: number;
+  valorMensalidade: number;         // mensalidade antes de desconto
+  valorTotalMensalidade: number;    // mensalidade após desconto
+  valorTotal: number;
+  valorDescontosMensalidades: number;
   composicaoMensalidade: CotacaoResultItem[];
   composicaoAdesao: CotacaoResultItem[];
   descontos: CotacaoResultItem[];
+  pets: PetResult[];
 }
 
 export interface ValidationError {
@@ -341,13 +359,36 @@ export async function submeterCotacao(payload: CotacaoPayload): Promise<CotacaoR
 
       const duracao = Date.now() - t;
       const result: CotacaoResult = {
-        numeroCotacao: data.NumeroCotacao,
-        dataFidelidade: data.DataFidelidade,
-        valorAdesao: data.ValorAdesao ?? 0,
-        valorTotalMensalidade: data.ValorTotalMensalidade ?? 0,
-        composicaoMensalidade: (data.ComposicaoMensalidade ?? []).map((i: any) => ({ nome: i.Nome, valor: i.Valor })),
-        composicaoAdesao: (data.ComposicaoAdesao ?? []).map((i: any) => ({ nome: i.Nome, valor: i.Valor })),
-        descontos: (data.Descontos ?? []).map((i: any) => ({ nome: i.Nome, valor: i.Valor })),
+        id: data.Id ?? '',
+        numeroCotacao: data.NumeroCotacao ?? '',
+        dataFidelidade: data.DataFidelidade ?? '',
+        valorAdesao: Number(data.ValorAdesao ?? 0),
+        valorMensalidade: Number(data.ValorMensalidade ?? data.ValorTotalMensalidade ?? 0),
+        valorTotalMensalidade: Number(data.ValorTotalMensalidade ?? 0),
+        valorTotal: Number(data.ValorTotal ?? data.ValorTotalMensalidade ?? 0),
+        valorDescontosMensalidades: Number(data.ValorDescontosMensalidades ?? 0),
+        composicaoMensalidade: (data.ComposicaoMensalidade ?? []).map((i: any) => ({
+          nome: i.Nome ?? '',
+          valor: Number(i.Valor ?? 0),
+          tipo: i.Tipo ?? undefined,
+        })),
+        composicaoAdesao: (data.ComposicaoAdesao ?? []).map((i: any) => ({
+          nome: i.Nome ?? '',
+          valor: Number(i.Valor ?? 0),
+        })),
+        descontos: (data.Descontos ?? []).map((i: any) => ({
+          nome: i.Nome ?? '',
+          valor: Number(i.Valor ?? 0),
+        })),
+        pets: (data.Pets ?? []).map((p: any) => ({
+          nome: p.Nome ?? '',
+          plano: {
+            nome: p.Planos?.Nome ?? '',
+            fidelidade: p.Planos?.Fidelidade ?? '',
+            valor: Number(p.Planos?.Valor ?? 0),
+            descontoCartao: Number(p.Planos?.DescontoCartao ?? 0),
+          },
+        })),
       };
 
       console.log(`[COTACAO] ✅ Cotação ${result.numeroCotacao} — R$${result.valorTotalMensalidade}/mês (${duracao}ms)`);
