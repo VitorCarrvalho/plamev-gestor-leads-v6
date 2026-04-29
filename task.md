@@ -193,6 +193,12 @@
 - [x] O comando de reset não chega à Mari e agora é silencioso: apaga e aguarda um novo contato sem iniciar conversa
 - [x] O parser do reset passou a aceitar também travessão/en dash (`—reset`, `–reset`) além de `--reset`
 
+#### Correção da aba Conhecimento
+- [x] Investigado o erro 500 em `/api/config/agentes/:id/conhecimento`
+- [x] Identificado que a rota principal lia apenas `knowledge_base_docs` e não sincronizava os arquivos do `services/vault-server`
+- [x] Ajustada a rota para sincronizar a lista do vault-server com `knowledge_base_docs` antes de responder ao frontend
+- [x] Mantido o contrato atual da aba (lista agrupada por pasta com `id`/metadados vindos do banco), evitando quebra no editor existente
+
 #### Seed operacional de produto
 - [x] Criada migration idempotente para popular a tabela `planos` com `Slim`, `Advance`, `Platinum` e `Diamond` no próximo deploy
 - [x] Criada migration idempotente para completar o schema de `precos` e cadastrar os valores oficiais dos planos base e `plus`

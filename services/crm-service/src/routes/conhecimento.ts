@@ -13,6 +13,61 @@ const router = Router({ mergeParams: true });
 
 const VAULT_SERVER_URL = process.env.VAULT_SERVER_URL || 'http://vault-server.railway.internal:8080';
 
+function splitVaultPath(filePath: string) {
+  const normalized = String(filePath || '').replace(/^\/+/, '').trim();
+  const parts = normalized.split('/').filter(Boolean);
+  const fileName = parts.pop() || '';
+  const pasta = parts[0] || 'root';
+  const arquivo = fileName.replace(/\.md$/i, '');
+  return { pasta, arquivo, fullPath: normalized };
+}
+
+async function fetchVaultFiles() {
+  const resp = await fetch(`${VAULT_SERVER_URL}/files`, { signal: AbortSignal.timeout(5000) });
+  if (!resp.ok) throw new Error(`vault-server HTTP ${resp.status}`);
+  const data = await resp.json() as { total: number; files: string[] };
+  return data.files || [];
+}
+
+async function fetchVaultFile(filePath: string) {
+  const url = `${VAULT_SERVER_URL}/file?path=${encodeURIComponent(filePath)}`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+  if (!resp.ok) throw new Error(`vault-server arquivo HTTP ${resp.status}: ${filePath}`);
+  return resp.text();
+}
+
+async function syncVaultToKnowledgeBase(agentId: string) {
+  const files = await fetchVaultFiles();
+  if (!files.length) return { discovered: 0, imported: 0 };
+
+  const existingRows = await query<any>(
+    `SELECT id, pasta, arquivo
+     FROM knowledge_base_docs
+     WHERE agent_id = $1`,
+    [agentId]
+  );
+  const existingKeys = new Set(existingRows.map((row: any) => `${row.pasta}/${row.arquivo}`));
+
+  let imported = 0;
+  for (const filePath of files) {
+    const { pasta, arquivo } = splitVaultPath(filePath);
+    const key = `${pasta}/${arquivo}`;
+    if (existingKeys.has(key)) continue;
+
+    const conteudo = await fetchVaultFile(filePath);
+    await execute(
+      `INSERT INTO knowledge_base_docs (agent_id, pasta, arquivo, titulo, conteudo, etapas, sempre_ativo, ordem, ativo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (agent_id, pasta, arquivo) DO NOTHING`,
+      [agentId, pasta, arquivo, arquivo, conteudo, [], false, 0, true]
+    );
+    existingKeys.add(key);
+    imported++;
+  }
+
+  return { discovered: files.length, imported };
+}
+
 // ── Vault proxy: lista arquivos ───────────────────────────────
 router.get('/vault', autenticar, async (_req, res) => {
   try {
@@ -40,6 +95,13 @@ router.get('/vault/arquivo', autenticar, async (req, res) => {
 router.get('/', autenticar, async (req, res) => {
   try {
     const { agenteId } = req.params;
+    let vaultSync: { discovered: number; imported: number } | null = null;
+    try {
+      vaultSync = await syncVaultToKnowledgeBase(agenteId);
+    } catch (vaultError: any) {
+      console.warn(`[CONHECIMENTO] ⚠️ Falha ao sincronizar vault para agente ${agenteId}: ${vaultError.message}`);
+    }
+
     const rows = await query<any>(
       `SELECT id, pasta, arquivo, titulo, etapas, sempre_ativo, ativo, ordem,
               LENGTH(conteudo) AS chars, atualizado_em
@@ -55,7 +117,7 @@ router.get('/', autenticar, async (req, res) => {
       grupos[r.pasta].push(r);
     }
 
-    res.json({ ok: true, grupos, total: rows.length });
+    res.json({ ok: true, grupos, total: rows.length, vaultSync });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
 
