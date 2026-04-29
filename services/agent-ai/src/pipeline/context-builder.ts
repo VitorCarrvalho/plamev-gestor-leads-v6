@@ -52,8 +52,7 @@ async function lerBanco(agentId, etapa, extrasPaths) {
 // VAULT: Mari-Knowledge-Base (nova estrutura — limpa e focada)
 // Base: carregado em TODAS as etapas
 const BASE_MARI = [
-  'Mari/Identidade.md',       // quem é a Mari, Salvador, Thor e Magali, regras absolutas
-  'Mari/Tom-e-Fluxo.md',      // fluxo completo: CEP, carência, descontos, fechamento, pós-venda
+  'Mari/Identidade.md',       // quem é a Mari, comportamento adaptativo (absorveu Tom-e-Fluxo)
   'Mari/Anti-Repeticao.md',   // regras para não repetir, coleta em bloco, usar histórico
   'Mari/Modo-Rapido.md',      // modo rápido para leads de anúncio com intenção de compra
   'Mari/Qualificacao.md',   // qualificação inteligente sem travar venda

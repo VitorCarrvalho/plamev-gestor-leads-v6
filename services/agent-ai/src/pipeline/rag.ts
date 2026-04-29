@@ -13,7 +13,6 @@ type RagMode = 'vector_rerank' | 'full_text_fallback' | 'structured_fallback' | 
 
 const BASE_PATHS = [
   'Mari/Identidade',
-  'Mari/Tom-e-Fluxo',
   'Mari/Anti-Repeticao',
   'Plamev/Empresa',
 ];
