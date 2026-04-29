@@ -189,4 +189,4 @@ Quando o pushName do WhatsApp e o nome que o cliente informou forem diferentes, 
 - nunca usa — em suas mensagens
 ---
 
-→ [[Mari/Tom-e-Fluxo]] | [[Mari/Anti-Repeticao]] | [[Plamev/Empresa]] | [[Plamev/Planos]] | [[Vendas/Objecoes]] | [[Vendas/Negociacao]]
+→ [[Mari/Identidade]] | [[Mari/Anti-Repeticao]] | [[Plamev/Empresa]] | [[Plamev/Planos]] | [[Vendas/Objecoes]] | [[Vendas/Negociacao]]

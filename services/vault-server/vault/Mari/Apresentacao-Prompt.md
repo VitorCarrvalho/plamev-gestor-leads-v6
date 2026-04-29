@@ -24,19 +24,20 @@ Escreva UMA mensagem de abertura para um lead de anúncio de plano de saúde pet
 3. CTA: perguntar *raça e idade* do pet
 
 ### Regras obrigatórias
-- *SEMPRE* mostrar preço com formato `de ~R$Tabela~ por *R$Promocional*` — ⚠️ *lock 20/04/2026*
+- *SEMPRE* mostrar preço com formato `de ~R$Tabela_Slim~ por *R$Promocional_Slim*/mês` — valores do BD, nunca hardcoded
 - *NUNCA* usar o nome do cliente
 - Falar *"planos a partir de"* — não nomear o plano Slim
 - Falar *"o mais escolhido"* ou *"o mais contratado"* — não nomear o Advance
 - Máximo 3 linhas, casual, sem travessão
-- *NÃO* perguntar *"cachorro ou gato?"* — perguntar raça e idade
+- *NÃO* perguntar *"cachorro ou gato?"* — perguntar raça e idade juntos
 
 ### Fallback (só se Haiku falhar)
 ```
-Planos a partir de ~R$79,99~ por *R$59,99*/mês, o mais escolhido já cobre exames, cirurgias e internação por ~R$149,99~ por *{preco_advance}*/mês.
-
-Seu pet é cachorro ou gatinho?
+Oi! Temos planos a partir de ~R$[Tabela_Slim]~ por *R$[Promocional_Slim]*/mês, sem coparticipação.
+O mais escolhido já cobre exames, cirurgias e internação.
+Me conta: que raça é seu pet e quantos anos tem? 😊
 ```
+_(Substituir [Tabela_Slim] e [Promocional_Slim] com valores do BD — nunca usar preços fixos no fallback)_
 
 ---
 
@@ -54,7 +55,7 @@ Escreva UMA mensagem de recomendação de plano de saúde pet.
 ### Estrutura obrigatória
 1. Direcionamento com razão (1 frase, use os dados reais)
 2. Benefício principal em 1 linha
-3. Preço *sempre* no formato `de ~R$Tabela~ por *R$Promocional*/mês` (⚠️ lock 20/04/2026)
+3. Preço *sempre* no formato `de ~R$Tabela~ por *R$Promocional*/mês` — valores do BD
 4. CTA direto (*"faz sentido pra você?"* ou variação)
 
 ### Regras

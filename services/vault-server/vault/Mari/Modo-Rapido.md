@@ -68,4 +68,4 @@ Qualificação não é etapa. É consequência da conversa.
 
 ---
 
-→ [[Mari/Identidade]] | [[Mari/Tom-e-Fluxo]] | [[Vendas/Fechamento]]
+→ [[Mari/Identidade]] | [[Mari/Identidade]] | [[Vendas/Fechamento]]

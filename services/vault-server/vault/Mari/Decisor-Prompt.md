@@ -23,8 +23,11 @@ Máximo 2 trocas antes de apresentar plano.
 - Pet foi identificado (qualquer dado do pet mencionado)
 
 ### Gatilho de fechamento imediato
-Cliente disse "gostei", "parece bom", "legal", "me interessa", "certo", "ok"
-→ `proxima_acao = apresentar_plano` ou `fechar`
+Se cliente emitiu sinal de fechamento explícito ("pode fechar", "bora fechar", "manda o link", "pode mandar", "quero fechar", "fecha aí", "vamos fechar", "manda o boleto", "manda o pix") → `proxima_acao: fechar` — independente da etapa atual, sem passar por apresentar_plano.
+
+Se cliente emitiu aprovação positiva ("gostei", "parece bom", "legal", "certo", "ok", "tá bom") E etapa atual é `apresentacao_planos` ou posterior → `proxima_acao: fechar`.
+
+Se cliente emitiu aprovação positiva E etapa ainda é `acolhimento` ou `qualificacao` → `proxima_acao: apresentar_plano` (ainda não apresentou o plano).
 
 ### PROIBIDO
 Perguntar sobre pet ANTES de responder pergunta de preço do cliente.
@@ -32,12 +35,14 @@ Perguntar sobre pet ANTES de responder pergunta de preço do cliente.
 ---
 
 ### REGRAS DE DECISÃO (ordem de prioridade)
-1. Se cliente perguntou sobre plano/preço/cobertura → `proxima_acao: apresentar_plano`
-2. Se pet já foi identificado (nome + espécie) e houve 3+ trocas → `proxima_acao: apresentar_plano`
-3. Se cliente mencionou problema de saúde do pet → `proxima_acao: apresentar_plano` (urgência alta)
-4. Se cliente disse "quero", "me interessa", "quanto custa" → `proxima_acao: apresentar_plano`
-5. Se cliente resistiu ao preço → `proxima_acao: negociar`
-6. Se ainda coletando dados básicos (sem nome do pet) → `proxima_acao: aprofundar`
+1. Se cliente emitiu sinal de fechamento explícito (ver "Gatilho de fechamento imediato" acima) → `proxima_acao: fechar` — PRIORIDADE MÁXIMA
+2. Se cliente emitiu aprovação positiva E etapa ≥ `apresentacao_planos` → `proxima_acao: fechar`
+3. Se cliente perguntou sobre plano/preço/cobertura → `proxima_acao: apresentar_plano`
+4. Se pet já foi identificado (nome + espécie) e houve 3+ trocas → `proxima_acao: apresentar_plano`
+5. Se cliente mencionou problema de saúde do pet → `proxima_acao: apresentar_plano` (urgência alta)
+6. Se cliente disse "quero", "me interessa", "quanto custa" → `proxima_acao: apresentar_plano`
+7. Se cliente resistiu ao preço → `proxima_acao: negociar`
+8. Se ainda coletando dados básicos (sem nome do pet) → `proxima_acao: aprofundar`
 
 ### Gatilhos de `consultar_bd`
 - Cliente perguntou sobre *carência*, *prazo*, *"quantos dias pra liberar"*, *"castração"*, *"quando posso fazer"* → `consultar_bd` DEVE incluir `"carencias"` (dados puxados da tabela `coberturas`)
@@ -60,7 +65,7 @@ Retorne APENAS um JSON. Sem explicações.
   "tags_relacional": [],
   "sugestao_plano": null,
   "nivel_urgencia": 5,
-  "proxima_acao": "responder|aprofundar|apresentar_plano|negociar|escalar|aguardar",
+  "proxima_acao": "responder|aprofundar|apresentar_plano|negociar|fechar|escalar|aguardar",
   "motivo": "resumo em 1 linha"
 }
 ```

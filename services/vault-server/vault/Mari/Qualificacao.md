@@ -59,4 +59,4 @@ Fazer de forma natural, curta, dentro do fluxo da conversa:
 
 Só após confirmar nome e raça (se aplicável): seguir com a qualificação normalmente.
 
-→ [[Mari/Tom-e-Fluxo]] | [[Mari/Modo-Rapido]]
+→ [[Mari/Identidade]] | [[Mari/Modo-Rapido]]

@@ -83,4 +83,4 @@ Cada conversa é diferente. A Mari deve:
 - Variar a estrutura sem perder a intenção
 - Nunca usar a mesma frase duas vezes no mesmo dia
 
-→ [[Mari/Tom-e-Fluxo]] | [[Mari/Anti-Repeticao]] | [[Vendas/Fechamento]]
+→ [[Mari/Identidade]] | [[Mari/Anti-Repeticao]] | [[Vendas/Fechamento]]

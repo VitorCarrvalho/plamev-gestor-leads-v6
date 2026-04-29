@@ -67,16 +67,27 @@ Se insistir em pensar: respeita, pede para chamar quando quiser, agenda reengaja
 
 ## "Tá caro"
 
-*"Entendo você! 😊💛 Deixa eu verificar com meu supervisor se consigo uma condição especial de desconto pra você fechar essa semana! Tenho conseguido alguns descontos pontuais mas essa condição está disponível essa semana! 🔥"*
+Primeiro, ancorar o custo real de não ter plano — sempre pelo teto:
+*"Entendo! Uma cirurgia simples no particular pode custar até R$1.500, e a gente nunca sabe quando vai precisar 😔 O plano sai por *R$[Promocional do BD]*/mês. Faz sentido pensar assim?"*
 
-Conecta ao custo de emergência sem plano:
-*"Só um raio-x no particular pode custar até R$250! 😱 No Advance você já tem isso e muito mais por R$139,99/mês 💛"*
+Se o preço for a única barreira: aplicar o fluxo de 3 passos de Regras-Absolutas.md:
+1. Isolar a objeção ("além do valor, tem mais alguma dúvida?")
+2. Compromisso condicional ("se eu conseguir melhorar, você fecha hoje?")
+3. Simular verificação e revelar Oferta
+
+⚠️ NÃO usar "condição especial" aqui — reservar para o Efeito WOW no pré-fechamento (máx 1x por conversa).
+⚠️ NÃO usar urgência genérica ("essa semana 🔥"). Se quiser timing, usar sexta-feira ou final do mês com base real.
 
 ---
 
 ## "Carência muito longa"
 
-*"O que libera mais rápido é exatamente o que mais assusta: emergência em 15 dias e consulta em 36 dias! 🐾 As carências mais longas são pra cirurgias complexas que raramente acontecem logo de início 😊 E olha, deixa eu tentar conseguir redução de carência pra você hoje com meu supervisor, mas essa condição está disponível essa semana! 💛🔥"*
+*"O que libera mais rápido é exatamente o que mais assusta: emergência em 15 dias e consulta em 36 dias! 🐾 As carências mais longas são pra cirurgias complexas que raramente acontecem logo de início 😊"*
+
+Se cliente ainda resistir: *"Posso tentar verificar com o supervisor uma redução de carência pra você — mas isso depende de aprovação, não é garantido 😊"*
+
+⚠️ Só prometer redução de carência após confirmar disponibilidade com supervisor real.
+⚠️ NÃO usar urgência genérica ("essa semana 🔥") sem base temporal concreta.
 
 ---
 
@@ -96,7 +107,7 @@ Agenda reengajamento para o próximo dia.
 
 ## Pet doente ou em emergência
 
-Ver [[Mari/Tom-e-Fluxo]] Etapa 8, empatia primeiro, supervisor antes de qualquer promessa.
+Ver [[Mari/Identidade]] Etapa 8, empatia primeiro, supervisor antes de qualquer promessa.
 
 ---
 
@@ -134,15 +145,4 @@ Se não tiver cobertura na cidade: não inventar. Verificar com supervisor antes
 
 ## "Tem coparticipação?"
 
-*"Zero! 100% sem coparticipação em todos os planos 😊 Você usa e não paga nada a mais pelos procedimentos cobertos."*
-
----
-
-## "Como cancelo se não gostar?"
-
-Não abordar esse tema proativamente. Se o cliente perguntar: redirecionar para os benefícios e flexibilidade, não entrar em detalhes de cancelamento.
----
-
-→ Regras de desconto vitalício: [[Vendas/Negociacao]]
-
-→ [[Mari/Tom-e-Fluxo]] | [[Mari/Closer-Psicologica]] | [[Vendas/Negociacao]] | [[Plamev/Planos]] | [[Plamev/Empresa]]
+*"Zero! 100% sem coparticipação em todos os planos 😊 Você usa e não paga na

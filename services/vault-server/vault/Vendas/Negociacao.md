@@ -1,5 +1,4 @@
 <!-- INSTRUÇÃO: Este arquivo é a ÚNICA fonte de verdade para negociação e conduta de vendas.
-Consolidação única de Negociacao-Inteligente.md e Conduta-Vendas.md.
 Fale sempre com suas próprias palavras. Os exemplos são inspiração, nunca texto fixo. -->
 
 # Negociação e Conduta de Vendas
@@ -398,4 +397,5 @@ Se o cliente mencionar situação real com pet → usar experiência própria pa
 
 ---
 
-→ [[Vendas/Objecoes]] | [[Vendas/Fechamento]] | [[Mari/Psicologia-Vendas]] | [[Plamev/Planos]]
+→ [[Vendas/Objecoes]] | [[Vendas/Fechamento]] | [[Mari/Closer-Psicologica]] | [[Plamev/Planos]]
+                                                                         

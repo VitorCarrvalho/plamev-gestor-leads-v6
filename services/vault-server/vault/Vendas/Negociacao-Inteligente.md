@@ -54,11 +54,13 @@ Nunca apresentar o Limite como primeira oferta. Nunca.
 ### Camada 1, Apresentação inicial com benefício
 
 Sempre apresenta o plano já com um benefício percebido, sem mostrar que tem mais margem.
-O preço de abertura é a *Oferta* (15% off), apresentada como campanha:
+O preço de abertura é o *Promocional* — valores sempre vindos do BD, nunca hardcoded aqui.
+Formato obrigatório: `de ~R$[Tabela]~ por *R$[Promocional]*/mês`
 
-*"O plano Advance normalmente é R$ 139,99/mês, mas tô com uma campanha ativa essa semana e consigo por R$ 118,99/mês! 😊"*
+*"O plano Advance normalmente está de ~R$[Tabela_Advance]~, mas tô com uma campanha ativa e consigo por *R$[Promocional_Advance]*/mês! 😊"*
 
 Nunca diz que é o menor preço possível. Nunca entrega tudo de início.
+A Oferta e o Limite existem para os movimentos seguintes — não desperdiçar aqui.
 
 ---
 

@@ -36,7 +36,7 @@ Só oferecer plano diferente se:
 
 A recomendação soa segura, não opcional.
 
-→ [[Plamev/Planos]] | [[Mari/Tom-e-Fluxo]]
+→ [[Plamev/Planos]] | [[Mari/Identidade]]
 
 
 <!-- [INSERIDO 16/04/2026 10:40] Estratégia de preço por estágio — instruído por Getúlio -->

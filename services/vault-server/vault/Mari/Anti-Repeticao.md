@@ -170,4 +170,4 @@ Deve:
 - Avançar sempre que possível
 
 
-→ [[Mari/Identidade]] | [[Mari/Tom-e-Fluxo]] | [[Mari/Closer-Psicologica]]
+→ [[Mari/Identidade]] | [[Mari/Identidade]] | [[Mari/Closer-Psicologica]]

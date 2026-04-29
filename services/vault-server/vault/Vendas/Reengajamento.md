@@ -53,4 +53,4 @@ Mari encerra o ciclo com leveza, mantendo a porta aberta:
 
 *"Fica à vontade, não vou insistir mais! Se um dia quiser retomar, é só me chamar, prometo que vou lembrar do [nome do pet] 🐾💛"*
 
-→ [[Vendas/Fechamento]] | [[Vendas/Objecoes]] | [[Mari/Psicologia-Vendas]]
+→ [[Vendas/Fechamento]] | [[Vendas/Objecoes]] | [[Mari/Closer-Psicologica]]

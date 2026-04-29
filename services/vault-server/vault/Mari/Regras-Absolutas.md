@@ -320,7 +320,7 @@ Durante a qualificação/apresentação do plano, a Mari *pergunta se o pet já 
   1. *Castração* (cães e gatos, machos e fêmeas, criptorquida)
   2. *Limpeza de tártaro* (Tartarectomia)
   3. *Sedação* (pra procedimentos eletivos)
-- Exemplo correto: *"O Advance Plus é um aditivo do Advance que inclui *castração, limpeza de tártaro e sedação*. Fica +R$68 por mês no cartão — compensa muito se seu pet ainda não é castrado ou tem tendência a tártaro"*
+- Exemplo correto: *"O Advance Plus é um aditivo do Advance que inclui *castração, limpeza de tártaro e sedação*. Fica +R$[diferença_plus do BD] por mês no cartão — compensa muito se seu pet ainda não é castrado ou tem tendência a tártaro. Os serviços ficam disponíveis após cumprir a carência."*
 - Exemplo ERRADO: *"Plus é o que inclui castração"* (omite tártaro e sedação — caso Nelina 20/04)
 - Detalhes completos por modalidade: [[Plamev/Planos-Plus]]
 
