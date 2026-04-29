@@ -7,6 +7,7 @@ import { langfuse } from '../clients/langfuse-client';
 import { sendResponse, persistInteraction } from './delivery';
 import { carregar as vaultCarregar } from '../services/vault';
 import { buscarRedeCredenciada, normalizarCep, validarCep, type RedeResult } from '../services/rede-credenciada';
+import { buscarEnderecoPorCep, buscarCoberturasParaUF, formatarCoberturasParaPrompt } from '../services/cotacao';
 import {
   resolverConfigRuntimeAgente,
   ResolvedAgentRuntimeConfig,
@@ -210,6 +211,26 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       : Promise.resolve(null as RedeResult | null),
   ]);
 
+  // Endereço via ViaCEP (em paralelo após Promise.all — lightweight)
+  const enderecoPromise = cepDetectado
+    ? buscarEnderecoPorCep(cepDetectado).catch(() => null)
+    : Promise.resolve(null);
+
+  // Coberturas da API Plamev: só carrega quando há intenção de plano E temos UF
+  // Resolve endereco primeiro (rápido, ~200ms), depois busca coberturas se necessário
+  const [endereco] = await Promise.all([enderecoPromise]);
+  const ufDetectada = endereco?.uf || null;
+
+  const coberturasApiSection = await (async () => {
+    if (!includePlanContext || !ufDetectada) return '';
+    try {
+      const coberturas = await buscarCoberturasParaUF(ufDetectada);
+      return formatarCoberturasParaPrompt(coberturas, ufDetectada);
+    } catch {
+      return '';
+    }
+  })();
+
   // Vault tem prioridade; banco serve de fallback quando arquivo ainda não existe
   const promptsResolvidos = {
     soul:           vaultSoul           || (promptBundle as any)?.soul           || '',
@@ -288,6 +309,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     productCatalog: includePlanContext ? formatProductCatalogPrompt(tabelaPlanos) : '',
     knowledgeBase,
     redeCredenciada: redeSection || undefined,
+    cotacaoPlanos: coberturasApiSection || undefined,
     catalogIntent,
     includePlanContext,
   });

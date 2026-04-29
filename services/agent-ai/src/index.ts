@@ -4,6 +4,13 @@ import { Pool } from 'pg';
 import { runMigrations } from '../../../infra/migrate';
 import { startConsumer } from './pipeline/consumer';
 import { syncVaultToKb } from './pipeline/vault-sync';
+import {
+  buscarEstados,
+  buscarCoberturasParaUF,
+  buscarRacas,
+  submeterCotacao,
+  type CotacaoPayload,
+} from './services/cotacao';
 
 config();
 
@@ -115,6 +122,94 @@ app.get('/debug/pipeline', (_req, res) => {
       'Capacidades adicionais presentes no repositorio podem existir fora do caminho principal atual.',
     ],
   });
+});
+
+// ── Middleware de autenticação interna ────────────────────────────────────
+function autenticarInterno(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const secret = process.env.INTERNAL_SECRET || 'plamev-internal';
+  if (req.headers['x-internal-secret'] !== secret) {
+    res.status(401).json({ erro: 'não autorizado' });
+    return;
+  }
+  next();
+}
+
+// ── GET /internal/cotacao/estados ────────────────────────────────────────
+app.get('/internal/cotacao/estados', autenticarInterno, async (_req, res) => {
+  try {
+    const estados = await buscarEstados();
+    res.json({ ok: true, estados });
+  } catch (e: any) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// ── GET /internal/cotacao/coberturas?uf=SP ───────────────────────────────
+app.get('/internal/cotacao/coberturas', autenticarInterno, async (req, res) => {
+  const uf = String(req.query.uf || '').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(uf)) {
+    res.status(400).json({ erro: 'Parâmetro uf inválido (ex: SP, RJ, MG)' });
+    return;
+  }
+  try {
+    const coberturas = await buscarCoberturasParaUF(uf);
+    res.json({ ok: true, uf, coberturas });
+  } catch (e: any) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// ── GET /internal/cotacao/racas?especie=2 ────────────────────────────────
+app.get('/internal/cotacao/racas', autenticarInterno, async (req, res) => {
+  const especie = String(req.query.especie || '');
+  if (!['1', '2'].includes(especie)) {
+    res.status(400).json({ erro: 'especie deve ser "1" (felino) ou "2" (canino)' });
+    return;
+  }
+  try {
+    const racas = await buscarRacas(especie as '1' | '2');
+    res.json({ ok: true, especie, total: racas.length, racas });
+  } catch (e: any) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// ── POST /internal/cotacao ────────────────────────────────────────────────
+app.post('/internal/cotacao', autenticarInterno, async (req, res) => {
+  const payload = req.body as CotacaoPayload;
+  if (!payload?.nome) {
+    res.status(400).json({ erro: 'Payload inválido — campo "nome" obrigatório' });
+    return;
+  }
+
+  try {
+    const result = await submeterCotacao(payload);
+
+    // Persiste no banco (best-effort, não bloqueia resposta)
+    pool.query(
+      `INSERT INTO cotacoes
+         (org_id, nome, email, telefone, cep, estado_uf, cidade,
+          valor_adesao, valor_mensalidade, composicao, descontos, dados_pets, resposta_api, numero_cotacao, data_fidelidade)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+      [
+        req.body.orgId ?? null,
+        payload.nome, payload.email,
+        `${payload.ddd}${payload.telefone}`,
+        payload.cep, payload.estadosId, payload.cidadesId,
+        result.valorAdesao, result.valorTotalMensalidade,
+        JSON.stringify(result.composicaoMensalidade),
+        JSON.stringify(result.descontos),
+        JSON.stringify(payload.pets),
+        JSON.stringify(result),
+        result.numeroCotacao, result.dataFidelidade,
+      ],
+    ).catch(e => console.warn('[COTACAO] ⚠️ Falha ao persistir:', e.message));
+
+    res.json({ ok: true, ...result });
+  } catch (e: any) {
+    const status = e.status && e.status < 500 ? e.status : 500;
+    res.status(status).json({ erro: e.message, detalhes: e.erros ?? e.data ?? undefined });
+  }
 });
 
 const INTERNAL_PORT = 8080;
