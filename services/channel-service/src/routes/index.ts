@@ -273,6 +273,21 @@ internalRouter.post('/send-document', async (req: Request, res: Response) => {
   }
 });
 
+internalRouter.post('/reload-config', async (req: Request, res: Response) => {
+  const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+  if (req.headers['x-internal-secret'] !== INTERNAL_SECRET) {
+    res.status(401).json({ erro: 'Não autorizado' });
+    return;
+  }
+  try {
+    const { recarregar } = await import('../services/config');
+    await recarregar();
+    res.json({ ok: true, message: 'Configuração recarregada com sucesso' });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, erro: e.message });
+  }
+});
+
 export function setupRoutes(app: any) {
   app.get('/health', (_req: Request, res: Response) => res.json({ ok: true, service: 'channel-service' }));
   app.get('/debug/runtime', (_req: Request, res: Response) => res.json({

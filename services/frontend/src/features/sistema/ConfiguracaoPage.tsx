@@ -7,6 +7,7 @@ import {
   Bot, ChevronLeft, Plus, Trash2, Save, Phone, MessageCircle,
   Zap, Brain, Shield, BookOpen, Repeat2, Rocket, Cpu, Loader2, CheckCircle,
   FolderOpen, FileText, Search, ChevronRight, ChevronDown as ChevronDownIcon,
+  Edit2, Send, RefreshCw,
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -253,12 +254,32 @@ const FORM_WA_VAZIO = {
   twilio_account_sid: '', twilio_auth_token: '', twilio_phone_from: '',
 };
 
+const EDIT_FORM_VAZIO = {
+  instancia_label: '', ddd_prefixos_str: '', chip_fallback: false,
+  evolution_url: '', evolution_api_key: '',
+};
+
 const TabWhatsApp: React.FC<{ agente: AgenteDetalhe; onUpdate: (canais: CanalWA[]) => void }> = ({ agente, onUpdate }) => {
   const [canais, setCanais] = useState<CanalWA[]>(agente.canais_whatsapp);
   const [form, setForm] = useState(FORM_WA_VAZIO);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [mostrarForm, setMostrarForm] = useState(false);
+
+  // Edit state
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState(EDIT_FORM_VAZIO);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Test state
+  const [testingId, setTestingId] = useState<number | null>(null);
+  const [testPhone, setTestPhone] = useState('');
+  const [testStatus, setTestStatus] = useState<{ ok: boolean; message: string } | null>(null);
+  const [sendingTest, setSendingTest] = useState(false);
+
+  // Reload state
+  const [reloading, setReloading] = useState(false);
+  const [reloadedOk, setReloadedOk] = useState(false);
 
   const adicionar = async () => {
     if (!form.instancia_nome) return;
@@ -283,6 +304,8 @@ const TabWhatsApp: React.FC<{ agente: AgenteDetalhe; onUpdate: (canais: CanalWA[
       const updated = canais.filter(c => c.id !== id);
       setCanais(updated);
       onUpdate(updated);
+      if (editingId === id) setEditingId(null);
+      if (testingId === id) setTestingId(null);
     } catch(e: any) { alert(e.message); }
     finally { setDeletingId(null); }
   };
@@ -296,49 +319,212 @@ const TabWhatsApp: React.FC<{ agente: AgenteDetalhe; onUpdate: (canais: CanalWA[
     } catch(e: any) { alert(e.message); }
   };
 
+  const abrirEdit = (c: CanalWA) => {
+    if (editingId === c.id) { setEditingId(null); return; }
+    setEditingId(c.id);
+    setEditForm({
+      instancia_label: c.instancia_label || '',
+      ddd_prefixos_str: (c.ddd_prefixos || []).join(', '),
+      chip_fallback: c.chip_fallback,
+      evolution_url: c.evolution_url || '',
+      evolution_api_key: '',
+    });
+    setTestingId(null);
+    setTestStatus(null);
+  };
+
+  const salvarEdit = async (canalId: number) => {
+    setSavingEdit(true);
+    try {
+      const ddds = editForm.ddd_prefixos_str.split(',').map(d => d.trim().replace(/\D/g, '').replace(/^0+/, '')).filter(Boolean);
+      const payload: any = {
+        instancia_label: editForm.instancia_label,
+        ddd_prefixos: ddds,
+        chip_fallback: editForm.chip_fallback,
+        evolution_url: editForm.evolution_url,
+      };
+      if (editForm.evolution_api_key && !editForm.evolution_api_key.includes('•')) {
+        payload.evolution_api_key = editForm.evolution_api_key;
+      }
+      await api.patch(`/api/config/agentes/${agente.id}/canais/whatsapp/${canalId}`, payload);
+      const updated = canais.map(c => c.id === canalId ? { ...c, ...payload, ddd_prefixos: ddds } : c);
+      setCanais(updated);
+      onUpdate(updated);
+      setEditingId(null);
+    } catch(e: any) { alert(e.message); }
+    finally { setSavingEdit(false); }
+  };
+
+  const toggleTesting = (canalId: number) => {
+    if (testingId === canalId) { setTestingId(null); return; }
+    setTestingId(canalId);
+    setTestPhone('');
+    setTestStatus(null);
+    setEditingId(null);
+  };
+
+  const enviarTeste = async (canalId: number) => {
+    if (!testPhone.trim()) return;
+    setSendingTest(true);
+    setTestStatus(null);
+    try {
+      const r = await api.post<{ ok: boolean; mensagem?: string; erro?: string; detalhe?: string }>(
+        `/api/config/agentes/${agente.id}/canais/whatsapp/${canalId}/test`,
+        { telefone: testPhone }
+      );
+      setTestStatus({ ok: r.ok, message: r.mensagem || r.erro || 'Sem resposta' });
+    } catch(e: any) { setTestStatus({ ok: false, message: e.message }); }
+    finally { setSendingTest(false); }
+  };
+
+  const recarregarConfig = async () => {
+    setReloading(true);
+    setReloadedOk(false);
+    try {
+      await api.post(`/api/config/agentes/reload`, {});
+      setReloadedOk(true);
+      setTimeout(() => setReloadedOk(false), 3000);
+    } catch(e: any) { alert('Falha ao recarregar: ' + e.message); }
+    finally { setReloading(false); }
+  };
+
   const providerBadge = (p: string) => p === 'twilio'
     ? <span className="px-1.5 py-0.5 bg-red-50 text-red-700 rounded text-[10px] font-medium">Twilio</span>
     : <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-[10px] font-medium">Evolution</span>;
 
   return (
     <div className="space-y-5 max-w-2xl">
-      <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 border border-slate-200">
-        Cada instância é um número/chip de WhatsApp. Configure o <strong>provedor</strong> (Evolution API ou Twilio),
-        os <strong>DDDs</strong> atendidos e o <strong>Fallback</strong> para quando nenhum DDD bater.
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 border border-slate-200 flex-1">
+          Cada instância é um número/chip de WhatsApp. Configure o <strong>provedor</strong>, os <strong>DDDs</strong> (sem zero, ex: 11, 31) e o <strong>Fallback</strong> para quando nenhum DDD bater.
+        </div>
+        <Button variant="outline" onClick={recarregarConfig} disabled={reloading} className="gap-2 h-8 text-xs flex-shrink-0 whitespace-nowrap">
+          {reloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : reloadedOk ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> : <RefreshCw className="w-3.5 h-3.5" />}
+          {reloadedOk ? 'Recarregado!' : 'Recarregar'}
+        </Button>
       </div>
 
       {canais.length === 0 && <p className="text-sm text-slate-400 italic">Nenhuma instância configurada.</p>}
 
       {canais.map(c => (
-        <div key={c.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-center gap-3">
-          <Phone className="w-5 h-5 text-indigo-500 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-slate-900 text-sm font-mono">{c.instancia_nome}</span>
-              {providerBadge(c.provider || 'evolution')}
+        <div key={c.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* ── Card header ── */}
+          <div className="p-4 flex items-center gap-3">
+            <Phone className="w-5 h-5 text-indigo-500 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-slate-900 text-sm font-mono">{c.instancia_nome}</span>
+                {providerBadge(c.provider || 'evolution')}
+              </div>
+              <div className="text-xs text-slate-500">{c.instancia_label || '—'}</div>
+              {c.provider === 'evolution' && c.evolution_url && (
+                <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{c.evolution_url}</div>
+              )}
+              {c.provider === 'twilio' && c.twilio_phone_from && (
+                <div className="text-[10px] text-slate-400 font-mono mt-0.5">{c.twilio_phone_from}</div>
+              )}
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {(c.ddd_prefixos || []).map(d => (
+                  <span key={d} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-mono">{d}</span>
+                ))}
+                {c.chip_fallback && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px]">fallback</span>}
+              </div>
             </div>
-            <div className="text-xs text-slate-500">{c.instancia_label || '—'}</div>
-            {c.provider === 'evolution' && c.evolution_url && (
-              <div className="text-[10px] text-slate-400 font-mono mt-0.5 truncate">{c.evolution_url}</div>
-            )}
-            {c.provider === 'twilio' && c.twilio_phone_from && (
-              <div className="text-[10px] text-slate-400 font-mono mt-0.5">{c.twilio_phone_from}</div>
-            )}
-            <div className="flex flex-wrap gap-1 mt-1.5">
-              {(c.ddd_prefixos || []).map(d => (
-                <span key={d} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-mono">{d}</span>
-              ))}
-              {c.chip_fallback && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px]">fallback</span>}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button onClick={() => toggleAtivo(c)} title={c.ativo ? 'Desativar' : 'Ativar'}
+                className={`h-5 w-9 rounded-full transition-colors ${c.ativo ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+                <span className={`block h-4 w-4 ml-0.5 rounded-full bg-white shadow transition-transform ${c.ativo ? 'translate-x-4' : ''}`} />
+              </button>
+              <button onClick={() => toggleTesting(c.id)} title="Testar envio"
+                className={`p-1.5 rounded-lg transition-colors ${testingId === c.id ? 'bg-sky-100 text-sky-600' : 'text-slate-400 hover:text-sky-500 hover:bg-sky-50'}`}>
+                <Send className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => abrirEdit(c)} title="Editar"
+                className={`p-1.5 rounded-lg transition-colors ${editingId === c.id ? 'bg-indigo-100 text-indigo-600' : 'text-slate-400 hover:text-indigo-500 hover:bg-indigo-50'}`}>
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => remover(c.id)} disabled={deletingId === c.id} title="Remover"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                {deletingId === c.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button onClick={() => toggleAtivo(c)} className={`h-5 w-9 rounded-full transition-colors ${c.ativo ? 'bg-indigo-500' : 'bg-slate-300'}`}>
-              <span className={`block h-4 w-4 ml-0.5 rounded-full bg-white shadow transition-transform ${c.ativo ? 'translate-x-4' : ''}`} />
-            </button>
-            <button onClick={() => remover(c.id)} disabled={deletingId === c.id} className="text-slate-400 hover:text-red-500 transition-colors p-1">
-              {deletingId === c.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-            </button>
-          </div>
+
+          {/* ── Test panel ── */}
+          {testingId === c.id && (
+            <div className="border-t border-slate-100 bg-sky-50/50 p-4 space-y-2">
+              <div className="text-xs font-semibold text-sky-800">Testar envio de mensagem</div>
+              <div className="flex gap-2">
+                <Input
+                  value={testPhone}
+                  onChange={e => { setTestPhone(e.target.value); setTestStatus(null); }}
+                  placeholder="Ex: 31999999999"
+                  className="flex-1 h-8 text-sm font-mono"
+                  onKeyDown={e => e.key === 'Enter' && enviarTeste(c.id)}
+                />
+                <Button size="sm" onClick={() => enviarTeste(c.id)} disabled={!testPhone.trim() || sendingTest}
+                  className="gap-1.5 h-8 text-xs">
+                  {sendingTest ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                  Testar
+                </Button>
+              </div>
+              {testStatus && (
+                <div className={`text-xs px-3 py-2 rounded-lg ${testStatus.ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                  {testStatus.ok ? '✅ ' : '❌ '}{testStatus.message}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Edit panel ── */}
+          {editingId === c.id && (
+            <div className="border-t border-slate-100 bg-slate-50/80 p-4 space-y-3">
+              <div className="text-xs font-semibold text-slate-700">Editar instância</div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">Label amigável</label>
+                  <Input value={editForm.instancia_label} onChange={e => setEditForm(f => ({ ...f, instancia_label: e.target.value }))}
+                    placeholder="ex: Mari BH" className="h-8 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">DDDs (sem zero, separados por vírgula)</label>
+                  <Input value={editForm.ddd_prefixos_str} onChange={e => setEditForm(f => ({ ...f, ddd_prefixos_str: e.target.value }))}
+                    placeholder="ex: 31, 32, 33" className="h-8 text-sm font-mono" />
+                </div>
+              </div>
+
+              {c.provider === 'evolution' && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 mb-1 block">URL do servidor</label>
+                    <Input value={editForm.evolution_url} onChange={e => setEditForm(f => ({ ...f, evolution_url: e.target.value }))}
+                      placeholder="https://evolution.exemplo.com.br" className="h-8 text-sm font-mono" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 mb-1 block">API Key <span className="text-slate-400 font-normal">(deixe vazio para manter a atual)</span></label>
+                    <Input type="password" value={editForm.evolution_api_key} onChange={e => setEditForm(f => ({ ...f, evolution_api_key: e.target.value }))}
+                      placeholder="Nova chave (opcional)" className="h-8 text-sm font-mono" />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={editForm.chip_fallback} onChange={e => setEditForm(f => ({ ...f, chip_fallback: e.target.checked }))} className="accent-indigo-500" />
+                  Usar como fallback global (quando nenhum DDD bater)
+                </label>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <Button size="sm" onClick={() => salvarEdit(c.id)} disabled={savingEdit} className="gap-1.5 h-7 text-xs">
+                  {savingEdit ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                  Salvar
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setEditingId(null)} className="h-7 text-xs">Cancelar</Button>
+              </div>
+            </div>
+          )}
         </div>
       ))}
 
@@ -412,8 +598,8 @@ const TabWhatsApp: React.FC<{ agente: AgenteDetalhe; onUpdate: (canais: CanalWA[
           )}
 
           <div>
-            <label className="text-xs font-medium text-slate-600 mb-1 block">DDDs atendidos (separados por vírgula)</label>
-            <Input value={form.ddd_prefixos} onChange={e => setForm(f => ({ ...f, ddd_prefixos: e.target.value }))} placeholder="ex: 011, 012, 013" className="font-mono text-sm" />
+            <label className="text-xs font-medium text-slate-600 mb-1 block">DDDs atendidos (sem zero, separados por vírgula)</label>
+            <Input value={form.ddd_prefixos} onChange={e => setForm(f => ({ ...f, ddd_prefixos: e.target.value }))} placeholder="ex: 11, 31, 21" className="font-mono text-sm" />
           </div>
           <div className="flex items-center gap-4">
             <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">

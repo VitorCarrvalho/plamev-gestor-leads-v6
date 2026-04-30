@@ -3,11 +3,53 @@
  * Montado em /api/config/agentes (autenticado) e /api/internal (secret header).
  */
 import { Router } from 'express';
+import https from 'https';
+import http from 'http';
 import { autenticar, soAdmin } from '../middleware/auth';
 import { query, execute, queryOne } from '../config/db';
 import { excluirContatoPorTelefone } from '../repositories/conversations.repository';
 
+function httpPost(url: string, body: any, headers: Record<string, string> = {}): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const parsed = new URL(url);
+    const lib = parsed.protocol === 'https:' ? https : http;
+    const b = JSON.stringify(body);
+    const req = lib.request({
+      hostname: parsed.hostname,
+      port: parsed.port ? parseInt(parsed.port) : undefined,
+      path: parsed.pathname + (parsed.search || ''),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(b), ...headers },
+      timeout: 8000,
+    }, res => {
+      let d = '';
+      res.on('data', (c: string) => d += c);
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({}); } });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+    req.write(b);
+    req.end();
+  });
+}
+
 export const agenteRouter = Router();
+
+// ── Recarregar configuração no channel-service ────────────────
+agenteRouter.post('/reload', autenticar, async (_req, res) => {
+  try {
+    const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
+    const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+    const result = await httpPost(
+      `${CHANNEL_SERVICE_URL}/internal/reload-config`,
+      {},
+      { 'x-internal-secret': INTERNAL_SECRET }
+    );
+    res.json({ ok: true, ...result });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, erro: e.message });
+  }
+});
 
 // ── Lista agentes ─────────────────────────────────────────────
 agenteRouter.get('/', autenticar, async (_req, res) => {
@@ -148,6 +190,47 @@ agenteRouter.delete('/:id/canais/whatsapp/:canalId', soAdmin, async (req, res) =
     await execute(`DELETE FROM canais_whatsapp WHERE id=$1 AND agent_id=$2`, [req.params.canalId, req.params.id]);
     res.json({ ok: true });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
+});
+
+// ── WhatsApp: testar envio ────────────────────────────────────
+agenteRouter.post('/:id/canais/whatsapp/:canalId/test', soAdmin, async (req, res) => {
+  try {
+    const { telefone } = req.body || {};
+    if (!telefone) { res.status(400).json({ erro: 'telefone obrigatório' }); return; }
+
+    const canal = await queryOne<any>(
+      `SELECT instancia_nome, evolution_url, evolution_api_key, provider
+       FROM canais_whatsapp WHERE id=$1 AND agent_id=$2`,
+      [req.params.canalId, req.params.id]
+    );
+    if (!canal) { res.status(404).json({ erro: 'Canal não encontrado' }); return; }
+    if (canal.provider !== 'evolution') {
+      res.status(400).json({ erro: 'Teste disponível apenas para Evolution API' }); return;
+    }
+
+    const baseUrl = (canal.evolution_url || '').trim().replace(/\/$/, '');
+    const apiKey = (canal.evolution_api_key || '').trim();
+    if (!baseUrl || !apiKey) {
+      res.status(400).json({ erro: 'URL do servidor e API Key são obrigatórios para realizar o teste' }); return;
+    }
+
+    let phone = String(telefone).replace(/\D/g, '');
+    if (!phone.startsWith('55')) phone = '55' + phone;
+    if (phone.startsWith('55') && phone.length === 12) phone = phone.slice(0, 4) + '9' + phone.slice(4);
+    const number = phone + '@s.whatsapp.net';
+
+    const result = await httpPost(
+      `${baseUrl}/message/sendText/${canal.instancia_nome}`,
+      { number, text: `🔍 Teste da instância *${canal.instancia_nome}* — configuração funcionando! ✅` },
+      { apikey: apiKey }
+    );
+
+    if (result?.key || result?.id) {
+      res.json({ ok: true, mensagem: 'Mensagem de teste enviada com sucesso!' });
+    } else {
+      res.status(502).json({ ok: false, erro: 'Evolution API não confirmou o envio', detalhe: JSON.stringify(result).slice(0, 200) });
+    }
+  } catch (e: any) { res.status(500).json({ ok: false, erro: e.message }); }
 });
 
 // ── Telegram: lista ───────────────────────────────────────────

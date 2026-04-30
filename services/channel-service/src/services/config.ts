@@ -71,12 +71,21 @@ export function resolverAgentePorInstancia(instancia: string): string {
 
 export function resolverInstanciaPorDDD(phone: string): string | null {
   const p = String(phone).replace(/\D/g, '');
+  // Strip Brazil country code (55) so matching works regardless of whether phone includes it
+  const pLocal = p.startsWith('55') && p.length >= 12 ? p.slice(2) : p;
+
   for (const inst of _config.instances) {
     for (const ddd of (inst.ddd_prefixos || [])) {
-      if (p.startsWith(ddd)) return inst.instancia_nome;
+      // Normalize stored prefix: remove non-digits and leading zeros
+      const prefix = ddd.replace(/\D/g, '').replace(/^0+/, '');
+      if (prefix && pLocal.startsWith(prefix)) return inst.instancia_nome;
     }
   }
-  const fallback = _config.instances.find(i => i.chip_fallback && i.ativo !== false);
+
+  // Single instance configured: always route to it
+  if (_config.instances.length === 1) return _config.instances[0].instancia_nome;
+
+  const fallback = _config.instances.find(i => i.chip_fallback);
   return fallback?.instancia_nome || null;
 }
 

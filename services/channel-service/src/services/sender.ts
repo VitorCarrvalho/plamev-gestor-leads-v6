@@ -6,11 +6,11 @@ import { resolverInstanciaPorDDD, tokenTelegramPorAgente, getInstanciaConfig } f
 const EVO_HOST_DEFAULT = process.env.EVOLUTION_API_HOST || 'legendarios-evolution-api.bycpkh.easypanel.host';
 const EVO_KEY_DEFAULT  = process.env.EVOLUTION_API_KEY  || '';
 
-export function getInstancia(phone: string): string {
+export function getInstancia(phone: string): string | null {
   const inst = resolverInstanciaPorDDD(phone);
   if (!inst) {
-    console.warn(`[SENDER] ⚠️ Sem rota para ${String(phone).slice(0, 7)}... — usando fallback`);
-    return 'mari-plamev-zap2';
+    console.error(`[SENDER] ❌ Sem rota para ${String(phone).slice(0, 7)}... e nenhum fallback configurado no banco`);
+    return null;
   }
   return inst;
 }
@@ -73,6 +73,10 @@ function getEvoConfig(instancia: string): { baseUrl: string; apiKey: string } {
 export async function enviarWA(phone: string, jid: string | null, texto: string, instanciaExplicita: string | null): Promise<boolean> {
   let inst = instanciaExplicita;
   if (!inst) inst = getInstancia(phone);
+  if (!inst) {
+    console.error(`[SENDER] ❌ Nenhuma instância disponível para ${String(phone).slice(0, 7)}... — mensagem descartada`);
+    return false;
+  }
 
   const { baseUrl, apiKey } = getEvoConfig(inst);
   const numero = normalizarJID(phone, jid);
@@ -111,6 +115,10 @@ export async function enviarDocumentoWA(
 ): Promise<boolean> {
   let inst = instanciaExplicita;
   if (!inst) inst = getInstancia(phone);
+  if (!inst) {
+    console.error(`[SENDER] ❌ Nenhuma instância disponível para doc → ${String(phone).slice(0, 7)}...`);
+    return false;
+  }
 
   const { baseUrl, apiKey } = getEvoConfig(inst);
   const numero = normalizarJID(phone, jid);
