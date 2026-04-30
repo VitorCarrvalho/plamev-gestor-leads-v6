@@ -173,9 +173,25 @@ async function dispararCotacao(
     const fileName = `cotacao-plamev-${resultado.numeroCotacao.replace(/[^a-zA-Z0-9]/g, '-')}.pdf`;
     console.log(`${tag} 📄 PDF gerado (${Math.round(pdfBuffer.length / 1024)}KB)`);
 
-    // Envia via WhatsApp
+    // Envia PDF via WhatsApp
     await sendDocument(msg, pdfBuffer, fileName, `Aqui está sua cotação Plamev! Nº ${resultado.numeroCotacao} 🐾`);
     console.log(`${tag} 📤 PDF enviado via WhatsApp`);
+
+    // Envia link de pagamento (só se tiver id válido)
+    if (resultado.id) {
+      const linkPagamento = `https://cliente.plamev.com.br/pagamento/checkout/${resultado.id}`;
+      const msgPagamento = [
+        `Para finalizar a contratação, acesse o link de pagamento seguro abaixo 👇`,
+        ``,
+        linkPagamento,
+        ``,
+        `*Atenção:* realize o pagamento somente pelo site oficial da Plamev (*cliente.plamev.com.br*). Não acesse links recebidos de outras fontes.`,
+        ``,
+        `Assim que concluir o pagamento, me confirma aqui pra eu registrar tudo certinho? 💛`,
+      ].join('\n');
+      await sendResponse(msg, msgPagamento);
+      console.log(`${tag} 🔗 Link de pagamento enviado: ${linkPagamento}`);
+    }
   } catch (e: any) {
     console.error(`${tag} ❌ Falha ao disparar cotação:`, e.message);
     if (e.erros) console.error(`${tag}   Erros de validação:`, JSON.stringify(e.erros));
