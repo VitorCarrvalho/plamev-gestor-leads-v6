@@ -7,7 +7,7 @@ import {
   Bot, ChevronLeft, Plus, Trash2, Save, Phone, MessageCircle,
   Zap, Brain, Shield, BookOpen, Repeat2, Rocket, Cpu, Loader2, CheckCircle,
   FolderOpen, FileText, Search, ChevronRight, ChevronDown as ChevronDownIcon,
-  Edit2, Send, RefreshCw,
+  Edit2, Send, RefreshCw, Copy,
 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -259,12 +259,17 @@ const EDIT_FORM_VAZIO = {
   evolution_url: '', evolution_api_key: '',
 };
 
+// Webhook URL derivada do gateway (VITE_API_URL)
+const GATEWAY_URL = ((import.meta as any).env?.VITE_API_URL || window.location.origin).replace(/\/$/, '');
+const WEBHOOK_URL = `${GATEWAY_URL}/webhooks/whatsapp`;
+
 const TabWhatsApp: React.FC<{ agente: AgenteDetalhe; onUpdate: (canais: CanalWA[]) => void }> = ({ agente, onUpdate }) => {
   const [canais, setCanais] = useState<CanalWA[]>(agente.canais_whatsapp);
   const [form, setForm] = useState(FORM_WA_VAZIO);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [mostrarForm, setMostrarForm] = useState(false);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
 
   // Edit state
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -370,11 +375,18 @@ const TabWhatsApp: React.FC<{ agente: AgenteDetalhe; onUpdate: (canais: CanalWA[
     try {
       const r = await api.post<{ ok: boolean; mensagem?: string; erro?: string; detalhe?: string }>(
         `/api/config/agentes/${agente.id}/canais/whatsapp/${canalId}/test`,
-        { telefone: testPhone }
+        { telefone: testPhone, webhook_url: WEBHOOK_URL }
       );
       setTestStatus({ ok: r.ok, message: r.mensagem || r.erro || 'Sem resposta' });
     } catch(e: any) { setTestStatus({ ok: false, message: e.message }); }
     finally { setSendingTest(false); }
+  };
+
+  const copiarWebhook = () => {
+    navigator.clipboard.writeText(WEBHOOK_URL).then(() => {
+      setCopiedWebhook(true);
+      setTimeout(() => setCopiedWebhook(false), 2000);
+    });
   };
 
   const recarregarConfig = async () => {
@@ -394,14 +406,25 @@ const TabWhatsApp: React.FC<{ agente: AgenteDetalhe; onUpdate: (canais: CanalWA[
 
   return (
     <div className="space-y-5 max-w-2xl">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 border border-slate-200 flex-1">
-          Cada instância é um número/chip de WhatsApp. Configure o <strong>provedor</strong>, os <strong>DDDs</strong> (sem zero, ex: 11, 31) e o <strong>Fallback</strong> para quando nenhum DDD bater.
+      {/* ── Webhook URL box ─────────────────────────────────── */}
+      <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-indigo-800">URL do Webhook — configure no painel da Evolution API</span>
+          <Button variant="outline" onClick={recarregarConfig} disabled={reloading} className="gap-1.5 h-7 text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-100 flex-shrink-0">
+            {reloading ? <Loader2 className="w-3 h-3 animate-spin" /> : reloadedOk ? <CheckCircle className="w-3 h-3 text-emerald-500" /> : <RefreshCw className="w-3 h-3" />}
+            {reloadedOk ? 'Recarregado!' : 'Recarregar config'}
+          </Button>
         </div>
-        <Button variant="outline" onClick={recarregarConfig} disabled={reloading} className="gap-2 h-8 text-xs flex-shrink-0 whitespace-nowrap">
-          {reloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : reloadedOk ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          {reloadedOk ? 'Recarregado!' : 'Recarregar'}
-        </Button>
+        <div className="flex items-center gap-2 bg-white rounded-lg border border-indigo-200 px-3 py-2">
+          <code className="text-xs text-indigo-900 font-mono flex-1 break-all">{WEBHOOK_URL}</code>
+          <button onClick={copiarWebhook} className="flex-shrink-0 p-1 text-indigo-500 hover:text-indigo-700 transition-colors" title="Copiar URL">
+            {copiedWebhook ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+        <p className="text-[10px] text-indigo-600">
+          Configure este URL como Webhook na Evolution API para cada instância. Evento: <strong>MESSAGES_UPSERT</strong>.
+          O botão "Testar" abaixo configura o webhook automaticamente e envia uma mensagem de confirmação.
+        </p>
       </div>
 
       {canais.length === 0 && <p className="text-sm text-slate-400 italic">Nenhuma instância configurada.</p>}

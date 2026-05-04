@@ -192,10 +192,10 @@ agenteRouter.delete('/:id/canais/whatsapp/:canalId', soAdmin, async (req, res) =
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
 
-// ── WhatsApp: testar envio ────────────────────────────────────
+// ── WhatsApp: testar envio + configurar webhook ───────────────
 agenteRouter.post('/:id/canais/whatsapp/:canalId/test', soAdmin, async (req, res) => {
   try {
-    const { telefone } = req.body || {};
+    const { telefone, webhook_url } = req.body || {};
     if (!telefone) { res.status(400).json({ erro: 'telefone obrigatório' }); return; }
 
     const canal = await queryOne<any>(
@@ -214,21 +214,42 @@ agenteRouter.post('/:id/canais/whatsapp/:canalId/test', soAdmin, async (req, res
       res.status(400).json({ erro: 'URL do servidor e API Key são obrigatórios para realizar o teste' }); return;
     }
 
+    const instancia = canal.instancia_nome;
+    const steps: string[] = [];
+
+    // 1. Configurar webhook automaticamente se a URL foi enviada
+    if (webhook_url) {
+      try {
+        await httpPost(
+          `${baseUrl}/webhook/set/${instancia}`,
+          { url: webhook_url, webhook_by_events: false, webhook_base64: false, events: ['MESSAGES_UPSERT'] },
+          { apikey: apiKey }
+        );
+        steps.push('✅ Webhook configurado');
+      } catch {
+        steps.push('⚠️ Webhook: falha ao configurar (verifique a URL manualmente)');
+      }
+    }
+
+    // 2. Enviar mensagem de teste
     let phone = String(telefone).replace(/\D/g, '');
     if (!phone.startsWith('55')) phone = '55' + phone;
     if (phone.startsWith('55') && phone.length === 12) phone = phone.slice(0, 4) + '9' + phone.slice(4);
     const number = phone + '@s.whatsapp.net';
 
     const result = await httpPost(
-      `${baseUrl}/message/sendText/${canal.instancia_nome}`,
-      { number, text: `🔍 Teste da instância *${canal.instancia_nome}* — configuração funcionando! ✅` },
+      `${baseUrl}/message/sendText/${instancia}`,
+      { number, text: `🔍 Teste da instância *${instancia}* — configuração funcionando! ✅` },
       { apikey: apiKey }
     );
 
     if (result?.key || result?.id) {
-      res.json({ ok: true, mensagem: 'Mensagem de teste enviada com sucesso!' });
+      steps.push('✅ Mensagem enviada');
+      res.json({ ok: true, mensagem: steps.join(' • ') });
     } else {
-      res.status(502).json({ ok: false, erro: 'Evolution API não confirmou o envio', detalhe: JSON.stringify(result).slice(0, 200) });
+      steps.push('❌ Mensagem não enviada');
+      const detalhe = JSON.stringify(result).slice(0, 300);
+      res.status(502).json({ ok: false, erro: steps.join(' • '), detalhe });
     }
   } catch (e: any) { res.status(500).json({ ok: false, erro: e.message }); }
 });
