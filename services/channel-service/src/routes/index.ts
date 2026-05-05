@@ -37,8 +37,8 @@ async function clearPendingDebounce(canal: string, phone: string) {
     const existing = await messageQueue.getJob(debounceId);
     if (existing) {
       const state = await existing.getState();
-      if (state === 'delayed' || state === 'waiting') {
-        await existing.remove();
+      if (state !== 'active') {
+        await existing.remove().catch(() => {});
       }
     }
   } catch { /* ignora */ }
@@ -174,8 +174,8 @@ async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
     const existing = await messageQueue.getJob(debounceId);
     if (existing) {
       const state = await existing.getState();
-      if (state === 'delayed' || state === 'waiting') {
-        await existing.remove();
+      if (state !== 'active') {
+        await existing.remove().catch(() => {});
       }
     }
   } catch { /* ignora se não encontrar */ }
