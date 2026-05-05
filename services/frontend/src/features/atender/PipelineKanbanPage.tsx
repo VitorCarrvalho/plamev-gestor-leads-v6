@@ -747,7 +747,20 @@ export const PipelineKanbanPage: React.FC = () => {
     };
   }, [socket, carregarConversas]);
 
-  const silenciarIA = (conversaId: string) => socket.emit('silenciar_ia', conversaId);
+  const silenciarIA = async (conversaId: string) => {
+    try {
+      const r = await api.patch<{ ok: boolean; ia_silenciada: boolean }>(`/api/conversa/${conversaId}/silenciar`, {});
+      // Optimistic update: toggle locally, then full refresh
+      setConversas(prev => prev.map(c =>
+        c.conversa_id === conversaId ? { ...c, ia_silenciada: r.ia_silenciada } : c
+      ));
+      setDragToast({ ok: true, text: r.ia_silenciada ? '🔇 IA silenciada' : '🔊 IA ativa' });
+      setTimeout(() => setDragToast(null), 2500);
+    } catch (e: any) {
+      setDragToast({ ok: false, text: e?.message || 'Erro ao alternar IA' });
+      setTimeout(() => setDragToast(null), 3000);
+    }
+  };
 
   // ── drag handlers ──────────────────────────────────────────
   const handleDragStart = useCallback((e: React.DragEvent, conversaId: string) => {

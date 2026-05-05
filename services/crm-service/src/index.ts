@@ -127,6 +127,19 @@ app.patch('/api/conversa/:id/etapa', autenticar, async (req, res) => {
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
 
+// ── Toggle IA silenciada ────────────────────────────────────────
+app.patch('/api/conversa/:id/silenciar', autenticar, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const atual = await queryOne<any>('SELECT ia_silenciada FROM conversas WHERE id=$1', [id]);
+    if (!atual) { res.status(404).json({ erro: 'Conversa não encontrada' }); return; }
+    const novoEstado = !atual.ia_silenciada;
+    await execute('UPDATE conversas SET ia_silenciada = $1 WHERE id = $2', [novoEstado, id]);
+    console.log(`[CRM] 🔇 ia_silenciada=${novoEstado} para conversa ${id}`);
+    res.json({ ok: true, ia_silenciada: novoEstado });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
+});
+
 // ── Routers ─────────────────────────────────────────────────────
 app.use('/api/mensagens',  mensagensRouter);
 app.use('/api/templates',  templatesRouter);

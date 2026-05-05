@@ -524,7 +524,22 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
     }
   };
 
-  const toggleIa = () => socket.emit('silenciar_ia', conversaId);
+  const [toggleIaLoading, setToggleIaLoading] = useState(false);
+  const toggleIa = async () => {
+    setToggleIaLoading(true);
+    try {
+      const r = await api.patch<{ ok: boolean; ia_silenciada: boolean }>(`/api/conversa/${conversaId}/silenciar`, {});
+      // Optimistic update: refresh data to reflect new state
+      await carregarConversa();
+      setFeedback({ ok: true, text: r.ia_silenciada ? '🔇 IA silenciada' : '🔊 IA ativa' });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (e: any) {
+      setFeedback({ ok: false, text: e?.message || 'Erro ao alternar IA' });
+      setTimeout(() => setFeedback(null), 4000);
+    } finally {
+      setToggleIaLoading(false);
+    }
+  };
 
   const [modalIntelV1, setModalIntelV1] = useState(false);
   const [motivoIntelV1, setMotivoIntelV1] = useState('');
@@ -582,8 +597,10 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
             {conversa.score != null && <><span>·</span><span className="font-semibold">{conversa.score}/10</span></>}
           </div>
         </div>
-        <Button size="sm" variant={iaSilenciada ? 'danger-outline' : 'outline'} onClick={toggleIa}>
-          {iaSilenciada ? <><Volume2 className="w-3.5 h-3.5" /> Ativar IA</> : <><VolumeX className="w-3.5 h-3.5" /> Silenciar IA</>}
+        <Button size="sm" variant={iaSilenciada ? 'danger-outline' : 'outline'} onClick={toggleIa} disabled={toggleIaLoading}>
+          {toggleIaLoading
+            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Aguarde…</>
+            : iaSilenciada ? <><Volume2 className="w-3.5 h-3.5" /> Ativar IA</> : <><VolumeX className="w-3.5 h-3.5" /> Silenciar IA</>}
         </Button>
         <Button size="sm" variant="outline" onClick={() => setModalAgendar(true)}>
           <Calendar className="w-3.5 h-3.5" /> Agendar
