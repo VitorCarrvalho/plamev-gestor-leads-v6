@@ -16,6 +16,11 @@ interface CoberturaApi { id: number; plano_nome: string; plano_slug: string; uf:
 
 const moeda = (v: any) => v != null ? `R$ ${Number(v).toFixed(2).replace('.', ',')}` : '—';
 
+const parseValor = (v: string): number | null => {
+  const n = parseFloat(v.replace(',', '.'));
+  return isNaN(n) ? null : n;
+};
+
 // ── Tab: Planos & Preços ─────────────────────────────────────────────────
 const PlanosTab: React.FC = () => {
   const [planos, setPlanos] = useState<Plano[]>([]);
@@ -125,9 +130,13 @@ const PlanosTab: React.FC = () => {
                       </div>
                     </div>
                   ) : (
-                    <div>
-                      <p className="font-bold text-slate-700">{p.nome}</p>
-                      <p className="text-[10px] text-slate-400 font-mono lowercase">{p.slug}</p>
+                    <div className="min-w-[180px]">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="font-bold text-slate-700 leading-none">{p.nome}</p>
+                        <Badge variant={p.ativo ? 'default' : 'secondary'} className="text-[9px] h-4 px-1">{p.ativo ? 'Ativo' : 'Inativo'}</Badge>
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-mono lowercase mb-1">{p.slug}</p>
+                      {p.descricao && <p className="text-[10px] text-slate-500 leading-tight line-clamp-2 max-w-[200px]">{p.descricao}</p>}
                     </div>
                   )}
                 </td>
@@ -138,16 +147,26 @@ const PlanosTab: React.FC = () => {
                 {renderPriceCell(p.precos, 'cartao', 'valor_oferta')}
                 {renderPriceCell(p.precos, 'cartao', 'valor_limite')}
 
-                {/* Pix / Boleto (usando 'pix' como base, pois boleto costuma ser igual) */}
-                {renderPriceCell(p.precos, 'pix', 'valor_tabela')}
-                {renderPriceCell(p.precos, 'pix', 'valor_promocional')}
-                {renderPriceCell(p.precos, 'pix', 'valor_oferta')}
-                {renderPriceCell(p.precos, 'pix', 'valor_limite')}
+                {/* Pix / Boleto (Prioriza 'pix', fallback pra 'boleto') */}
+                {(() => {
+                  const hasPix = p.precos?.some(item => item.modalidade === 'pix');
+                  const modal = hasPix ? 'pix' : 'boleto';
+                  return (
+                    <>
+                      {renderPriceCell(p.precos, modal, 'valor_tabela')}
+                      {renderPriceCell(p.precos, modal, 'valor_promocional')}
+                      {renderPriceCell(p.precos, modal, 'valor_oferta')}
+                      {renderPriceCell(p.precos, modal, 'valor_limite')}
+                    </>
+                  );
+                })()}
 
                 <td className="px-4 py-3 text-center border-l border-slate-100">
-                  <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => { setEditing(p.slug); setEditForm({}); }}>
-                    <Pencil className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
-                  </Button>
+                  <div className="flex justify-center">
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => { setEditing(p.slug); setEditForm({}); }}>
+                      <Pencil className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
