@@ -82,7 +82,7 @@ async function dispararCotacao(
     const telefone    = dados.telefone || msg.phone || '';
     const cepRaw      = dados.cep || dados.cp || conversaAtual?.cep || '';
     const petNome     = dados.pet_nome || dados.nome_pet || dados.np || conversaAtual?.nome_pet || '';
-    const petNasc     = formatarDataNascimento(dados.pet_nascimento || dados.data_nascimento || dados.dn || conversaAtual?.data_nascimento || '') || '';
+    const petNasc     = formatarDataNascimento(dados.pet_nascimento || dados.data_nascimento || dados.dn || '') || '';
     const petSexo     = dados.pet_sexo || dados.sexo || dados.sx || conversaAtual?.sexo || 'Macho';
     const petEspecie  = (dados.pet_especie || dados.especie || dados.ep || '2') as '1' | '2';
     const petRacaNome = dados.pet_raca || dados.raca || dados.rp || conversaAtual?.raca || '';

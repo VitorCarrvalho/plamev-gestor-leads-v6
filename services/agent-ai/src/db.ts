@@ -313,8 +313,7 @@ export async function buscarContextoConversaAtiva(orgId: string, phone: string, 
        pp.sexo,
        pp.cep,
        pp.email,
-       pp.cpf,
-       pp.data_nascimento
+       pp.cpf
      FROM conversas c
      JOIN clientes cl ON cl.id = c.client_id
      LEFT JOIN perfil_pet pp ON pp.client_id = c.client_id
