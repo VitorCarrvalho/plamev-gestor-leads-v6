@@ -178,10 +178,23 @@ export async function buscarStats(orgId: string): Promise<any> {
 }
 
 export async function buscarAgendamentos(conversaId: string): Promise<any[]> {
-  return query(
-    `SELECT * FROM agendamentos WHERE conversa_id = $1 AND status = 'pendente' ORDER BY executar_em ASC`,
-    [conversaId],
-  );
+  // followup_agendado: agendamentos manuais do supervisor via socket
+  // agendamentos: agendamentos automáticos do pipeline (legado)
+  const [manual, auto] = await Promise.all([
+    query(
+      `SELECT id, tipo, mensagem, executar_em, status, motivo, 'manual' AS origem
+       FROM followup_agendado WHERE conversa_id = $1 AND status = 'pendente'
+       ORDER BY executar_em ASC LIMIT 20`,
+      [conversaId],
+    ).catch(() => []),
+    query(
+      `SELECT id, tipo, mensagem, executar_em, status, null AS motivo, 'auto' AS origem
+       FROM agendamentos WHERE conversa_id = $1 AND status = 'pendente'
+       ORDER BY executar_em ASC LIMIT 20`,
+      [conversaId],
+    ).catch(() => []),
+  ]);
+  return [...manual, ...auto].sort((a, b) => new Date(a.executar_em).getTime() - new Date(b.executar_em).getTime());
 }
 
 export async function toggleSilenciarIA(conversaId: string): Promise<boolean> {

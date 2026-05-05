@@ -19,6 +19,7 @@ import dbRouter        from './routes/db';
 import { agenteRouter, internalRouter } from './routes/config-agentes';
 import conhecimentoRouter from './routes/conhecimento';
 import llmConfigRouter    from './routes/llm-config';
+import analisarRouter     from './routes/analisar';
 
 config({ path: path.join(__dirname, '../../.env') });
 
@@ -135,6 +136,7 @@ app.use('/api/db',         dbRouter);
 app.use('/api/config/llm',           llmConfigRouter);
 app.use('/api/config/agentes',       agenteRouter);
 app.use('/api/config/agentes/:agenteId/conhecimento', conhecimentoRouter);
+app.use('/api/analisar',             analisarRouter);
 app.use('/api/internal',             internalRouter);
 
 // ── Rota de manutenção: re-rodar migrations ──────────────────────

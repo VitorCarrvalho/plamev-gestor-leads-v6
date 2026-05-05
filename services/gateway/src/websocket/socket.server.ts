@@ -23,8 +23,49 @@ import { execute, queryOne, query } from '../config/db';
 let io: SocketServer;
 const ORG_ID = '00000000-0000-0000-0000-000000000000';
 
-function emitUnsupported(socket: Socket, eventName: string) {
-  socket.emit('erro', { msg: `Ação ainda não operacional via socket: ${eventName}` });
+const AGENT_AI_URL = process.env.AGENT_AI_URL || 'http://agent-ai.railway.internal:8080';
+const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+
+async function internalPost(url: string, body: any): Promise<any> {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(25000),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`HTTP ${resp.status}: ${text.slice(0, 200)}`);
+  }
+  return resp.json();
+}
+
+async function getConvInfo(conversaId: string) {
+  return queryOne<any>(
+    `SELECT c.numero_externo, c.jid, c.instancia_whatsapp, c.canal, a.slug AS agent_slug
+     FROM conversas c JOIN agentes a ON a.id = c.agent_id WHERE c.id = $1`,
+    [conversaId]
+  );
+}
+
+async function enviarEPersistir(conversaId: string, conv: any, msgFinal: string) {
+  await internalPost(`${CHANNEL_SERVICE_URL}/internal/send`, {
+    message: {
+      phone: conv.numero_externo,
+      jid: conv.jid,
+      instancia: conv.instancia_whatsapp,
+      canal: conv.canal,
+      agentSlug: conv.agent_slug,
+    },
+    resposta: msgFinal,
+  });
+  await execute(
+    `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por) VALUES ($1, $2, $3, $4)`,
+    [conversaId, 'assistant', msgFinal, 'supervisora']
+  );
+  notificarDashboard(conversaId, conv.numero_externo, '', null, msgFinal);
+  io.emit('conversa_atualizada', { conversa_id: conversaId });
 }
 
 export function iniciarSocket(server: HttpServer): SocketServer {
@@ -97,20 +138,50 @@ export function iniciarSocket(server: HttpServer): SocketServer {
     // ── AÇÃO: provocar (reativação contextualizada) ────────────
     socket.on('provocar', async ({ conversa_id }: { conversa_id: string }) => {
       console.log(`[ACTIONS] 🎯 provocar → conversa=${conversa_id} por ${(socket as any).user?.email}`);
-      emitUnsupported(socket, 'provocar');
+      try {
+        const result = await internalPost(`${AGENT_AI_URL}/internal/provocar`, { conversa_id });
+        socket.emit('provocar_ok', { conversa_id, msg: result.mensagem });
+        io.emit('conversa_atualizada', { conversa_id });
+      } catch (e: any) {
+        console.error('[ACTIONS] ❌ provocar:', e.message);
+        socket.emit('erro', { msg: `Falha ao provocar: ${e.message}` });
+      }
     });
 
     // ── AÇÃO: instruir Mari (supervisor instrui, Mari executa) ──
     socket.on('instrucao', async ({ conversa_id, texto }: { conversa_id: string; texto: string }) => {
       console.log(`[ACTIONS] 🎯 instrucao → conversa=${conversa_id} texto="${(texto||'').slice(0,50)}"`);
-      emitUnsupported(socket, 'instrucao');
+      try {
+        const conv = await getConvInfo(conversa_id);
+        if (!conv) { socket.emit('erro', { msg: 'Conversa não encontrada' }); return; }
+        const { texto_gerado } = await internalPost(`${AGENT_AI_URL}/internal/instrucao`, { conversa_id, instrucao: texto });
+        await enviarEPersistir(conversa_id, conv, texto_gerado);
+        socket.emit('instrucao_ok', { conversa_id, msg: texto_gerado });
+      } catch (e: any) {
+        console.error('[ACTIONS] ❌ instrucao:', e.message);
+        socket.emit('erro', { msg: `Falha na instrução: ${e.message}` });
+      }
     });
 
     // ── AÇÃO: falar direto (supervisor → Mari reescreve → envia) ─
     socket.on('falar_direto', async ({ conversa_id, texto, reescrever }: any) => {
       console.log(`[ACTIONS] 🎯 falar_direto → conversa=${conversa_id} reescrever=${reescrever} texto="${(texto||'').slice(0,50)}"`);
-      socket.emit('falar_direto_err', { erro: 'Ação ainda não operacional via socket: falar_direto' });
-      emitUnsupported(socket, 'falar_direto');
+      try {
+        const conv = await getConvInfo(conversa_id);
+        if (!conv) { socket.emit('falar_direto_err', { erro: 'Conversa não encontrada' }); return; }
+        let msgFinal = (texto || '').trim();
+        if (reescrever && msgFinal) {
+          try {
+            const r = await internalPost(`${AGENT_AI_URL}/internal/rewrite`, { conversa_id, texto: msgFinal });
+            msgFinal = r.texto_reescrito || msgFinal;
+          } catch { /* fallback para original */ }
+        }
+        await enviarEPersistir(conversa_id, conv, msgFinal);
+        socket.emit('falar_direto_ok', { conversa_id, msg: msgFinal });
+      } catch (e: any) {
+        console.error('[ACTIONS] ❌ falar_direto:', e.message);
+        socket.emit('falar_direto_err', { erro: e.message });
+      }
     });
 
     // ── AÇÃO: preview de falar direto ─────────────────────────

@@ -361,7 +361,7 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
 
     // 3. Upsert conversa ativa
     let conversa = await queryOne<any>(
-      `SELECT id FROM conversas WHERE client_id=$1 AND agent_id=$2 AND canal=$3 AND org_id=$4 AND status='ativa' ORDER BY criado_em DESC LIMIT 1`,
+      `SELECT id, etapa FROM conversas WHERE client_id=$1 AND agent_id=$2 AND canal=$3 AND org_id=$4 AND status='ativa' ORDER BY criado_em DESC LIMIT 1`,
       [clientId, agentId, canal, orgId]
     );
     let conversaId: string;
@@ -398,13 +398,86 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
       );
     }
 
-    // 6. Atualiza ultima_interacao e campos da conversa
-    await execute(
-      `UPDATE conversas SET ultima_interacao=NOW(), instancia_whatsapp=COALESCE(instancia_whatsapp,$1), sender_chip=COALESCE(sender_chip,$2) WHERE id=$3`,
-      [instancia, senderChip, conversaId]
-    );
+    // 6. Atualiza ultima_interacao e etapa da conversa
+    const novaEtapa: string | null = req.body?.etapa || null;
+    const etapaAnterior = conversa ? conversa.etapa : null;
 
-    console.log(`[INTERNAL] ✅ Interação salva — conversa=${conversaId} cliente=${clientId} msgs=${texto ? 1 : 0}+${resposta ? 1 : 0}`);
+    if (novaEtapa) {
+      // Buscar etapa atual se não veio da conversa (conversa pode ser nova, sem etapa anterior carregada)
+      const convAtual = conversa
+        ? null
+        : await queryOne<any>('SELECT etapa FROM conversas WHERE id=$1', [conversaId]);
+      const etapaOrigem = etapaAnterior || convAtual?.etapa || 'acolhimento';
+
+      await execute(
+        `UPDATE conversas SET ultima_interacao=NOW(), etapa=$1,
+          instancia_whatsapp=COALESCE(instancia_whatsapp,$2), sender_chip=COALESCE(sender_chip,$3)
+         WHERE id=$4`,
+        [novaEtapa, instancia, senderChip, conversaId]
+      );
+
+      if (novaEtapa !== etapaOrigem) {
+        execute(
+          'INSERT INTO funil_conversao (conversa_id, etapa_origem, etapa_destino) VALUES ($1,$2,$3)',
+          [conversaId, etapaOrigem, novaEtapa]
+        ).catch(e => console.warn('[INTERNAL] ⚠️ funil_conversao:', e.message));
+      }
+    } else {
+      await execute(
+        `UPDATE conversas SET ultima_interacao=NOW(), instancia_whatsapp=COALESCE(instancia_whatsapp,$1), sender_chip=COALESCE(sender_chip,$2) WHERE id=$3`,
+        [instancia, senderChip, conversaId]
+      );
+    }
+
+    // 7. Atualiza perfil_pet e clientes com dados_extraidos
+    const d: Record<string, any> = req.body?.dados_extraidos || {};
+    if (Object.keys(d).length > 0) {
+      // Atualiza nome do cliente se fornecido
+      if (d.nc) {
+        execute(
+          `UPDATE clientes SET nome=COALESCE(NULLIF(nome,''),$1) WHERE id=$2`,
+          [d.nc, clientId]
+        ).catch(e => console.warn('[INTERNAL] ⚠️ update clientes.nome:', e.message));
+      }
+
+      // Campos do perfil_pet mapeados a partir dos dados extraídos pelo LLM
+      const perfilSet: Record<string, any> = {};
+      if (d.np) perfilSet.nome         = d.np;
+      if (d.ep) perfilSet.especie      = d.ep;
+      if (d.rp) perfilSet.raca         = d.rp;
+      if (d.ip) perfilSet.idade_anos   = parseFloat(String(d.ip)) || null;
+      if (d.sx) perfilSet.sexo         = d.sx;
+      if (d.cp) perfilSet.cep          = d.cp;
+      if (d.em) perfilSet.email        = d.em;
+      if (d.cf) perfilSet.cpf          = d.cf;
+      if (d.dn) perfilSet.data_nascimento = d.dn;
+      if (d.pi) {
+        execute(
+          `UPDATE conversas SET plano_recomendado=COALESCE(plano_recomendado,$1) WHERE id=$2`,
+          [d.pi, conversaId]
+        ).catch(() => {});
+      }
+
+      if (Object.keys(perfilSet).length > 0) {
+        const cols = Object.keys(perfilSet);
+        const setClauses = cols.map(c => `${c} = COALESCE($${cols.indexOf(c) + 2}, ${c})`).join(', ');
+        const jaExiste = await queryOne<any>('SELECT id FROM perfil_pet WHERE client_id=$1', [clientId]);
+        if (jaExiste) {
+          execute(
+            `UPDATE perfil_pet SET ${setClauses}, atualizado_em=NOW() WHERE client_id=$1`,
+            [clientId, ...Object.values(perfilSet)]
+          ).catch(e => console.warn('[INTERNAL] ⚠️ update perfil_pet:', e.message));
+        } else {
+          const placeholders = cols.map((_, i) => `$${i + 2}`).join(', ');
+          execute(
+            `INSERT INTO perfil_pet (client_id, ${cols.join(', ')}, atualizado_em) VALUES ($1, ${placeholders}, NOW())`,
+            [clientId, ...Object.values(perfilSet)]
+          ).catch(e => console.warn('[INTERNAL] ⚠️ insert perfil_pet:', e.message));
+        }
+      }
+    }
+
+    console.log(`[INTERNAL] ✅ Interação salva — conversa=${conversaId} etapa=${novaEtapa || '(sem mudança)'} msgs=${texto ? 1 : 0}+${resposta ? 1 : 0}`);
   } catch (e: any) {
     console.error('[INTERNAL] ❌ Erro ao salvar interação:', e.message);
   }

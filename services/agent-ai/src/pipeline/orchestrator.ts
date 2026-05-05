@@ -606,9 +606,12 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   const t7 = Date.now();
   const crmSpan = trace.span({ name: '7-persist-crm', input: { phone: msg.phone, canal: msg.canal } });
   try {
-    await persistInteraction(msg, resposta);
+    await persistInteraction(msg, resposta, {
+      etapa: generation.etapa || undefined,
+      dados_extraidos: generation.dados_extraidos || undefined,
+    });
     crmSpan.end({ output: { ok: true }, metadata: { latency_ms: Date.now() - t7 } });
-    console.log(`${tag} [7/7] Persistido no CRM`);
+    console.log(`${tag} [7/7] Persistido no CRM (etapa=${generation.etapa})`);
   } catch (e: any) {
     crmSpan.end({ output: { ok: false, error: e.message }, level: 'WARNING' });
     console.error(`${tag} ❌ Falha ao salvar no CRM: ${e.message}`);

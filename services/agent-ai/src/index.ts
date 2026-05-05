@@ -1,6 +1,7 @@
 import { config } from 'dotenv';
 import express from 'express';
 import { Pool } from 'pg';
+import Anthropic from '@anthropic-ai/sdk';
 import { runMigrations } from '../../../infra/migrate';
 import { startConsumer } from './pipeline/consumer';
 import { syncVaultToKb } from './pipeline/vault-sync';
@@ -15,6 +16,50 @@ import {
 config();
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+let _anthropic: Anthropic | null = null;
+function getAnthropicClient(): Anthropic {
+  if (!_anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _anthropic;
+}
+
+const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000000';
+
+async function getConversaContext(conversaId: string) {
+  const convRow = await pool.query(
+    `SELECT c.numero_externo, c.jid, c.instancia_whatsapp, c.canal, c.etapa, c.org_id,
+            cl.nome AS cliente_nome, a.slug AS agent_slug, a.nome AS agent_nome
+     FROM conversas c
+     JOIN clientes cl ON cl.id = c.client_id
+     JOIN agentes a ON a.id = c.agent_id
+     WHERE c.id = $1`,
+    [conversaId]
+  );
+  const conv = convRow.rows[0] || null;
+
+  const msgsRows = await pool.query(
+    `SELECT role, conteudo FROM mensagens WHERE conversa_id=$1 ORDER BY timestamp DESC LIMIT 12`,
+    [conversaId]
+  );
+  const historico = msgsRows.rows.reverse();
+
+  return { conv, historico };
+}
+
+async function gerarTextoComClaude(system: string, userMsg: string, model = 'claude-haiku-4-5-20251001'): Promise<string> {
+  const response = await getAnthropicClient().messages.create({
+    model,
+    max_tokens: 600,
+    system,
+    messages: [{ role: 'user', content: userMsg }],
+  });
+  return ((response.content[0] as any).text || '').trim();
+}
 
 const app = express();
 app.use(express.json());
@@ -209,6 +254,137 @@ app.post('/internal/cotacao', autenticarInterno, async (req, res) => {
   } catch (e: any) {
     const status = e.status && e.status < 500 ? e.status : 500;
     res.status(status).json({ erro: e.message, detalhes: e.erros ?? e.data ?? undefined });
+  }
+});
+
+// ── POST /internal/rewrite ────────────────────────────────────────────────
+// Reescreve o texto do supervisor no estilo da Mari
+app.post('/internal/rewrite', autenticarInterno, async (req, res) => {
+  const { conversa_id, texto } = req.body;
+  if (!conversa_id || !texto) {
+    res.status(400).json({ erro: 'conversa_id e texto são obrigatórios' });
+    return;
+  }
+  try {
+    const { conv, historico } = await getConversaContext(conversa_id);
+    const agentNome = conv?.agent_nome || 'Mari';
+    const historicoStr = historico
+      .map((m: any) => `${m.role === 'user' ? 'Cliente' : agentNome}: ${m.conteudo}`)
+      .join('\n');
+
+    const system = `Você é ${agentNome}, assistente de vendas da Plamev (plano de saúde pet).
+Tom: caloroso, direto, natural — como uma pessoa real no WhatsApp. Sem asteriscos, sem formalidades excessivas.
+Tarefa: reescreva a mensagem a seguir no seu próprio estilo, mantendo o mesmo significado.
+Responda APENAS com o texto reescrito. Sem explicações, sem aspas extras.`;
+
+    const userMsg = historicoStr
+      ? `Contexto (últimas mensagens):\n${historicoStr}\n\nMensagem para reescrever: ${texto}`
+      : `Mensagem para reescrever: ${texto}`;
+
+    const textoReescrito = await gerarTextoComClaude(system, userMsg);
+    res.json({ ok: true, texto_reescrito: textoReescrito || texto });
+  } catch (e: any) {
+    console.error('[AGENT-AI] ❌ rewrite:', e.message);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// ── POST /internal/instrucao ──────────────────────────────────────────────
+// Gera uma mensagem nova a partir de uma instrução do supervisor
+app.post('/internal/instrucao', autenticarInterno, async (req, res) => {
+  const { conversa_id, instrucao } = req.body;
+  if (!conversa_id || !instrucao) {
+    res.status(400).json({ erro: 'conversa_id e instrucao são obrigatórios' });
+    return;
+  }
+  try {
+    const { conv, historico } = await getConversaContext(conversa_id);
+    const agentNome = conv?.agent_nome || 'Mari';
+    const clienteNome = conv?.cliente_nome || 'cliente';
+    const historicoStr = historico
+      .map((m: any) => `${m.role === 'user' ? 'Cliente' : agentNome}: ${m.conteudo}`)
+      .join('\n');
+
+    const system = `Você é ${agentNome}, assistente de vendas da Plamev (plano de saúde pet).
+Tom: caloroso, direto, natural — como uma pessoa real no WhatsApp. Sem asteriscos, sem formalidades excessivas.
+O supervisor lhe passou uma instrução sobre o que deve ser dito ao cliente "${clienteNome}".
+Gere uma mensagem para o cliente seguindo essa instrução, considerando o contexto da conversa.
+Responda APENAS com a mensagem para o cliente. Sem explicações, sem prefixos.`;
+
+    const userMsg = historicoStr
+      ? `Contexto da conversa:\n${historicoStr}\n\nInstrução do supervisor: ${instrucao}`
+      : `Instrução do supervisor: ${instrucao}`;
+
+    const textoGerado = await gerarTextoComClaude(system, userMsg);
+    res.json({ ok: true, texto_gerado: textoGerado });
+  } catch (e: any) {
+    console.error('[AGENT-AI] ❌ instrucao:', e.message);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// ── POST /internal/provocar ───────────────────────────────────────────────
+// Gera mensagem proativa, envia via channel-service e persiste no banco
+app.post('/internal/provocar', autenticarInterno, async (req, res) => {
+  const { conversa_id } = req.body;
+  if (!conversa_id) {
+    res.status(400).json({ erro: 'conversa_id é obrigatório' });
+    return;
+  }
+  try {
+    const { conv, historico } = await getConversaContext(conversa_id);
+    if (!conv) {
+      res.status(404).json({ erro: 'Conversa não encontrada' });
+      return;
+    }
+
+    const agentNome = conv.agent_nome || 'Mari';
+    const clienteNome = conv.cliente_nome || 'cliente';
+    const etapa = conv.etapa || 'acolhimento';
+    const historicoStr = historico
+      .map((m: any) => `${m.role === 'user' ? 'Cliente' : agentNome}: ${m.conteudo}`)
+      .join('\n');
+
+    const system = `Você é ${agentNome}, assistente de vendas da Plamev (plano de saúde pet).
+Tom: caloroso, direto, natural — como uma pessoa real no WhatsApp. Sem asteriscos.
+O supervisor quer reativar a conversa com "${clienteNome}" (etapa: ${etapa}).
+Gere uma mensagem curta e natural de acompanhamento/reativação, levando em conta o contexto.
+Responda APENAS com a mensagem. Sem explicações.`;
+
+    const userMsg = historicoStr
+      ? `Histórico da conversa:\n${historicoStr}\n\nGere uma mensagem de reativação.`
+      : `Gere uma mensagem de reativação para iniciar uma conversa sobre plano de saúde pet.`;
+
+    const mensagem = await gerarTextoComClaude(system, userMsg);
+
+    // Enviar via channel-service
+    await fetch(`${CHANNEL_SERVICE_URL}/internal/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
+      body: JSON.stringify({
+        message: {
+          phone: conv.numero_externo,
+          jid: conv.jid,
+          instancia: conv.instancia_whatsapp,
+          canal: conv.canal,
+          agentSlug: conv.agent_slug,
+        },
+        resposta: mensagem,
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    // Persistir no banco
+    await pool.query(
+      `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por) VALUES ($1, $2, $3, $4)`,
+      [conversa_id, 'assistant', mensagem, 'supervisora']
+    );
+
+    console.log(`[AGENT-AI] ✅ provocar → conversa=${conversa_id} mensagem="${mensagem.slice(0, 60)}"`);
+    res.json({ ok: true, mensagem });
+  } catch (e: any) {
+    console.error('[AGENT-AI] ❌ provocar:', e.message);
+    res.status(500).json({ erro: e.message });
   }
 });
 
