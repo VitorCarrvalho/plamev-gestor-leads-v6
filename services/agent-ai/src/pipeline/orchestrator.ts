@@ -9,8 +9,6 @@ import { carregar as vaultCarregar } from '../services/vault';
 import { buscarRedeCredenciada, normalizarCep, validarCep, type RedeResult } from '../services/rede-credenciada';
 import {
   buscarEnderecoPorCep,
-  buscarCoberturasParaUF,
-  formatarCoberturasParaPrompt,
   encontrarRacaPorNome,
   submeterCotacao,
   extrairDdd,
@@ -325,7 +323,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     input: { agentSlug, orgId, phone: msg.phone, canal: msg.canal },
   });
 
-  // Detecta CEP na mensagem antes do Promise.all para inclusão condicional
+  // Detecta CEP na mensagem corrente; fallback para CEP salvo na conversa ocorre após Promise.all
   const cepDetectado = detectarCepNoTexto(msg.texto || '');
 
   // Carrega prompts em paralelo: vault (primário) + banco (fallback) + contexto
@@ -366,31 +364,32 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   const includePlanContext = !greetingOnly && (catalogIntent || priceIntent || topicalPlanMessage || stageRequiresCatalog);
   const isFirstContact = historico.length === 0 && !conversaAtual?.tutor_nome;
 
-  // Endereço via ViaCEP (lightweight — ~200ms)
-  const enderecoPromise = cepDetectado
-    ? buscarEnderecoPorCep(cepDetectado).catch(() => null)
+  // CEP efetivo: mensagem corrente tem prioridade; senão usa o salvo na conversa
+  const cepEfetivo = cepDetectado || (conversaAtual as any)?.cep || (conversaAtual as any)?.cp || null;
+
+  // Endereço via ViaCEP — usa CEP efetivo para obter UF
+  const enderecoPromise = cepEfetivo
+    ? buscarEnderecoPorCep(cepEfetivo).catch(() => null)
     : Promise.resolve(null);
+
+  // Rede credenciada: se não foi carregada no Promise.all (cepDetectado era null) mas há CEP salvo
+  // e o cliente fez pergunta sobre cobertura/rede, busca agora
+  const redeResultEfetivo: RedeResult | null = await (async () => {
+    if (redeResult) return redeResult;
+    if (!cepEfetivo || !topicalPlanMessage) return null;
+    try { return await buscarRedeCredenciada(cepEfetivo); }
+    catch { return { status: 'erro_servico' } as RedeResult; }
+  })();
 
   const [endereco] = await Promise.all([enderecoPromise]);
   const ufDetectada = endereco?.uf || null;
-
-  // Coberturas da API Plamev: só carrega quando há intenção de plano E temos UF
-  const coberturasApiSection = await (async () => {
-    if (!includePlanContext || !ufDetectada) return '';
-    try {
-      const coberturas = await buscarCoberturasParaUF(ufDetectada);
-      return formatarCoberturasParaPrompt(coberturas, ufDetectada);
-    } catch {
-      return '';
-    }
-  })();
 
   // KB via RAG — conteúdo migrado do vault para knowledge_chunks via vault-sync
   const kb = await searchKnowledge(msg.texto || '', orgId, config.id, 5, { stage: targetStage });
   const knowledgeBase = kb.conteudo;
 
-  // Rede credenciada: seção de prompt ou null se não havia CEP na mensagem
-  const redeSection = redeResult ? formatarSecaoRede(redeResult, cepDetectado!) : '';
+  // Rede credenciada: seção de prompt com CEP efetivo (mensagem ou histórico)
+  const redeSection = redeResultEfetivo ? formatarSecaoRede(redeResultEfetivo, cepEfetivo!) : '';
 
   const soulSource = vaultAtivo ? 'vault' : promptsResolvidos.soul ? 'db' : 'fallback';
 
@@ -419,11 +418,11 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   console.log(
     `${tag} [2/7] Contexto | soul=${soulSource} | etapa=${targetStage} | histórico=${historico.length}msgs` +
     ` | rag=${kb.mode} ${kb.fontes.length} docs (${kb.conteudo.length} chars, ${kb.latencyMs}ms)` +
-    (cepDetectado ? ` | cep=${cepDetectado} status=${redeResult?.status}` : '') +
+    (cepEfetivo ? ` | cep=${cepEfetivo}${!cepDetectado ? '(histórico)' : ''} status=${redeResultEfetivo?.status}` : '') +
     ` | ${Date.now() - t2}ms`,
   );
   if (kb.fontes.length) console.log(`${tag}     KB fontes: ${kb.fontes.join(', ')}`);
-  if (cepDetectado) console.log(`${tag}     Rede credenciada: CEP=${cepDetectado} status=${redeResult?.status} total=${redeResult?.total ?? 0}`);
+  if (cepEfetivo) console.log(`${tag}     Rede credenciada: CEP=${cepEfetivo} status=${redeResultEfetivo?.status} total=${redeResultEfetivo?.total ?? 0}`);
 
   // ── ETAPA 3: System prompt ────────────────────────────────
   if (!promptsResolvidos.soul) {
@@ -443,7 +442,6 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     productCatalog: includePlanContext ? formatProductCatalogPrompt(tabelaPlanos) : '',
     knowledgeBase,
     redeCredenciada: redeSection || undefined,
-    cotacaoPlanos: coberturasApiSection || undefined,
     catalogIntent,
     includePlanContext,
   });
@@ -621,7 +619,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
 
   // ── Scores Langfuse (alimentam dashboards customizados) ───
   trace.score({ name: 'rag_hit',        value: kb.fontes.length > 0 ? 1 : 0, comment: kb.fontes.join(', ') || 'none' });
-  if (cepDetectado) trace.score({ name: 'rede_credenciada_hit', value: redeResult?.status === 'ok' ? 1 : 0, comment: `CEP=${cepDetectado} status=${redeResult?.status} total=${redeResult?.total ?? 0}` });
+  if (cepEfetivo) trace.score({ name: 'rede_credenciada_hit', value: redeResultEfetivo?.status === 'ok' ? 1 : 0, comment: `CEP=${cepEfetivo} status=${redeResultEfetivo?.status} total=${redeResultEfetivo?.total ?? 0}` });
   trace.score({ name: 'rag_vector_hit', value: kb.mode === 'vector_rerank' ? 1 : 0, comment: kb.mode });
   trace.score({ name: 'output_blocked', value: wasBlocked ? 1 : 0, comment: validation.reason || 'none' });
   trace.score({ name: 'was_rewritten',  value: wasRewritten ? 1 : 0 });
