@@ -749,7 +749,11 @@ export const PipelineKanbanPage: React.FC = () => {
 
   const silenciarIA = async (conversaId: string) => {
     try {
-      const r = await api.patch<{ ok: boolean; ia_silenciada: boolean }>(`/api/conversa/${conversaId}/silenciar`, {});
+      const c = conversas.find(x => x.conversa_id === conversaId);
+      if (!c) return;
+      const intendedState = !c.ia_silenciada;
+      
+      const r = await api.patch<{ ok: boolean; ia_silenciada: boolean }>(`/api/conversa/${conversaId}/silenciar`, { estado: intendedState });
       // Optimistic update: toggle locally, then full refresh
       setConversas(prev => prev.map(c =>
         c.conversa_id === conversaId ? { ...c, ia_silenciada: r.ia_silenciada } : c

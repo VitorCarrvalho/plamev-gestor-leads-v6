@@ -166,7 +166,13 @@ export const ConversaPage: React.FC = () => {
     socket.on('nova_msg', refresh);
     socket.on('conversa_atualizada', refresh);
     socket.on('ia_status', refresh);
-    return () => { socket.off('nova_msg', refresh); socket.off('conversa_atualizada', refresh); socket.off('ia_status', refresh); };
+    document.addEventListener('forcar_refresh_conversas', refresh);
+    return () => { 
+      socket.off('nova_msg', refresh); 
+      socket.off('conversa_atualizada', refresh); 
+      socket.off('ia_status', refresh); 
+      document.removeEventListener('forcar_refresh_conversas', refresh);
+    };
   }, [socket]);
 
   const filtradas = conversas.filter(c => {
@@ -528,9 +534,11 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
   const toggleIa = async () => {
     setToggleIaLoading(true);
     try {
-      const r = await api.patch<{ ok: boolean; ia_silenciada: boolean }>(`/api/conversa/${conversaId}/silenciar`, {});
+      const intendedState = !iaSilenciada;
+      const r = await api.patch<{ ok: boolean; ia_silenciada: boolean }>(`/api/conversa/${conversaId}/silenciar`, { estado: intendedState });
       // Optimistic update: refresh data to reflect new state
       await carregarConversa();
+      document.dispatchEvent(new CustomEvent('forcar_refresh_conversas'));
       setFeedback({ ok: true, text: r.ia_silenciada ? '🔇 IA silenciada' : '🔊 IA ativa' });
       setTimeout(() => setFeedback(null), 3000);
     } catch (e: any) {

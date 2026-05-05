@@ -131,9 +131,13 @@ app.patch('/api/conversa/:id/etapa', autenticar, async (req, res) => {
 app.patch('/api/conversa/:id/silenciar', autenticar, async (req, res) => {
   try {
     const { id } = req.params;
+    const { estado } = req.body;
     const atual = await queryOne<any>('SELECT ia_silenciada FROM conversas WHERE id=$1', [id]);
     if (!atual) { res.status(404).json({ erro: 'Conversa não encontrada' }); return; }
-    const novoEstado = !atual.ia_silenciada;
+    
+    // Se frontend enviou estado explícito, usa ele. Senão faz toggle cego (legado)
+    const novoEstado = typeof estado === 'boolean' ? estado : !atual.ia_silenciada;
+    
     await execute('UPDATE conversas SET ia_silenciada = $1 WHERE id = $2', [novoEstado, id]);
     console.log(`[CRM] 🔇 ia_silenciada=${novoEstado} para conversa ${id}`);
     res.json({ ok: true, ia_silenciada: novoEstado });
