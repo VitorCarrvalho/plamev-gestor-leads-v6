@@ -221,7 +221,7 @@ function limitarPerguntas(texto) {
  * @param {Object} ctx - contexto: { perfil, conversa, historico, clinicasReais }
  * @returns {string} resposta corrigida
  */
-function validar(resposta, ctx = {}) {
+export function validar(resposta: string, ctx: any = {}) {
   if (!resposta) return resposta;
 
   const { perfil = {}, conversa = {}, historico = [], clinicasReais = null } = ctx;
@@ -306,4 +306,3 @@ function validar(resposta, ctx = {}) {
   return final;
 }
 
-module.exports = { validar };

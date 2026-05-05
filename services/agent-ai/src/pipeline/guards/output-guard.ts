@@ -17,7 +17,7 @@ interface OutputGuardContext {
   ragMode?: string;
 }
 
-const { validar } = require('./validator');
+import { validar } from './validator';
 
 function normalizeCurrency(value: string): string {
   return value
@@ -69,8 +69,10 @@ export async function validateClaims(
   modelName: string,
   context: OutputGuardContext = {},
 ): Promise<ValidationResult> {
-  // OUTPUT GUARD DESATIVADO TEMPORARIAMENTE — reativar via OUTPUT_GUARD_DISABLED=false quando estiver calibrado
-  return { isValid: true };
+  // Reativado! Pode ser desativado via env var se necessário.
+  if (process.env.OUTPUT_GUARD_DISABLED === 'true') {
+    return { isValid: true };
+  }
 
   const response = generation.resposta;
   if (!response) return { isValid: true };
