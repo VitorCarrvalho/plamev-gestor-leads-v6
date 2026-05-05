@@ -132,14 +132,19 @@ app.patch('/api/conversa/:id/silenciar', autenticar, async (req, res) => {
   try {
     const { id } = req.params;
     const { estado } = req.body;
-    const atual = await queryOne<any>('SELECT ia_silenciada FROM conversas WHERE id=$1', [id]);
+    const atual = await queryOne<any>('SELECT ia_silenciada, numero_externo, canal FROM conversas WHERE id=$1', [id]);
     if (!atual) { res.status(404).json({ erro: 'Conversa não encontrada' }); return; }
     
     // Se frontend enviou estado explícito, usa ele. Senão faz toggle cego (legado)
     const novoEstado = typeof estado === 'boolean' ? estado : !atual.ia_silenciada;
     
-    await execute('UPDATE conversas SET ia_silenciada = $1 WHERE id = $2', [novoEstado, id]);
-    console.log(`[CRM] 🔇 ia_silenciada=${novoEstado} para conversa ${id}`);
+    // Atualiza TODAS as conversas ativas deste lead/canal para evitar dessincronização 
+    // caso existam múltiplas conversas "ativas" duplicadas por algum bug de concorrência
+    await execute(
+      "UPDATE conversas SET ia_silenciada = $1 WHERE numero_externo = $2 AND canal = $3 AND status = 'ativa'", 
+      [novoEstado, atual.numero_externo, atual.canal]
+    );
+    console.log(`[CRM] 🔇 ia_silenciada=${novoEstado} para todas as conversas ativas do lead ${atual.numero_externo} (${id})`);
     res.json({ ok: true, ia_silenciada: novoEstado });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
