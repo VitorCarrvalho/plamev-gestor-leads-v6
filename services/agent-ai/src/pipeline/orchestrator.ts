@@ -344,6 +344,18 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       : Promise.resolve(null as RedeResult | null),
   ]);
 
+  // ── Verificar se IA está silenciada ──────────────────────────
+  if (conversaAtual?.ia_silenciada) {
+    console.log(`${tag} 🔇 IA silenciada para esta conversa — ignorando mensagem`);
+    ctxSpan.end({ output: { skipped: true, reason: 'ia_silenciada' } });
+    trace.update({
+      output: 'skipped_ia_silenciada',
+      metadata: { reason: 'ia_silenciada', total_latency_ms: Date.now() - start },
+    });
+    await lf_flush();
+    return;
+  }
+
   // Vault tem prioridade; banco serve de fallback quando arquivo ainda não existe
   const promptsResolvidos = {
     soul:           vaultSoul           || (promptBundle as any)?.soul           || '',
