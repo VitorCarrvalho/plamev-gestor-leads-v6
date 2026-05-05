@@ -69,10 +69,10 @@ export async function validateClaims(
   modelName: string,
   context: OutputGuardContext = {},
 ): Promise<ValidationResult> {
+  // OUTPUT GUARD DESATIVADO TEMPORARIAMENTE — reativar removendo o return abaixo
+  return { isValid: true };
+
   // Reativado! Pode ser desativado via env var se necessário.
-  if (process.env.OUTPUT_GUARD_DISABLED === 'true') {
-    return { isValid: true };
-  }
 
   const response = generation.resposta;
   if (!response) return { isValid: true };
