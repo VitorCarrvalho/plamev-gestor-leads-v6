@@ -91,6 +91,7 @@ async function dispararCotacao(
 
     if (!nomeCliente || !email || !coberturaId || !cepRaw) {
       console.warn(`${tag} ⚠️ Dados insuficientes para cotação (nome=${!!nomeCliente} email=${!!email} cobertura=${!!coberturaId} cep=${!!cepRaw})`);
+      await sendResponse(msg, 'Para gerar sua cotação ainda preciso de alguns dados. Pode me informar: nome completo, e-mail, CEP e qual plano você escolheu? 😊');
       return;
     }
 
@@ -116,17 +117,25 @@ async function dispararCotacao(
       console.log(`${tag} 🔍 ci="${coberturaId}" não é UUID — buscando pelo nome em coberturas de ${endereco.uf}…`);
       try {
         const coberturas = await buscarCoberturasParaUF(endereco.uf);
-        const slug = coberturaId.toLowerCase().replace(/[-_]/g, ' ');
-        const match = coberturas.find(c =>
-          c.nome.toLowerCase().includes(slug) ||
-          slug.includes(c.nome.toLowerCase().split(' ')[0])
-        );
+        const slug = coberturaId.toLowerCase().replace(/[-_]/g, ' ').trim();
+        // Scoring: exact=100, plan-contains-slug=2, slug-contains-plan=1; tiebreak by longer name
+        const scored = coberturas.map(c => {
+          const cn = c.nome.toLowerCase().trim();
+          let score = 0;
+          if (cn === slug) score = 100;
+          else if (cn.includes(slug)) score = 2;
+          else if (slug.includes(cn)) score = 1;
+          return { c, score };
+        }).filter(x => x.score > 0)
+          .sort((a, b) => b.score - a.score || b.c.nome.length - a.c.nome.length);
+        const match = scored[0]?.c;
         if (match) {
           coberturaIdResolvido = match.id;
           console.log(`${tag} ✅ cobertura resolvida: "${coberturaId}" → ${match.id} (${match.nome})`);
         } else {
-          console.warn(`${tag} ⚠️ Plano "${coberturaId}" não encontrado em ${endereco.uf} — usando o primeiro disponível`);
-          coberturaIdResolvido = coberturas[0]?.id || coberturaId;
+          console.warn(`${tag} ⚠️ Plano "${coberturaId}" não encontrado em ${endereco.uf} — cotação abortada`);
+          await sendResponse(msg, 'Tive um problema ao identificar o plano escolhido. Pode me confirmar qual plano você quer? 😊');
+          return;
         }
       } catch (e: any) {
         console.warn(`${tag} ⚠️ Falha ao resolver cobertura por nome: ${e.message}`);
@@ -195,6 +204,7 @@ async function dispararCotacao(
   } catch (e: any) {
     console.error(`${tag} ❌ Falha ao disparar cotação:`, e.message);
     if (e.erros) console.error(`${tag}   Erros de validação:`, JSON.stringify(e.erros));
+    await sendResponse(msg, 'Tive um problema ao gerar sua cotação 😕 Pode me chamar novamente para eu tentar de novo?').catch(() => {});
   }
 }
 
