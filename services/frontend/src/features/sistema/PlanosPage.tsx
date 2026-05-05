@@ -18,15 +18,26 @@ const moeda = (v: number) => v != null ? `R$ ${Number(v).toFixed(2).replace('.',
 
 // ── Linha de preço editável ───────────────────────────────────────────────
 interface PrecoRowProps { preco: Preco; onSave: (id: number, vals: Partial<Preco>) => void; onDelete: (id: number) => void; }
+const parseValor = (v: string): number | null => {
+  const n = parseFloat(v.replace(',', '.'));
+  return isNaN(n) ? null : n;
+};
+
 const PrecoRow: React.FC<PrecoRowProps> = ({ preco, onSave, onDelete }) => {
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ valor: String(preco.valor), valor_tabela: String(preco.valor_tabela ?? ''), valor_promocional: String(preco.valor_promocional ?? '') });
+  const [form, setForm] = useState({
+    valor: String(preco.valor).replace('.', ','),
+    valor_tabela: preco.valor_tabela != null ? String(preco.valor_tabela).replace('.', ',') : '',
+    valor_promocional: preco.valor_promocional != null ? String(preco.valor_promocional).replace('.', ',') : '',
+  });
 
   const save = () => {
+    const valor = parseValor(form.valor);
+    if (valor === null) return;
     onSave(preco.id, {
-      valor: parseFloat(form.valor) || preco.valor,
-      valor_tabela: form.valor_tabela ? parseFloat(form.valor_tabela) : null,
-      valor_promocional: form.valor_promocional ? parseFloat(form.valor_promocional) : null,
+      valor,
+      valor_tabela: form.valor_tabela ? parseValor(form.valor_tabela) : null,
+      valor_promocional: form.valor_promocional ? parseValor(form.valor_promocional) : null,
     });
     setEditing(false);
   };
@@ -39,11 +50,11 @@ const PrecoRow: React.FC<PrecoRowProps> = ({ preco, onSave, onDelete }) => {
         <p className="text-xs font-semibold text-indigo-700 capitalize">{LABEL[preco.modalidade] ?? preco.modalidade}</p>
         <div className="space-y-1">
           <label className="text-[10px] text-slate-500">Valor cobrado</label>
-          <Input className="h-7 text-xs" value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} placeholder="Ex: 119.99" />
+          <Input className="h-7 text-xs" value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} placeholder="Ex: 119,99" />
         </div>
         <div className="space-y-1">
           <label className="text-[10px] text-slate-500">Valor tabela (riscado)</label>
-          <Input className="h-7 text-xs" value={form.valor_tabela} onChange={e => setForm(f => ({ ...f, valor_tabela: e.target.value }))} placeholder="Ex: 139.99" />
+          <Input className="h-7 text-xs" value={form.valor_tabela} onChange={e => setForm(f => ({ ...f, valor_tabela: e.target.value }))} placeholder="Ex: 139,99" />
         </div>
         <div className="space-y-1">
           <label className="text-[10px] text-slate-500">Valor promocional</label>
@@ -111,7 +122,7 @@ const PlanosTab: React.FC = () => {
   const adicionarPreco = async (slug: string) => {
     const f = precoForm[slug];
     if (!f?.modalidade || !f?.valor) return;
-    await api.post(`/api/config/planos/${slug}/preco`, { modalidade: f.modalidade, valor: parseFloat(f.valor) });
+    await api.post(`/api/config/planos/${slug}/preco`, { modalidade: f.modalidade, valor: parseValor(f.valor) });
     setPrecoForm(prev => ({ ...prev, [slug]: { modalidade: 'cartao', valor: '' } }));
     carregar();
   };
@@ -256,7 +267,7 @@ const CoberturasApiTab: React.FC = () => {
     if (!novoMap.plano_nome || !novoMap.uf || !novoMap.cobertura_uuid) return;
     await api.post('/api/config/planos/coberturas-api', {
       ...novoMap,
-      valor: novoMap.valor ? parseFloat(novoMap.valor) : undefined,
+      valor: novoMap.valor ? parseValor(novoMap.valor) : undefined,
     });
     setNovoMap({ plano_nome: '', plano_slug: '', uf: '', cobertura_uuid: '', valor: '' });
     setShowNovo(false);
