@@ -294,6 +294,34 @@ export async function excluirContatoPorTelefone(orgId: string, canal: string, ph
   return true;
 }
 
+export async function resetarClientePorTelefone(orgId: string, canal: string, phone: string): Promise<boolean> {
+  const ident = await queryOne<any>(
+    `SELECT ic.client_id
+     FROM identificadores_cliente ic
+     JOIN clientes cl ON cl.id = ic.client_id
+     WHERE ic.tipo = 'phone'
+       AND ic.valor = $1
+       AND cl.org_id = $2
+     LIMIT 1`,
+    [phone, orgId]
+  );
+  if (!ident?.client_id) return false;
+
+  const conv = await queryOne<any>(
+    `SELECT id
+     FROM conversas
+     WHERE client_id = $1
+       AND canal = $2
+     ORDER BY criado_em DESC
+     LIMIT 1`,
+    [ident.client_id, canal]
+  );
+  if (!conv?.id) return false;
+
+  await resetarCliente(conv.id);
+  return true;
+}
+
 // ── Resetar histórico (manter cadastro) ───────────────────────
 export async function resetarCliente(conversaId: string): Promise<void> {
   const conv = await queryOne<any>('SELECT client_id FROM conversas WHERE id = $1', [conversaId]);
@@ -301,7 +329,7 @@ export async function resetarCliente(conversaId: string): Promise<void> {
   await execute('DELETE FROM mensagens         WHERE conversa_id = $1', [conversaId]);
   await execute('DELETE FROM instrucoes_ativas WHERE conversa_id = $1', [conversaId]);
   await execute('DELETE FROM agendamentos      WHERE conversa_id = $1', [conversaId]);
-  await execute(`UPDATE conversas SET etapa = 'acolhimento', score = 0 WHERE id = $1`, [conversaId]);
+  await execute(`UPDATE conversas SET etapa = 'acolhimento', score = 0, ia_silenciada = false WHERE id = $1`, [conversaId]);
 }
 
 // ── Etapas realmente visitadas pela conversa (via funil_conversao) ─

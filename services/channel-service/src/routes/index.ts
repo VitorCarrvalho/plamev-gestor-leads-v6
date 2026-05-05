@@ -156,6 +156,7 @@ async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
     try {
       const result = await resetContactState(msg);
       console.log(`[CHANNEL-SERVICE] ♻️ Reset por comando executado para ${msg.phone} | removed=${Boolean(result?.removed)}`);
+      await enviar(msg, '♻️ O histórico desta conversa foi resetado para testes.\nComo posso te ajudar agora?');
     } catch (e: any) {
       console.error(`[CHANNEL-SERVICE] ❌ Falha no reset de ${msg.phone}: ${e.message}`);
     }

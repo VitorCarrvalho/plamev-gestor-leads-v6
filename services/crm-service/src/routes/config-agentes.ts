@@ -7,7 +7,7 @@ import https from 'https';
 import http from 'http';
 import { autenticar, soAdmin } from '../middleware/auth';
 import { query, execute, queryOne } from '../config/db';
-import { excluirContatoPorTelefone } from '../repositories/conversations.repository';
+import { resetarClientePorTelefone } from '../repositories/conversations.repository';
 
 function httpPost(url: string, body: any, headers: Record<string, string> = {}): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -498,7 +498,7 @@ internalRouter.post('/reset-contato', async (req, res) => {
   try {
     const agente = await queryOne<any>('SELECT org_id FROM agentes WHERE slug=$1 LIMIT 1', [agentSlug]);
     const orgId = agente?.org_id || '00000000-0000-0000-0000-000000000000';
-    const removed = await excluirContatoPorTelefone(orgId, canal, phone);
+    const removed = await resetarClientePorTelefone(orgId, canal, phone);
     console.log(`[INTERNAL] ♻️ Reset contato phone=${phone} canal=${canal} agent=${agentSlug} removed=${removed}`);
     res.json({ ok: true, removed });
   } catch (e: any) {
