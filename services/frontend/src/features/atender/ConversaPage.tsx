@@ -445,6 +445,8 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
   const [modalAgendar, setModalAgendar] = useState(false);
   const msgsRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Ref para sempre chamar a versão mais recente de carregarConversa dentro dos handlers de socket
+  const carregarConversaRef = useRef<() => void>(() => {});
 
   // Auto-foca o input quando a ação termina OU quando troca de aba
   useEffect(() => { if (!acaoLoading) inputRef.current?.focus(); }, [acaoLoading, aba, conversaId]);
@@ -460,6 +462,9 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
     setLoading(false);
   };
 
+  // Mantém a ref sempre apontando para a versão mais recente
+  useEffect(() => { carregarConversaRef.current = carregarConversa; });
+
   // Carregar via REST
   useEffect(() => { carregarConversa(); }, [conversaId]);
 
@@ -469,19 +474,24 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [data?.mensagens?.length]);
 
-  // Feedback ok/erro genérico
+  // Feedback ok/erro genérico — usa ref para evitar closure stale em carregarConversa
   useEffect(() => {
+    const reload = () => carregarConversaRef.current();
     const handlers: [string, (d: any) => void][] = [
       ['provocar_ok',        () => setFeedback({ ok: true, text: '✓ Mari provocou o lead' })],
-      ['instrucao_ok',       () => setFeedback({ ok: true, text: '✓ Mari enviou mensagem' })],
-      ['falar_direto_ok',    () => setFeedback({ ok: true, text: '✓ Mensagem enviada' })],
+      ['instrucao_ok',       () => setFeedback({ ok: true, text: '✓ Mari enviou mensagem ao cliente' })],
+      ['falar_direto_ok',    () => setFeedback({ ok: true, text: '✓ Mensagem enviada ao cliente' })],
       ['nota_ok',            () => setFeedback({ ok: true, text: '✓ Nota salva' })],
       ['agendar_ok',         () => setFeedback({ ok: true, text: '✓ Mensagem agendada' })],
       ['ia_status',          (d) => setFeedback({ ok: true, text: `✓ IA ${d.silenciada ? 'silenciada' : 'ativa'}` })],
       ['erro',               (d) => setFeedback({ ok: false, text: d.msg || 'Erro' })],
     ];
-    handlers.forEach(([e, h]) => socket.on(e, (d: any) => { h(d); setAcaoLoading(false); setTimeout(() => setFeedback(null), 3000); carregarConversa(); }));
-    return () => { handlers.forEach(([e]) => socket.off(e)); };
+    const wrappedHandlers: [string, (...args: any[]) => void][] = handlers.map(([e, h]) => {
+      const wrapped = (d: any) => { h(d); setAcaoLoading(false); setTimeout(() => setFeedback(null), 4000); reload(); };
+      return [e, wrapped];
+    });
+    wrappedHandlers.forEach(([e, h]) => socket.on(e, h));
+    return () => { wrappedHandlers.forEach(([e, h]) => socket.off(e, h)); };
   }, [socket, conversaId]);
 
   const executarAcao = () => {
@@ -734,7 +744,10 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
 // ═══════════════════════════════════════════════════════════════
 const Bolha: React.FC<{ msg: any; onChange?: () => void }> = ({ msg, onChange }) => {
   const ehCliente = msg.role === 'user' || msg.enviado_por === 'cliente';
-  const ehNota = msg.role === 'system' || msg.enviado_por === 'nota';
+  // notas salvas pelo socket: role='system', enviado_por='nota'
+  // compatibilidade com notas antigas: conteudo começa com '[NOTA]'
+  const ehNota = msg.role === 'system' || msg.enviado_por === 'nota' || /^\[NOTA\]/i.test(msg.conteudo || '');
+  const ehSupervisora = !ehCliente && !ehNota && msg.enviado_por === 'supervisora';
   const admin = isAdmin();
 
   const [editando, setEditando] = useState(false);
@@ -766,7 +779,7 @@ const Bolha: React.FC<{ msg: any; onChange?: () => void }> = ({ msg, onChange })
       <div className="flex justify-center my-2">
         <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-1.5 rounded-full flex items-center gap-1 group">
           <FileText className="w-3 h-3" />
-          <span>{msg.conteudo}</span>
+          <span>{(msg.conteudo || '').replace(/^\[NOTA\]\s*/i, '')}</span>
           {admin && (
             <button onClick={excluir} className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 hover:text-red-600" title="Excluir nota">
               <Trash2 className="w-3 h-3" />
@@ -838,8 +851,9 @@ const Bolha: React.FC<{ msg: any; onChange?: () => void }> = ({ msg, onChange })
                   </div>
                 );
               })()}
-              <div className={cn('text-[10px] mt-1 opacity-70', ehCliente ? 'text-indigo-100' : 'text-slate-400')}>
+              <div className={cn('text-[10px] mt-1 flex items-center gap-1 opacity-70', ehCliente ? 'text-indigo-100' : 'text-slate-400')}>
                 {new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                {ehSupervisora && <span className="text-[9px] bg-indigo-100 text-indigo-600 px-1 py-0.5 rounded font-medium">Supervisor</span>}
               </div>
             </>
           )}

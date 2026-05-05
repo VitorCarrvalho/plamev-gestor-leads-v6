@@ -168,7 +168,7 @@ export function iniciarSocket(server: HttpServer): SocketServer {
       console.log(`[ACTIONS] 🎯 falar_direto → conversa=${conversa_id} reescrever=${reescrever} texto="${(texto||'').slice(0,50)}"`);
       try {
         const conv = await getConvInfo(conversa_id);
-        if (!conv) { socket.emit('falar_direto_err', { erro: 'Conversa não encontrada' }); return; }
+        if (!conv) { socket.emit('erro', { msg: 'Conversa não encontrada' }); return; }
         let msgFinal = (texto || '').trim();
         if (reescrever && msgFinal) {
           try {
@@ -314,7 +314,7 @@ export function iniciarSocket(server: HttpServer): SocketServer {
       try {
         await execute(
           'INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por) VALUES ($1,$2,$3,$4)',
-          [conversa_id, 'supervisor', `[NOTA] ${texto}`, 'supervisora']
+          [conversa_id, 'system', texto, 'nota']
         );
         console.log(`[ACTIONS] ✅ salvar_nota ok`);
         socket.emit('nota_ok', { conversa_id });
