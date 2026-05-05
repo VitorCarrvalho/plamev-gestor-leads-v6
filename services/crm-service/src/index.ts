@@ -20,6 +20,7 @@ import { agenteRouter, internalRouter } from './routes/config-agentes';
 import conhecimentoRouter from './routes/conhecimento';
 import llmConfigRouter    from './routes/llm-config';
 import analisarRouter     from './routes/analisar';
+import { planosRouter }   from './routes/planos';
 
 config({ path: path.join(__dirname, '../../.env') });
 
@@ -134,6 +135,7 @@ app.use('/api/busca',      buscaRouter);
 app.use('/api/sandbox',    sandboxRouter);
 app.use('/api/db',         dbRouter);
 app.use('/api/config/llm',           llmConfigRouter);
+app.use('/api/config/planos',        planosRouter);
 app.use('/api/config/agentes',       agenteRouter);
 app.use('/api/config/agentes/:agenteId/conhecimento', conhecimentoRouter);
 app.use('/api/analisar',             analisarRouter);

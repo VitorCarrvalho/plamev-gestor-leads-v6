@@ -2,7 +2,7 @@ import React from 'react';
 import {
   LayoutDashboard, Radio, Users, MessageSquare, UserCircle, Eye,
   BarChart3, Bookmark, Filter, Award,
-  Calendar, Database, ShieldCheck, FileCode2, Settings, Bot, KeyRound,
+  Calendar, Database, ShieldCheck, FileCode2, Settings, Bot, KeyRound, Package,
   Bell, LogOut, LucideIcon, Sparkles, Columns3, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -52,6 +52,7 @@ export const NAV_TREE: { id: Pilar; label: string; items: NavItem[] }[] = [
       { id: 'sql',           label: 'SQL Browser', icon: Database },
       { id: 'auditoria',     label: 'Auditoria',   icon: ShieldCheck },
       { id: 'templates',     label: 'Templates',   icon: FileCode2 },
+      { id: 'planos',        label: 'Planos',      icon: Package },
       { id: 'configuracao',  label: 'Agentes',     icon: Bot },
       { id: 'provedores',    label: 'Provedores',  icon: KeyRound },
       { id: 'config',        label: 'Config',      icon: Settings },

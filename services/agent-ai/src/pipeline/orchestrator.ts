@@ -16,6 +16,7 @@ import {
   extrairDdd,
   formatarDataNascimento,
   normalizarCidade,
+  resolverCoberturaIdPorNome,
   type CotacaoPayload,
 } from '../services/cotacao';
 import { gerarCotacaoPdf } from '../services/cotacao-pdf';
@@ -110,35 +111,18 @@ async function dispararCotacao(
     }
     if (!racaId) racaId = petEspecie === '2' ? 'SEMRACA2' : 'SEMRACA1';
 
-    // Cobertura → UUID: se a LLM enviou nome/slug em vez de UUID, resolve pelo nome
+    // Cobertura → UUID: se a LLM enviou nome em vez de UUID, resolve via cache local + API
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     let coberturaIdResolvido = coberturaId;
     if (coberturaId && !uuidPattern.test(coberturaId)) {
-      console.log(`${tag} 🔍 ci="${coberturaId}" não é UUID — buscando pelo nome em coberturas de ${endereco.uf}…`);
-      try {
-        const coberturas = await buscarCoberturasParaUF(endereco.uf);
-        const slug = coberturaId.toLowerCase().replace(/[-_]/g, ' ').trim();
-        // Scoring: exact=100, plan-contains-slug=2, slug-contains-plan=1; tiebreak by longer name
-        const scored = coberturas.map(c => {
-          const cn = c.nome.toLowerCase().trim();
-          let score = 0;
-          if (cn === slug) score = 100;
-          else if (cn.includes(slug)) score = 2;
-          else if (slug.includes(cn)) score = 1;
-          return { c, score };
-        }).filter(x => x.score > 0)
-          .sort((a, b) => b.score - a.score || b.c.nome.length - a.c.nome.length);
-        const match = scored[0]?.c;
-        if (match) {
-          coberturaIdResolvido = match.id;
-          console.log(`${tag} ✅ cobertura resolvida: "${coberturaId}" → ${match.id} (${match.nome})`);
-        } else {
-          console.warn(`${tag} ⚠️ Plano "${coberturaId}" não encontrado em ${endereco.uf} — cotação abortada`);
-          await sendResponse(msg, 'Tive um problema ao identificar o plano escolhido. Pode me confirmar qual plano você quer? 😊');
-          return;
-        }
-      } catch (e: any) {
-        console.warn(`${tag} ⚠️ Falha ao resolver cobertura por nome: ${e.message}`);
+      console.log(`${tag} 🔍 ci="${coberturaId}" não é UUID — resolvendo via cache/API para ${endereco.uf}…`);
+      const resolved = await resolverCoberturaIdPorNome(coberturaId, endereco.uf);
+      if (resolved) {
+        coberturaIdResolvido = resolved;
+      } else {
+        console.warn(`${tag} ⚠️ Plano "${coberturaId}" não encontrado — cotação abortada`);
+        await sendResponse(msg, 'Tive um problema ao identificar o plano escolhido. Pode me confirmar qual plano você quer? 😊');
+        return;
       }
     }
 

@@ -36,6 +36,7 @@ import { AuditoriaPage }      from './features/sistema/AuditoriaPage';
 import { TemplatesPage }      from './features/sistema/TemplatesPage';
 import { ConfiguracaoPage }   from './features/sistema/ConfiguracaoPage';
 import { ProvedoresPage }     from './features/sistema/ProvedoresPage';
+import { PlanosPage }         from './features/sistema/PlanosPage';
 import { useNotifications } from './hooks/useNotifications';
 
 // ── LOGIN ─────────────────────────────────────────────────────
@@ -152,6 +153,7 @@ const Shell: React.FC = () => {
       case 'sistema/agenda':    return <AgendaPage />;
       case 'sistema/sql':       return <SqlBrowserPage />;
       case 'sistema/auditoria':     return <AuditoriaPage />;
+      case 'sistema/planos':        return <PlanosPage />;
       case 'sistema/templates':     return <TemplatesPage />;
       case 'sistema/configuracao':   return <ConfiguracaoPage />;
       case 'sistema/provedores':     return <ProvedoresPage />;

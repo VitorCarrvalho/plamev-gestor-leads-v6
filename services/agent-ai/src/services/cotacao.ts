@@ -228,6 +228,82 @@ export async function encontrarRacaPorNome(nome: string, especie: '1' | '2'): Pr
   return racas.find(r => r.nome.toLowerCase().includes(normalizado)) ?? null;
 }
 
+// ── Resolução de cobertura por nome com cache local ───────────────────────
+// Busca em planos_coberturas_api primeiro; se ausente, chama API e auto-salva.
+import { pool } from '../db';
+
+export async function resolverCoberturaIdPorNome(nome: string, uf: string): Promise<string | null> {
+  const slug = nome.trim();
+  const ufUp = uf.toUpperCase();
+
+  // 1. Tenta local (exact, case-insensitive)
+  try {
+    const { rows } = await pool.query(
+      `SELECT cobertura_uuid FROM planos_coberturas_api
+       WHERE uf=$1 AND LOWER(plano_nome) = LOWER($2) LIMIT 1`,
+      [ufUp, slug],
+    );
+    if (rows[0]?.cobertura_uuid) {
+      console.log(`[COTACAO] 🗃️ cobertura resolvida localmente: "${nome}" → ${rows[0].cobertura_uuid}`);
+      return rows[0].cobertura_uuid;
+    }
+
+    // 2. Tenta por plano_slug normalizado
+    const slugNorm = slug.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const { rows: r2 } = await pool.query(
+      `SELECT cobertura_uuid FROM planos_coberturas_api WHERE uf=$1 AND plano_slug=$2 LIMIT 1`,
+      [ufUp, slugNorm],
+    );
+    if (r2[0]?.cobertura_uuid) {
+      console.log(`[COTACAO] 🗃️ cobertura resolvida por slug: "${slugNorm}" → ${r2[0].cobertura_uuid}`);
+      return r2[0].cobertura_uuid;
+    }
+  } catch (e: any) {
+    console.warn('[COTACAO] ⚠️ Erro ao consultar cache local:', e.message);
+  }
+
+  // 3. Busca na API e faz auto-sync
+  console.log(`[COTACAO] 🌐 Consultando API para sincronizar coberturas de ${ufUp}…`);
+  try {
+    const coberturas = await buscarCoberturasParaUF(ufUp);
+
+    // Persiste todas no cache local
+    for (const c of coberturas) {
+      const cSlug = c.nome.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      await pool.query(
+        `INSERT INTO planos_coberturas_api (plano_nome, plano_slug, uf, cobertura_uuid, valor, sincronizado_em)
+         VALUES ($1,$2,$3,$4,$5,NOW())
+         ON CONFLICT (plano_nome, uf) DO UPDATE
+         SET plano_slug=EXCLUDED.plano_slug, cobertura_uuid=EXCLUDED.cobertura_uuid,
+             valor=EXCLUDED.valor, sincronizado_em=NOW()`,
+        [c.nome, cSlug, ufUp, c.id, c.valor || null],
+      ).catch(() => {});
+    }
+
+    // Scoring: exact match primeiro, depois plano mais específico
+    const normalizado = slug.toLowerCase().trim();
+    const scored = coberturas.map(c => {
+      const cn = c.nome.toLowerCase().trim();
+      let score = 0;
+      if (cn === normalizado) score = 100;
+      else if (cn.includes(normalizado)) score = 2;
+      else if (normalizado.includes(cn)) score = 1;
+      return { c, score };
+    }).filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score || b.c.nome.length - a.c.nome.length);
+
+    const match = scored[0]?.c;
+    if (match) {
+      console.log(`[COTACAO] ✅ cobertura resolvida via API: "${nome}" → ${match.id} (${match.nome})`);
+      return match.id;
+    }
+  } catch (e: any) {
+    console.warn(`[COTACAO] ⚠️ Falha ao buscar coberturas via API: ${e.message}`);
+  }
+
+  return null;
+}
+
 export async function buscarEnderecoPorCep(cep: string): Promise<Endereco | null> {
   const digits = cep.replace(/\D/g, '');
   if (digits.length !== 8) return null;
