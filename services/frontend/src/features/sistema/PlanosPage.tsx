@@ -12,9 +12,8 @@ import { PackageOpen, RefreshCw, Plus, Pencil, Check, X, Loader2, Link2 } from '
 // ── Tipos ─────────────────────────────────────────────────────────────────
 interface Preco { modalidade: string; valor: number; valor_tabela: number; valor_promocional: number; ativo: boolean; }
 interface Plano { id: number; slug: string; nome: string; descricao: string; ativo: boolean; precos: Preco[]; }
-interface CoberturaApi { id: number; plano_nome: string; plano_slug: string; uf: string; cobertura_uuid: string; valor: number; sincronizado_em: string; plano_nome_local: string; }
+interface CoberturaApi { id: number; plano_nome: string; plano_slug: string; uf: string; cobertura_uuid: string; valor: number; sincronizado_em: string; }
 
-// ── Helpers ──────────────────────────────────────────────────────────────
 const moeda = (v: number) => v != null ? `R$ ${Number(v).toFixed(2).replace('.', ',')}` : '—';
 
 // ── Tab: Planos & Preços ─────────────────────────────────────────────────
@@ -22,14 +21,14 @@ const PlanosTab: React.FC = () => {
   const [planos, setPlanos] = useState<Plano[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<any>({});
+  const [editForm, setEditForm] = useState<Partial<Plano>>({});
   const [novoPlano, setNovoPlano] = useState({ slug: '', nome: '', descricao: '' });
   const [showNovo, setShowNovo] = useState(false);
-  const [precoForm, setPrecoForm] = useState<{ [slug: string]: { modalidade: string; valor: string } }>({});
+  const [precoForm, setPrecoForm] = useState<Record<string, { modalidade: string; valor: string }>>({});
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    try { const d = await api('/api/config/planos'); setPlanos(d.planos || []); }
+    try { const d = await api.get<{ planos: Plano[] }>('/api/config/planos'); setPlanos(d.planos || []); }
     catch { setPlanos([]); }
     finally { setLoading(false); }
   }, []);
@@ -37,14 +36,14 @@ const PlanosTab: React.FC = () => {
   useEffect(() => { carregar(); }, [carregar]);
 
   const salvarPlano = async (slug: string) => {
-    await api(`/api/config/planos/${slug}`, { method: 'PATCH', body: JSON.stringify(editForm) });
+    await api.patch(`/api/config/planos/${slug}`, editForm);
     setEditing(null);
     carregar();
   };
 
   const criarPlano = async () => {
     if (!novoPlano.slug || !novoPlano.nome) return;
-    await api('/api/config/planos', { method: 'POST', body: JSON.stringify(novoPlano) });
+    await api.post('/api/config/planos', novoPlano);
     setNovoPlano({ slug: '', nome: '', descricao: '' });
     setShowNovo(false);
     carregar();
@@ -53,10 +52,7 @@ const PlanosTab: React.FC = () => {
   const adicionarPreco = async (slug: string) => {
     const f = precoForm[slug];
     if (!f?.modalidade || !f?.valor) return;
-    await api(`/api/config/planos/${slug}/preco`, {
-      method: 'POST',
-      body: JSON.stringify({ modalidade: f.modalidade, valor: parseFloat(f.valor) }),
-    });
+    await api.post(`/api/config/planos/${slug}/preco`, { modalidade: f.modalidade, valor: parseFloat(f.valor) });
     setPrecoForm(prev => ({ ...prev, [slug]: { modalidade: 'cartao', valor: '' } }));
     carregar();
   };
@@ -91,18 +87,18 @@ const PlanosTab: React.FC = () => {
             <PackageOpen className="w-5 h-5 text-indigo-500 shrink-0" />
             {editing === p.slug ? (
               <div className="flex gap-2 flex-1">
-                <Input value={editForm.nome ?? p.nome} onChange={e => setEditForm((f: any) => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" />
-                <Input value={editForm.descricao ?? p.descricao ?? ''} onChange={e => setEditForm((f: any) => ({ ...f, descricao: e.target.value }))} className="h-8 text-sm" placeholder="Descrição" />
+                <Input value={editForm.nome ?? p.nome} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" />
+                <Input value={editForm.descricao ?? p.descricao ?? ''} onChange={e => setEditForm(f => ({ ...f, descricao: e.target.value }))} className="h-8 text-sm" placeholder="Descrição" />
                 <Button size="sm" onClick={() => salvarPlano(p.slug)}><Check className="w-4 h-4" /></Button>
                 <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><X className="w-4 h-4" /></Button>
               </div>
             ) : (
-              <div className="flex items-center gap-3 flex-1">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
                 <span className="font-semibold text-slate-800">{p.nome}</span>
                 <span className="text-xs text-slate-400 font-mono">{p.slug}</span>
-                {p.descricao && <span className="text-xs text-slate-500">{p.descricao}</span>}
-                <Badge variant={p.ativo ? 'default' : 'secondary'} className="ml-auto">{p.ativo ? 'Ativo' : 'Inativo'}</Badge>
-                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditing(p.slug); setEditForm({}); }}>
+                {p.descricao && <span className="text-xs text-slate-500 truncate">{p.descricao}</span>}
+                <Badge variant={p.ativo ? 'default' : 'secondary'} className="ml-auto shrink-0">{p.ativo ? 'Ativo' : 'Inativo'}</Badge>
+                <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => { setEditing(p.slug); setEditForm({}); }}>
                   <Pencil className="w-3 h-3" />
                 </Button>
               </div>
@@ -111,11 +107,11 @@ const PlanosTab: React.FC = () => {
 
           <div className="p-4">
             <p className="text-xs font-medium text-slate-500 mb-2">Preços vigentes</p>
-            {(p.precos || []).length === 0 ? (
+            {!(p.precos?.length) ? (
               <p className="text-xs text-slate-400">Nenhum preço cadastrado</p>
             ) : (
               <div className="flex gap-4 flex-wrap">
-                {(p.precos || []).map(pr => (
+                {p.precos.map(pr => (
                   <div key={pr.modalidade} className="bg-slate-50 rounded-lg px-3 py-2 text-center">
                     <p className="text-xs text-slate-500 capitalize">{pr.modalidade}</p>
                     <p className="font-bold text-slate-800">{moeda(pr.valor)}</p>
@@ -130,7 +126,7 @@ const PlanosTab: React.FC = () => {
               <select
                 className="h-8 border border-slate-200 rounded-md px-2 text-xs text-slate-700 bg-white"
                 value={precoForm[p.slug]?.modalidade ?? 'cartao'}
-                onChange={e => setPrecoForm(prev => ({ ...prev, [p.slug]: { ...(prev[p.slug] || {}), modalidade: e.target.value } }))}
+                onChange={e => setPrecoForm(prev => ({ ...prev, [p.slug]: { ...(prev[p.slug] || { valor: '' }), modalidade: e.target.value } }))}
               >
                 <option value="cartao">Cartão</option>
                 <option value="boleto">Boleto</option>
@@ -140,7 +136,7 @@ const PlanosTab: React.FC = () => {
                 className="h-8 w-28 text-xs"
                 placeholder="Valor (R$)"
                 value={precoForm[p.slug]?.valor ?? ''}
-                onChange={e => setPrecoForm(prev => ({ ...prev, [p.slug]: { ...(prev[p.slug] || {}), valor: e.target.value } }))}
+                onChange={e => setPrecoForm(prev => ({ ...prev, [p.slug]: { ...(prev[p.slug] || { modalidade: 'cartao' }), valor: e.target.value } }))}
               />
               <Button size="sm" className="h-8" onClick={() => adicionarPreco(p.slug)}>
                 <Plus className="w-3 h-3 mr-1" /> Adicionar preço
@@ -159,13 +155,13 @@ const CoberturasApiTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [ufSync, setUfSync] = useState('MG');
-  const [syncResult, setSyncResult] = useState<string>('');
+  const [syncResult, setSyncResult] = useState('');
   const [novoMap, setNovoMap] = useState({ plano_nome: '', plano_slug: '', uf: '', cobertura_uuid: '', valor: '' });
   const [showNovo, setShowNovo] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
-    try { const d = await api('/api/config/planos/coberturas-api/lista'); setCoberturas(d.coberturas || []); }
+    try { const d = await api.get<{ coberturas: CoberturaApi[] }>('/api/config/planos/coberturas-api/lista'); setCoberturas(d.coberturas || []); }
     catch { setCoberturas([]); }
     finally { setLoading(false); }
   }, []);
@@ -174,32 +170,25 @@ const CoberturasApiTab: React.FC = () => {
 
   const sincronizar = async () => {
     if (!ufSync || !/^[A-Z]{2}$/i.test(ufSync)) return;
-    setSyncing(true);
-    setSyncResult('');
+    setSyncing(true); setSyncResult('');
     try {
-      const d = await api('/api/config/planos/coberturas-api/sincronizar', {
-        method: 'POST',
-        body: JSON.stringify({ uf: ufSync.toUpperCase() }),
-      });
+      const d = await api.post<{ sincronizados: number; uf: string }>('/api/config/planos/coberturas-api/sincronizar', { uf: ufSync.toUpperCase() });
       setSyncResult(`✅ ${d.sincronizados} planos sincronizados para ${d.uf}`);
       carregar();
-    } catch (e: any) {
-      setSyncResult(`❌ Erro: ${e.message}`);
-    } finally {
-      setSyncing(false);
-    }
+    } catch (e: any) { setSyncResult(`❌ ${e.message}`); }
+    finally { setSyncing(false); }
   };
 
   const remover = async (id: number) => {
-    await api(`/api/config/planos/coberturas-api/${id}`, { method: 'DELETE' });
+    await api.delete(`/api/config/planos/coberturas-api/${id}`);
     carregar();
   };
 
   const adicionarManual = async () => {
     if (!novoMap.plano_nome || !novoMap.uf || !novoMap.cobertura_uuid) return;
-    await api('/api/config/planos/coberturas-api', {
-      method: 'POST',
-      body: JSON.stringify({ ...novoMap, valor: novoMap.valor ? parseFloat(novoMap.valor) : undefined }),
+    await api.post('/api/config/planos/coberturas-api', {
+      ...novoMap,
+      valor: novoMap.valor ? parseFloat(novoMap.valor) : undefined,
     });
     setNovoMap({ plano_nome: '', plano_slug: '', uf: '', cobertura_uuid: '', valor: '' });
     setShowNovo(false);
@@ -212,7 +201,6 @@ const CoberturasApiTab: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      {/* Sync */}
       <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 flex flex-wrap gap-3 items-end">
         <div>
           <p className="text-xs font-medium text-slate-600 mb-1">Sincronizar coberturas da API por UF</p>
@@ -223,8 +211,8 @@ const CoberturasApiTab: React.FC = () => {
             </Button>
           </div>
         </div>
-        {syncResult && <p className="text-sm text-slate-600">{syncResult}</p>}
-        <Button size="sm" variant="outline" className="ml-auto" onClick={() => setShowNovo(!showNovo)}>
+        {syncResult && <p className="text-sm text-slate-600 self-end">{syncResult}</p>}
+        <Button size="sm" variant="outline" className="ml-auto self-end" onClick={() => setShowNovo(!showNovo)}>
           <Plus className="w-4 h-4 mr-1" /> Adicionar manual
         </Button>
       </div>
@@ -246,10 +234,11 @@ const CoberturasApiTab: React.FC = () => {
         </div>
       )}
 
-      {/* Lista por UF */}
       {ufs.length === 0 ? (
-        <div className="text-center py-12 text-slate-400 text-sm">
-          Nenhuma cobertura mapeada. Use "Sincronizar" para importar da API Plamev.
+        <div className="text-center py-16 text-slate-400">
+          <Link2 className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">Nenhuma cobertura mapeada ainda.</p>
+          <p className="text-xs mt-1">Use "Sincronizar" com a UF desejada (ex: MG) para importar da API Plamev.</p>
         </div>
       ) : (
         ufs.map(uf => (
@@ -260,13 +249,13 @@ const CoberturasApiTab: React.FC = () => {
               <span className="text-xs text-slate-400">({coberturas.filter(c => c.uf === uf).length} planos)</span>
             </div>
             <table className="w-full text-xs">
-              <thead className="bg-slate-50 text-slate-500">
+              <thead className="bg-slate-50/70 text-slate-500">
                 <tr>
-                  <th className="text-left px-4 py-2">Nome na API</th>
-                  <th className="text-left px-4 py-2">Slug local</th>
-                  <th className="text-left px-4 py-2 font-mono">UUID</th>
-                  <th className="text-right px-4 py-2">Valor</th>
-                  <th className="text-right px-4 py-2">Sincronizado</th>
+                  <th className="text-left px-4 py-2 font-medium">Nome na API</th>
+                  <th className="text-left px-4 py-2 font-medium">Slug local</th>
+                  <th className="text-left px-4 py-2 font-medium">UUID</th>
+                  <th className="text-right px-4 py-2 font-medium">Valor</th>
+                  <th className="text-right px-4 py-2 font-medium">Sincronizado</th>
                   <th className="px-4 py-2"></th>
                 </tr>
               </thead>
@@ -275,7 +264,7 @@ const CoberturasApiTab: React.FC = () => {
                   <tr key={c.id} className="border-t border-slate-50 hover:bg-slate-50/50">
                     <td className="px-4 py-2 font-medium text-slate-800">{c.plano_nome}</td>
                     <td className="px-4 py-2 text-slate-500 font-mono">{c.plano_slug || '—'}</td>
-                    <td className="px-4 py-2 text-slate-400 font-mono text-[10px] max-w-[180px] truncate">{c.cobertura_uuid}</td>
+                    <td className="px-4 py-2 text-slate-400 font-mono text-[10px] max-w-[200px] truncate" title={c.cobertura_uuid}>{c.cobertura_uuid}</td>
                     <td className="px-4 py-2 text-right text-slate-700">{c.valor ? moeda(c.valor) : '—'}</td>
                     <td className="px-4 py-2 text-right text-slate-400">{new Date(c.sincronizado_em).toLocaleDateString('pt-BR')}</td>
                     <td className="px-4 py-2 text-right">
@@ -307,7 +296,11 @@ export const PlanosPage: React.FC = () => {
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${tab === t ? 'bg-white border border-b-white border-slate-200 text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${
+              tab === t
+                ? 'bg-white border border-b-white border-slate-200 -mb-px text-indigo-600'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
           >
             {t === 'planos' ? 'Planos & Preços' : 'Coberturas API'}
           </button>
