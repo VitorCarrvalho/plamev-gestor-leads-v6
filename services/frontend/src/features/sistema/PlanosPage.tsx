@@ -10,81 +10,11 @@ import { api } from '@/services/api';
 import { PackageOpen, RefreshCw, Plus, Pencil, Check, X, Loader2, Link2, Trash2 } from 'lucide-react';
 
 // ── Tipos ─────────────────────────────────────────────────────────────────
-interface Preco { id: number; modalidade: string; valor: number; valor_tabela: number | null; valor_promocional: number | null; valor_limite: number | null; ativo: boolean; }
+interface Preco { id: number; modalidade: string; valor: number; valor_tabela: number | null; valor_promocional: number | null; valor_oferta: number | null; valor_limite: number | null; ativo: boolean; }
 interface Plano { id: number; slug: string; nome: string; descricao: string; ativo: boolean; precos: Preco[]; }
 interface CoberturaApi { id: number; plano_nome: string; plano_slug: string; uf: string; cobertura_uuid: string; valor: number; sincronizado_em: string; }
 
-const moeda = (v: number) => v != null ? `R$ ${Number(v).toFixed(2).replace('.', ',')}` : '—';
-
-// ── Linha de preço editável ───────────────────────────────────────────────
-interface PrecoRowProps { preco: Preco; onSave: (id: number, vals: Partial<Preco>) => void; onDelete: (id: number) => void; }
-const parseValor = (v: string): number | null => {
-  const n = parseFloat(v.replace(',', '.'));
-  return isNaN(n) ? null : n;
-};
-
-const PrecoRow: React.FC<PrecoRowProps> = ({ preco, onSave, onDelete }) => {
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({
-    valor: String(preco.valor).replace('.', ','),
-    valor_tabela: preco.valor_tabela != null ? String(preco.valor_tabela).replace('.', ',') : '',
-    valor_promocional: preco.valor_promocional != null ? String(preco.valor_promocional).replace('.', ',') : '',
-  });
-
-  const save = () => {
-    const valor = parseValor(form.valor);
-    if (valor === null) return;
-    onSave(preco.id, {
-      valor,
-      valor_tabela: form.valor_tabela ? parseValor(form.valor_tabela) : null,
-      valor_promocional: form.valor_promocional ? parseValor(form.valor_promocional) : null,
-    });
-    setEditing(false);
-  };
-
-  const LABEL: Record<string, string> = { cartao: 'Cartão', boleto: 'Boleto', pix: 'PIX' };
-
-  if (editing) {
-    return (
-      <div className="border border-indigo-200 rounded-lg p-3 bg-indigo-50/40 space-y-2 min-w-[220px]">
-        <p className="text-xs font-semibold text-indigo-700 capitalize">{LABEL[preco.modalidade] ?? preco.modalidade}</p>
-        <div className="space-y-1">
-          <label className="text-[10px] text-slate-500">Valor cobrado</label>
-          <Input className="h-7 text-xs" value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} placeholder="Ex: 119,99" />
-        </div>
-        <div className="space-y-1">
-          <label className="text-[10px] text-slate-500">Valor tabela (riscado)</label>
-          <Input className="h-7 text-xs" value={form.valor_tabela} onChange={e => setForm(f => ({ ...f, valor_tabela: e.target.value }))} placeholder="Ex: 139,99" />
-        </div>
-        <div className="space-y-1">
-          <label className="text-[10px] text-slate-500">Valor promocional</label>
-          <Input className="h-7 text-xs" value={form.valor_promocional} onChange={e => setForm(f => ({ ...f, valor_promocional: e.target.value }))} placeholder="Opcional" />
-        </div>
-        <div className="flex gap-1 pt-1">
-          <Button size="sm" className="h-7 text-xs flex-1" onClick={save}><Check className="w-3 h-3 mr-1" />Salvar</Button>
-          <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditing(false)}><X className="w-3 h-3" /></Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="group relative bg-slate-50 rounded-lg px-3 py-2 text-center min-w-[100px]">
-      <p className="text-xs text-slate-500 capitalize">{LABEL[preco.modalidade] ?? preco.modalidade}</p>
-      <p className="font-bold text-slate-800">{moeda(preco.valor)}</p>
-      {preco.valor_tabela != null && <p className="text-xs text-slate-400 line-through">{moeda(preco.valor_tabela)}</p>}
-      {preco.valor_promocional != null && <p className="text-xs text-green-600 font-medium">Promo: {moeda(preco.valor_promocional)}</p>}
-      <div className="absolute top-1 right-1 hidden group-hover:flex gap-0.5">
-        <button className="p-0.5 text-slate-400 hover:text-indigo-600 transition-colors" onClick={() => setEditing(true)}>
-          <Pencil className="w-3 h-3" />
-        </button>
-        <button className="p-0.5 text-slate-400 hover:text-red-500 transition-colors" onClick={() => onDelete(preco.id)}>
-          <Trash2 className="w-3 h-3" />
-        </button>
-      </div>
-    </div>
-  );
-};
+const moeda = (v: any) => v != null ? `R$ ${Number(v).toFixed(2).replace('.', ',')}` : '—';
 
 // ── Tab: Planos & Preços ─────────────────────────────────────────────────
 const PlanosTab: React.FC = () => {
@@ -94,7 +24,6 @@ const PlanosTab: React.FC = () => {
   const [editForm, setEditForm] = useState<Partial<Plano>>({});
   const [novoPlano, setNovoPlano] = useState({ slug: '', nome: '', descricao: '' });
   const [showNovo, setShowNovo] = useState(false);
-  const [precoForm, setPrecoForm] = useState<Record<string, { modalidade: string; valor: string }>>({});
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -119,36 +48,27 @@ const PlanosTab: React.FC = () => {
     carregar();
   };
 
-  const adicionarPreco = async (slug: string) => {
-    const f = precoForm[slug];
-    if (!f?.modalidade || !f?.valor) return;
-    await api.post(`/api/config/planos/${slug}/preco`, { modalidade: f.modalidade, valor: parseValor(f.valor) });
-    setPrecoForm(prev => ({ ...prev, [slug]: { modalidade: 'cartao', valor: '' } }));
-    carregar();
-  };
-
-  const editarPreco = async (id: number, vals: Partial<Preco>) => {
-    await api.patch(`/api/config/planos/preco/${id}`, vals as object);
-    carregar();
-  };
-
-  const removerPreco = async (id: number) => {
-    if (!confirm('Remover este preço?')) return;
-    await api.delete(`/api/config/planos/preco/${id}`);
-    carregar();
+  const renderPriceCell = (precos: Preco[], modalidade: string, field: keyof Preco) => {
+    const p = precos?.find(item => item.modalidade === modalidade);
+    const value = p ? p[field] : null;
+    return (
+      <td className={`px-4 py-3 text-center text-xs ${field === 'valor_promocional' ? 'text-indigo-600 font-bold' : field === 'valor_oferta' ? 'text-blue-500' : field === 'valor_limite' ? 'text-emerald-500 font-medium' : 'text-slate-400'}`}>
+        {moeda(value)}
+      </td>
+    );
   };
 
   if (loading) return <div className="flex items-center gap-2 p-8 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Carregando planos...</div>;
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center px-2">
         <p className="text-sm text-slate-500">{planos.length} planos cadastrados</p>
         <Button size="sm" onClick={() => setShowNovo(!showNovo)}><Plus className="w-4 h-4 mr-1" /> Novo Plano</Button>
       </div>
 
       {showNovo && (
-        <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50/50 space-y-2">
+        <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50/50 space-y-2 mx-2">
           <p className="text-sm font-medium text-indigo-700">Novo Plano</p>
           <div className="grid grid-cols-3 gap-2">
             <Input placeholder="slug (ex: advance_plus)" value={novoPlano.slug} onChange={e => setNovoPlano(p => ({ ...p, slug: e.target.value }))} />
@@ -162,71 +82,82 @@ const PlanosTab: React.FC = () => {
         </div>
       )}
 
-      {planos.map(p => (
-        <div key={p.slug} className="border border-slate-200 rounded-xl bg-white">
-          {/* Cabeçalho do plano */}
-          <div className="flex items-center gap-3 p-4 border-b border-slate-100">
-            <PackageOpen className="w-5 h-5 text-indigo-500 shrink-0" />
-            {editing === p.slug ? (
-              <div className="flex gap-2 flex-1">
-                <Input value={editForm.nome ?? p.nome} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" placeholder="Nome" />
-                <Input value={editForm.descricao ?? p.descricao ?? ''} onChange={e => setEditForm(f => ({ ...f, descricao: e.target.value }))} className="h-8 text-sm" placeholder="Descrição" />
-                <Button size="sm" onClick={() => salvarPlano(p.slug)}><Check className="w-4 h-4" /></Button>
-                <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><X className="w-4 h-4" /></Button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 flex-1 min-w-0">
-                <span className="font-semibold text-slate-800">{p.nome}</span>
-                <span className="text-xs text-slate-400 font-mono">{p.slug}</span>
-                {p.descricao && <span className="text-xs text-slate-500 truncate">{p.descricao}</span>}
-                <Badge variant={p.ativo ? 'default' : 'secondary'} className="ml-auto shrink-0">{p.ativo ? 'Ativo' : 'Inativo'}</Badge>
-                <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => { setEditing(p.slug); setEditForm({}); }}>
-                  <Pencil className="w-3 h-3" />
-                </Button>
-              </div>
-            )}
-          </div>
+      <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50/80 border-b border-slate-200">
+            <tr>
+              <th rowSpan={2} className="text-left px-6 py-4 font-bold text-slate-600 uppercase tracking-wider text-[10px]">Plano</th>
+              <th colSpan={4} className="text-center px-4 py-2 font-bold text-indigo-700 uppercase tracking-wider text-[10px] border-l border-slate-200 bg-indigo-50/30">
+                <div className="flex items-center justify-center gap-2">
+                   <PackageOpen className="w-3 h-3" /> CARTÃO DE CRÉDITO
+                </div>
+              </th>
+              <th colSpan={4} className="text-center px-4 py-2 font-bold text-emerald-700 uppercase tracking-wider text-[10px] border-l border-slate-200 bg-emerald-50/30">
+                <div className="flex items-center justify-center gap-2">
+                   <RefreshCw className="w-3 h-3" /> PIX / BOLETO
+                </div>
+              </th>
+              <th rowSpan={2} className="text-center px-4 py-4 font-bold text-slate-600 uppercase tracking-wider text-[10px] border-l border-slate-200">Ações</th>
+            </tr>
+            <tr className="bg-slate-50/40">
+              <th className="text-center px-4 py-2 font-medium text-slate-400 text-[9px] border-l border-slate-100 uppercase">Tabela</th>
+              <th className="text-center px-4 py-2 font-medium text-indigo-400 text-[9px] uppercase">Promocional</th>
+              <th className="text-center px-4 py-2 font-medium text-blue-400 text-[9px] uppercase">Oferta</th>
+              <th className="text-center px-4 py-2 font-medium text-emerald-400 text-[9px] uppercase">Limite</th>
+              
+              <th className="text-center px-4 py-2 font-medium text-slate-400 text-[9px] border-l border-slate-200 uppercase">Tabela</th>
+              <th className="text-center px-4 py-2 font-medium text-indigo-400 text-[9px] uppercase">Promocional</th>
+              <th className="text-center px-4 py-2 font-medium text-blue-400 text-[9px] uppercase">Oferta</th>
+              <th className="text-center px-4 py-2 font-medium text-emerald-400 text-[9px] uppercase">Limite</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {planos.map(p => (
+              <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
+                <td className="px-6 py-4">
+                  {editing === p.slug ? (
+                    <div className="space-y-1">
+                      <Input value={editForm.nome ?? p.nome} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} className="h-7 text-xs" />
+                      <Input value={editForm.descricao ?? p.descricao ?? ''} onChange={e => setEditForm(f => ({ ...f, descricao: e.target.value }))} className="h-7 text-xs" placeholder="Desc" />
+                      <div className="flex gap-1">
+                        <Button size="sm" className="h-6 px-2 text-[10px]" onClick={() => salvarPlano(p.slug)}>Ok</Button>
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setEditing(null)}>X</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="font-bold text-slate-700">{p.nome}</p>
+                      <p className="text-[10px] text-slate-400 font-mono lowercase">{p.slug}</p>
+                    </div>
+                  )}
+                </td>
 
-          {/* Preços */}
-          <div className="p-4">
-            <p className="text-xs font-medium text-slate-500 mb-3">Preços <span className="font-normal text-slate-400">(passe o mouse para editar ou remover)</span></p>
-            <div className="flex gap-3 flex-wrap items-start">
-              {!(p.precos?.length) ? (
-                <p className="text-xs text-slate-400">Nenhum preço cadastrado</p>
-              ) : (
-                p.precos.map(pr => (
-                  <PrecoRow key={pr.id} preco={pr} onSave={editarPreco} onDelete={removerPreco} />
-                ))
-              )}
-            </div>
+                {/* Cartão de Crédito */}
+                {renderPriceCell(p.precos, 'cartao', 'valor_tabela')}
+                {renderPriceCell(p.precos, 'cartao', 'valor_promocional')}
+                {renderPriceCell(p.precos, 'cartao', 'valor_oferta')}
+                {renderPriceCell(p.precos, 'cartao', 'valor_limite')}
 
-            {/* Adicionar novo preço */}
-            <div className="flex gap-2 mt-4 items-center pt-3 border-t border-slate-100">
-              <select
-                className="h-8 border border-slate-200 rounded-md px-2 text-xs text-slate-700 bg-white"
-                value={precoForm[p.slug]?.modalidade ?? 'cartao'}
-                onChange={e => setPrecoForm(prev => ({ ...prev, [p.slug]: { ...(prev[p.slug] || { valor: '' }), modalidade: e.target.value } }))}
-              >
-                <option value="cartao">Cartão</option>
-                <option value="boleto">Boleto</option>
-                <option value="pix">PIX</option>
-              </select>
-              <Input
-                className="h-8 w-28 text-xs"
-                placeholder="Valor (R$)"
-                value={precoForm[p.slug]?.valor ?? ''}
-                onChange={e => setPrecoForm(prev => ({ ...prev, [p.slug]: { ...(prev[p.slug] || { modalidade: 'cartao' }), valor: e.target.value } }))}
-              />
-              <Button size="sm" variant="outline" className="h-8" onClick={() => adicionarPreco(p.slug)}>
-                <Plus className="w-3 h-3 mr-1" /> Adicionar modalidade
-              </Button>
-            </div>
-          </div>
-        </div>
-      ))}
+                {/* Pix / Boleto (usando 'pix' como base, pois boleto costuma ser igual) */}
+                {renderPriceCell(p.precos, 'pix', 'valor_tabela')}
+                {renderPriceCell(p.precos, 'pix', 'valor_promocional')}
+                {renderPriceCell(p.precos, 'pix', 'valor_oferta')}
+                {renderPriceCell(p.precos, 'pix', 'valor_limite')}
+
+                <td className="px-4 py-3 text-center border-l border-slate-100">
+                  <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => { setEditing(p.slug); setEditForm({}); }}>
+                    <Pencil className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
+
 
 // ── Tab: Coberturas API ───────────────────────────────────────────────────
 const CoberturasApiTab: React.FC = () => {

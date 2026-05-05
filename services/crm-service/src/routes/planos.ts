@@ -21,13 +21,19 @@ planosRouter.get('/', autenticar, async (_req, res) => {
             'valor',      pr.valor,
             'valor_tabela', pr.valor_tabela,
             'valor_promocional', pr.valor_promocional,
+            'valor_oferta', pr.valor_oferta,
             'valor_limite', pr.valor_limite,
             'ativo', pr.ativo,
             'vigencia_inicio', pr.vigencia_inicio
           ) ORDER BY pr.modalidade
         ) FILTER (WHERE pr.id IS NOT NULL) AS precos
       FROM planos p
-      LEFT JOIN precos pr ON pr.plano_id = p.id AND pr.ativo = true
+      LEFT JOIN (
+        SELECT DISTINCT ON (plano_id, modalidade) *
+        FROM precos
+        WHERE ativo = true
+        ORDER BY plano_id, modalidade, vigencia_inicio DESC
+      ) pr ON pr.plano_id = p.id
       GROUP BY p.id
       ORDER BY p.id
     `);

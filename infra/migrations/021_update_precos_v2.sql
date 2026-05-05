@@ -3,6 +3,9 @@
 
 BEGIN;
 
+-- Primeiro desativa todos os preços atuais para evitar duplicidade de vigência ativa
+UPDATE precos SET ativo = false;
+
 INSERT INTO precos (
   plano_id,
   modalidade,
