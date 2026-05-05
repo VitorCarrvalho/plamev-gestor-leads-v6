@@ -150,15 +150,15 @@ class ProcessadorMensagem {
         await this.db.run('UPDATE conversas SET sender_chip=$1 WHERE id=$2', [msg.senderChip, conversa.id]).catch(() => {});
       }
 
-      // ── 4. Verificar se IA está silenciada ─────────────────
-      if (conversa.ia_silenciada) {
-        console.log(`[PROCESSOR] IA silenciada para ${msg.phone} — ignorando`);
-        return;
-      }
-
-      // ── 5. Salvar mensagem do cliente ──────────────────────
+      // ── 5. Salvar mensagem do cliente (ANTES de checar ia_silenciada) ──
       const conteudoSalvar = msg.audio && !msg.texto ? `🎤 ${texto}` : texto;
       await this.db.salvarMensagem(conversa.id, 'user', conteudoSalvar, 'humano', `${msg.canal}:${msg.id}`);
+
+      // ── 4. Verificar se IA está silenciada ─────────────────
+      if (conversa.ia_silenciada) {
+        console.log(`[PROCESSOR] IA silenciada para ${msg.phone} — mensagem salva, mas IA não responde`);
+        return;
+      }
 
       // ── 5a. Detectar vínculos emocionais e objeções no texto ────────────────
       const textoLower = (texto || '').toLowerCase();

@@ -346,7 +346,17 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
 
   // ── Verificar se IA está silenciada ──────────────────────────
   if (conversaAtual?.ia_silenciada) {
-    console.log(`${tag} 🔇 IA silenciada para esta conversa — ignorando mensagem`);
+    console.log(`${tag} 🔇 IA silenciada para esta conversa — salvando mensagem mas não respondendo`);
+
+    // Salvar a mensagem do cliente no CRM mesmo com IA silenciada,
+    // para que o chat continue atualizado e o histórico fique completo
+    try {
+      await persistInteraction(msg, '', {});
+      console.log(`${tag} 🔇 Mensagem do cliente persistida (IA silenciada)`);
+    } catch (e: any) {
+      console.error(`${tag} ❌ Falha ao persistir msg com IA silenciada: ${e.message}`);
+    }
+
     ctxSpan.end({ output: { skipped: true, reason: 'ia_silenciada' } });
     trace.update({
       output: 'skipped_ia_silenciada',
