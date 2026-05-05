@@ -304,11 +304,17 @@ export async function buscarContextoConversaAtiva(orgId: string, phone: string, 
        c.score,
        c.status,
        c.ia_silenciada,
+       c.plano_recomendado,
        cl.nome AS tutor_nome,
        pp.nome AS nome_pet,
        pp.especie,
        pp.raca,
-       pp.idade_anos
+       pp.idade_anos,
+       pp.sexo,
+       pp.cep,
+       pp.email,
+       pp.cpf,
+       pp.data_nascimento
      FROM conversas c
      JOIN clientes cl ON cl.id = c.client_id
      LEFT JOIN perfil_pet pp ON pp.client_id = c.client_id

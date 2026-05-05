@@ -75,18 +75,18 @@ async function dispararCotacao(
 ) {
   const tag = `[COTACAO] ${msg.phone}`;
   try {
-    // Extrai dados do lead dos dados_extraidos + conversa
+    // Extrai dados do lead dos dados_extraidos + conversa + perfil_pet
     // Suporta chaves abreviadas (nc/np/ep/rp/cp/em/dn/sx/ci) e chaves completas
     const nomeCliente = dados.nome || dados.nc || dados.tutor_nome || conversaAtual?.tutor_nome || msg.nome || '';
-    const email       = dados.email || dados.em || '';
+    const email       = dados.email || dados.em || conversaAtual?.email || '';
     const telefone    = dados.telefone || msg.phone || '';
-    const cepRaw      = dados.cep || dados.cp || '';
+    const cepRaw      = dados.cep || dados.cp || conversaAtual?.cep || '';
     const petNome     = dados.pet_nome || dados.nome_pet || dados.np || conversaAtual?.nome_pet || '';
-    const petNasc     = formatarDataNascimento(dados.pet_nascimento || dados.data_nascimento || dados.dn || '') || '';
-    const petSexo     = dados.pet_sexo || dados.sexo || dados.sx || 'Macho';
+    const petNasc     = formatarDataNascimento(dados.pet_nascimento || dados.data_nascimento || dados.dn || conversaAtual?.data_nascimento || '') || '';
+    const petSexo     = dados.pet_sexo || dados.sexo || dados.sx || conversaAtual?.sexo || 'Macho';
     const petEspecie  = (dados.pet_especie || dados.especie || dados.ep || '2') as '1' | '2';
     const petRacaNome = dados.pet_raca || dados.raca || dados.rp || conversaAtual?.raca || '';
-    const coberturaId = dados.cobertura_id || dados.coberturasId || dados.ci || '';
+    const coberturaId = dados.cobertura_id || dados.coberturasId || dados.ci || conversaAtual?.plano_recomendado || '';
 
     if (!nomeCliente || !email || !coberturaId || !cepRaw) {
       console.warn(`${tag} ⚠️ Dados insuficientes para cotação (nome=${!!nomeCliente} email=${!!email} cobertura=${!!coberturaId} cep=${!!cepRaw})`);
@@ -681,8 +681,14 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   });
 
   // ── Cotação: disparo não-bloqueante após pipeline ─────────────
-  if (generation.acoes?.includes('solicitar_cotacao')) {
-    console.log(`${tag} 🧾 Ação solicitar_cotacao detectada — disparando cotação`);
+  // Trigger 1: LLM explicitamente incluiu a ação no JSON
+  const llmPediuCotacao = generation.acoes?.includes('solicitar_cotacao');
+  // Trigger 2: fallback por texto — LLM prometeu cotação mas não setou a ação
+  const textoPediuCotacao = !llmPediuCotacao && /gerando sua cotação|mando o pdf|enviando (a cotação|o pdf)|estou gerando|aqui está (sua cotação|o pdf)|gerando agora|aqui (vai|vai) (sua cotação|o pdf)/i.test(resposta);
+
+  if (llmPediuCotacao || textoPediuCotacao) {
+    if (textoPediuCotacao) console.log(`${tag} 🧾 Cotação detectada por texto (fallback) — disparando cotação`);
+    else console.log(`${tag} 🧾 Ação solicitar_cotacao detectada — disparando cotação`);
     dispararCotacao(msg, generation.dados_extraidos ?? {}, conversaAtual).catch(() => {});
   }
 
