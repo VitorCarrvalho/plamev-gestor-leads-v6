@@ -16,6 +16,7 @@ planosRouter.get('/', autenticar, async (_req, res) => {
         p.id, p.slug, p.nome, p.descricao, p.ativo,
         json_agg(
           json_build_object(
+            'id', pr.id,
             'modalidade', pr.modalidade,
             'valor',      pr.valor,
             'valor_tabela', pr.valor_tabela,
@@ -91,6 +92,27 @@ planosRouter.post('/:slug/preco', soAdmin, async (req, res) => {
                      valor_promocional=EXCLUDED.valor_promocional, valor_limite=EXCLUDED.valor_limite, ativo=true`,
       [plano.id, modalidade, valor, valor_tabela || null, valor_promocional || null, valor_limite || null],
     );
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
+});
+
+// ── Editar preço pelo id ─────────────────────────────────────────────────
+planosRouter.patch('/preco/:id', soAdmin, async (req, res) => {
+  const { valor, valor_tabela, valor_promocional, valor_limite } = req.body || {};
+  if (valor === undefined) { res.status(400).json({ erro: 'valor obrigatório' }); return; }
+  try {
+    await execute(
+      `UPDATE precos SET valor=$1, valor_tabela=$2, valor_promocional=$3, valor_limite=$4 WHERE id=$5`,
+      [valor, valor_tabela ?? null, valor_promocional ?? null, valor_limite ?? null, req.params.id],
+    );
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
+});
+
+// ── Remover preço pelo id ────────────────────────────────────────────────
+planosRouter.delete('/preco/:id', soAdmin, async (req, res) => {
+  try {
+    await execute('DELETE FROM precos WHERE id=$1', [req.params.id]);
     res.json({ ok: true });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });

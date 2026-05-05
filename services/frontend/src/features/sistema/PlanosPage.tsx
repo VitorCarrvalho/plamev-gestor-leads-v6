@@ -7,14 +7,73 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { api } from '@/services/api';
-import { PackageOpen, RefreshCw, Plus, Pencil, Check, X, Loader2, Link2 } from 'lucide-react';
+import { PackageOpen, RefreshCw, Plus, Pencil, Check, X, Loader2, Link2, Trash2 } from 'lucide-react';
 
 // ── Tipos ─────────────────────────────────────────────────────────────────
-interface Preco { modalidade: string; valor: number; valor_tabela: number; valor_promocional: number; ativo: boolean; }
+interface Preco { id: number; modalidade: string; valor: number; valor_tabela: number | null; valor_promocional: number | null; valor_limite: number | null; ativo: boolean; }
 interface Plano { id: number; slug: string; nome: string; descricao: string; ativo: boolean; precos: Preco[]; }
 interface CoberturaApi { id: number; plano_nome: string; plano_slug: string; uf: string; cobertura_uuid: string; valor: number; sincronizado_em: string; }
 
 const moeda = (v: number) => v != null ? `R$ ${Number(v).toFixed(2).replace('.', ',')}` : '—';
+
+// ── Linha de preço editável ───────────────────────────────────────────────
+interface PrecoRowProps { preco: Preco; onSave: (id: number, vals: Partial<Preco>) => void; onDelete: (id: number) => void; }
+const PrecoRow: React.FC<PrecoRowProps> = ({ preco, onSave, onDelete }) => {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ valor: String(preco.valor), valor_tabela: String(preco.valor_tabela ?? ''), valor_promocional: String(preco.valor_promocional ?? '') });
+
+  const save = () => {
+    onSave(preco.id, {
+      valor: parseFloat(form.valor) || preco.valor,
+      valor_tabela: form.valor_tabela ? parseFloat(form.valor_tabela) : null,
+      valor_promocional: form.valor_promocional ? parseFloat(form.valor_promocional) : null,
+    });
+    setEditing(false);
+  };
+
+  const LABEL: Record<string, string> = { cartao: 'Cartão', boleto: 'Boleto', pix: 'PIX' };
+
+  if (editing) {
+    return (
+      <div className="border border-indigo-200 rounded-lg p-3 bg-indigo-50/40 space-y-2 min-w-[220px]">
+        <p className="text-xs font-semibold text-indigo-700 capitalize">{LABEL[preco.modalidade] ?? preco.modalidade}</p>
+        <div className="space-y-1">
+          <label className="text-[10px] text-slate-500">Valor cobrado</label>
+          <Input className="h-7 text-xs" value={form.valor} onChange={e => setForm(f => ({ ...f, valor: e.target.value }))} placeholder="Ex: 119.99" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] text-slate-500">Valor tabela (riscado)</label>
+          <Input className="h-7 text-xs" value={form.valor_tabela} onChange={e => setForm(f => ({ ...f, valor_tabela: e.target.value }))} placeholder="Ex: 139.99" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] text-slate-500">Valor promocional</label>
+          <Input className="h-7 text-xs" value={form.valor_promocional} onChange={e => setForm(f => ({ ...f, valor_promocional: e.target.value }))} placeholder="Opcional" />
+        </div>
+        <div className="flex gap-1 pt-1">
+          <Button size="sm" className="h-7 text-xs flex-1" onClick={save}><Check className="w-3 h-3 mr-1" />Salvar</Button>
+          <Button size="sm" variant="ghost" className="h-7" onClick={() => setEditing(false)}><X className="w-3 h-3" /></Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group relative bg-slate-50 rounded-lg px-3 py-2 text-center min-w-[100px]">
+      <p className="text-xs text-slate-500 capitalize">{LABEL[preco.modalidade] ?? preco.modalidade}</p>
+      <p className="font-bold text-slate-800">{moeda(preco.valor)}</p>
+      {preco.valor_tabela != null && <p className="text-xs text-slate-400 line-through">{moeda(preco.valor_tabela)}</p>}
+      {preco.valor_promocional != null && <p className="text-xs text-green-600 font-medium">Promo: {moeda(preco.valor_promocional)}</p>}
+      <div className="absolute top-1 right-1 hidden group-hover:flex gap-0.5">
+        <button className="p-0.5 text-slate-400 hover:text-indigo-600 transition-colors" onClick={() => setEditing(true)}>
+          <Pencil className="w-3 h-3" />
+        </button>
+        <button className="p-0.5 text-slate-400 hover:text-red-500 transition-colors" onClick={() => onDelete(preco.id)}>
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+  );
+};
 
 // ── Tab: Planos & Preços ─────────────────────────────────────────────────
 const PlanosTab: React.FC = () => {
@@ -57,6 +116,17 @@ const PlanosTab: React.FC = () => {
     carregar();
   };
 
+  const editarPreco = async (id: number, vals: Partial<Preco>) => {
+    await api.patch(`/api/config/planos/preco/${id}`, vals as object);
+    carregar();
+  };
+
+  const removerPreco = async (id: number) => {
+    if (!confirm('Remover este preço?')) return;
+    await api.delete(`/api/config/planos/preco/${id}`);
+    carregar();
+  };
+
   if (loading) return <div className="flex items-center gap-2 p-8 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Carregando planos...</div>;
 
   return (
@@ -83,11 +153,12 @@ const PlanosTab: React.FC = () => {
 
       {planos.map(p => (
         <div key={p.slug} className="border border-slate-200 rounded-xl bg-white">
+          {/* Cabeçalho do plano */}
           <div className="flex items-center gap-3 p-4 border-b border-slate-100">
             <PackageOpen className="w-5 h-5 text-indigo-500 shrink-0" />
             {editing === p.slug ? (
               <div className="flex gap-2 flex-1">
-                <Input value={editForm.nome ?? p.nome} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" />
+                <Input value={editForm.nome ?? p.nome} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} className="h-8 text-sm" placeholder="Nome" />
                 <Input value={editForm.descricao ?? p.descricao ?? ''} onChange={e => setEditForm(f => ({ ...f, descricao: e.target.value }))} className="h-8 text-sm" placeholder="Descrição" />
                 <Button size="sm" onClick={() => salvarPlano(p.slug)}><Check className="w-4 h-4" /></Button>
                 <Button size="sm" variant="ghost" onClick={() => setEditing(null)}><X className="w-4 h-4" /></Button>
@@ -105,24 +176,21 @@ const PlanosTab: React.FC = () => {
             )}
           </div>
 
+          {/* Preços */}
           <div className="p-4">
-            <p className="text-xs font-medium text-slate-500 mb-2">Preços vigentes</p>
-            {!(p.precos?.length) ? (
-              <p className="text-xs text-slate-400">Nenhum preço cadastrado</p>
-            ) : (
-              <div className="flex gap-4 flex-wrap">
-                {p.precos.map(pr => (
-                  <div key={pr.modalidade} className="bg-slate-50 rounded-lg px-3 py-2 text-center">
-                    <p className="text-xs text-slate-500 capitalize">{pr.modalidade}</p>
-                    <p className="font-bold text-slate-800">{moeda(pr.valor)}</p>
-                    {pr.valor_tabela && <p className="text-xs text-slate-400 line-through">{moeda(pr.valor_tabela)}</p>}
-                    {pr.valor_promocional && <p className="text-xs text-green-600 font-medium">Promo: {moeda(pr.valor_promocional)}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
+            <p className="text-xs font-medium text-slate-500 mb-3">Preços <span className="font-normal text-slate-400">(passe o mouse para editar ou remover)</span></p>
+            <div className="flex gap-3 flex-wrap items-start">
+              {!(p.precos?.length) ? (
+                <p className="text-xs text-slate-400">Nenhum preço cadastrado</p>
+              ) : (
+                p.precos.map(pr => (
+                  <PrecoRow key={pr.id} preco={pr} onSave={editarPreco} onDelete={removerPreco} />
+                ))
+              )}
+            </div>
 
-            <div className="flex gap-2 mt-3 items-center">
+            {/* Adicionar novo preço */}
+            <div className="flex gap-2 mt-4 items-center pt-3 border-t border-slate-100">
               <select
                 className="h-8 border border-slate-200 rounded-md px-2 text-xs text-slate-700 bg-white"
                 value={precoForm[p.slug]?.modalidade ?? 'cartao'}
@@ -138,8 +206,8 @@ const PlanosTab: React.FC = () => {
                 value={precoForm[p.slug]?.valor ?? ''}
                 onChange={e => setPrecoForm(prev => ({ ...prev, [p.slug]: { ...(prev[p.slug] || { modalidade: 'cartao' }), valor: e.target.value } }))}
               />
-              <Button size="sm" className="h-8" onClick={() => adicionarPreco(p.slug)}>
-                <Plus className="w-3 h-3 mr-1" /> Adicionar preço
+              <Button size="sm" variant="outline" className="h-8" onClick={() => adicionarPreco(p.slug)}>
+                <Plus className="w-3 h-3 mr-1" /> Adicionar modalidade
               </Button>
             </div>
           </div>
