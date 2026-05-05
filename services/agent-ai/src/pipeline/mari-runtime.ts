@@ -140,14 +140,16 @@ Nunca invente nomes de plano, cobertura, clínica ou valor fora do que está no 
 export function buildGreetingResponse(conversaAtual?: ConversationSnapshot | null, isFirstContact = false) {
   const tutor = conversaAtual?.tutor_nome?.trim();
   const pet = conversaAtual?.nome_pet?.trim();
-  const greeting = tutor ? `Boa tarde, ${tutor}! 😊` : 'Boa tarde! 😊';
   if (isFirstContact) {
-    return `${greeting}\nSou a Mari, especialista da Plamev 🐾\nComo posso te ajudar hoje?`;
+    const intro = tutor
+      ? `Oii, ${tutor}! Tudo bem? 😊 Me chamo Mari, especialista aqui na Plamev 🐾`
+      : 'Oii, tudo bem? 😊 Me chamo Mari, especialista aqui na Plamev 🐾';
+    return `${intro}\nComo posso te ajudar?`;
   }
   const followup = pet
-    ? `Como posso te ajudar com o ${pet}?`
-    : 'Como posso te ajudar?';
-  return `${greeting}\n${followup}`;
+    ? `Oii${tutor ? `, ${tutor}` : ''}! 😊 Como posso te ajudar com o ${pet}?`
+    : `Oii${tutor ? `, ${tutor}` : ''}! 😊 Como posso te ajudar?`;
+  return followup;
 }
 
 export function formatProductCatalogPrompt(rows: CatalogRow[]) {
