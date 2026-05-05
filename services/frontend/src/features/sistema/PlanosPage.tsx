@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { api } from '@/services/api';
 import { PackageOpen, RefreshCw, Plus, Pencil, Check, X, Loader2, Link2, Trash2 } from 'lucide-react';
@@ -27,6 +28,7 @@ const PlanosTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Plano>>({});
+  const [pricesEditForm, setPricesEditForm] = useState<Record<number, Partial<Preco>>>({});
   const [novoPlano, setNovoPlano] = useState({ slug: '', nome: '', descricao: '' });
   const [showNovo, setShowNovo] = useState(false);
 
@@ -40,9 +42,25 @@ const PlanosTab: React.FC = () => {
   useEffect(() => { carregar(); }, [carregar]);
 
   const salvarPlano = async (slug: string) => {
-    await api.patch(`/api/config/planos/${slug}`, editForm);
-    setEditing(null);
-    carregar();
+    setLoading(true);
+    try {
+      // 1. Salva detalhes do plano
+      await api.patch(`/api/config/planos/${slug}`, editForm);
+
+      // 2. Salva todos os preços editados para este plano
+      const pricesToSave = Object.entries(pricesEditForm);
+      for (const [idStr, vals] of pricesToSave) {
+        await api.patch(`/api/config/planos/preco/${idStr}`, vals);
+      }
+
+      setEditing(null);
+      setPricesEditForm({});
+      await carregar();
+    } catch (e: any) {
+      alert('Erro ao salvar: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const criarPlano = async () => {
@@ -53,27 +71,52 @@ const PlanosTab: React.FC = () => {
     carregar();
   };
 
-  const renderPriceCell = (precos: Preco[], modalidade: string, field: keyof Preco) => {
-    const p = precos?.find(item => item.modalidade === modalidade);
-    const value = p ? p[field] : null;
+  const updatePriceField = (precoId: number, field: keyof Preco, value: string) => {
+    const n = parseValor(value);
+    setPricesEditForm(prev => ({
+      ...prev,
+      [precoId]: { ...(prev[precoId] || {}), [field]: n }
+    }));
+  };
+
+  const renderPriceCell = (p: Plano, modalidade: string, field: keyof Preco) => {
+    const preco = p.precos?.find(item => item.modalidade === modalidade);
+    if (!preco) return <td className="px-4 py-3 text-center text-xs text-slate-300">—</td>;
+
+    const isEditing = editing === p.slug;
+    const editedValue = pricesEditForm[preco.id]?.[field];
+    const displayValue = editedValue !== undefined ? editedValue : preco[field];
+
+    if (isEditing) {
+      return (
+        <td className="px-2 py-2 text-center border-l border-slate-100 bg-indigo-50/20">
+          <Input
+            className="h-7 text-[10px] text-center p-1 w-full min-w-[60px]"
+            defaultValue={String(preco[field] ?? '').replace('.', ',')}
+            onChange={e => updatePriceField(preco.id, field, e.target.value)}
+          />
+        </td>
+      );
+    }
+
     return (
-      <td className={`px-4 py-3 text-center text-xs ${field === 'valor_promocional' ? 'text-indigo-600 font-bold' : field === 'valor_oferta' ? 'text-blue-500' : field === 'valor_limite' ? 'text-emerald-500 font-medium' : 'text-slate-400'}`}>
-        {moeda(value)}
+      <td className={`px-4 py-3 text-center text-xs border-l border-slate-100 ${field === 'valor_promocional' ? 'text-indigo-600 font-bold' : field === 'valor_oferta' ? 'text-blue-500' : field === 'valor_limite' ? 'text-emerald-500 font-medium' : 'text-slate-400'}`}>
+        {moeda(displayValue)}
       </td>
     );
   };
 
-  if (loading) return <div className="flex items-center gap-2 p-8 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Carregando planos...</div>;
+  if (loading && !planos.length) return <div className="flex items-center gap-2 p-8 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Carregando planos...</div>;
 
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center px-2">
         <p className="text-sm text-slate-500">{planos.length} planos cadastrados</p>
-        <Button size="sm" onClick={() => setShowNovo(!showNovo)}><Plus className="w-4 h-4 mr-1" /> Novo Plano</Button>
+        <Button size="sm" onClick={() => setShowNovo(!showNovo)} disabled={loading}><Plus className="w-4 h-4 mr-1" /> Novo Plano</Button>
       </div>
 
       {showNovo && (
-        <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50/50 space-y-2 mx-2">
+        <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50/50 space-y-2 mx-2 shadow-sm animate-in fade-in slide-in-from-top-1">
           <p className="text-sm font-medium text-indigo-700">Novo Plano</p>
           <div className="grid grid-cols-3 gap-2">
             <Input placeholder="slug (ex: advance_plus)" value={novoPlano.slug} onChange={e => setNovoPlano(p => ({ ...p, slug: e.target.value }))} />
@@ -81,7 +124,7 @@ const PlanosTab: React.FC = () => {
             <Input placeholder="Descrição" value={novoPlano.descricao} onChange={e => setNovoPlano(p => ({ ...p, descricao: e.target.value }))} />
           </div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={criarPlano}><Check className="w-4 h-4 mr-1" /> Salvar</Button>
+            <Button size="sm" onClick={criarPlano} disabled={loading}><Check className="w-4 h-4 mr-1" /> Salvar</Button>
             <Button size="sm" variant="ghost" onClick={() => setShowNovo(false)}><X className="w-4 h-4" /></Button>
           </div>
         </div>
@@ -118,15 +161,17 @@ const PlanosTab: React.FC = () => {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {planos.map(p => (
-              <tr key={p.id} className="hover:bg-slate-50/50 transition-colors group">
+              <tr key={p.id} className={`transition-colors group ${editing === p.slug ? 'bg-indigo-50/10' : 'hover:bg-slate-50/50'}`}>
                 <td className="px-6 py-4">
                   {editing === p.slug ? (
                     <div className="space-y-1">
-                      <Input value={editForm.nome ?? p.nome} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} className="h-7 text-xs" />
-                      <Input value={editForm.descricao ?? p.descricao ?? ''} onChange={e => setEditForm(f => ({ ...f, descricao: e.target.value }))} className="h-7 text-xs" placeholder="Desc" />
-                      <div className="flex gap-1">
-                        <Button size="sm" className="h-6 px-2 text-[10px]" onClick={() => salvarPlano(p.slug)}>Ok</Button>
-                        <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setEditing(null)}>X</Button>
+                      <Input value={editForm.nome ?? p.nome} onChange={e => setEditForm(f => ({ ...f, nome: e.target.value }))} className="h-7 text-xs font-semibold" placeholder="Nome" />
+                      <Textarea value={editForm.descricao ?? p.descricao ?? ''} onChange={e => setEditForm(f => ({ ...f, descricao: e.target.value }))} className="text-[10px] min-h-[40px] p-1 font-normal" placeholder="Descrição..." />
+                      <div className="flex gap-2 pt-1">
+                        <label className="flex items-center gap-1.5 text-[10px] cursor-pointer">
+                          <input type="checkbox" checked={editForm.ativo ?? p.ativo} onChange={e => setEditForm(f => ({ ...f, ativo: e.target.checked }))} className="accent-indigo-500" />
+                          Ativo
+                        </label>
                       </div>
                     </div>
                   ) : (
@@ -142,10 +187,10 @@ const PlanosTab: React.FC = () => {
                 </td>
 
                 {/* Cartão de Crédito */}
-                {renderPriceCell(p.precos, 'cartao', 'valor_tabela')}
-                {renderPriceCell(p.precos, 'cartao', 'valor_promocional')}
-                {renderPriceCell(p.precos, 'cartao', 'valor_oferta')}
-                {renderPriceCell(p.precos, 'cartao', 'valor_limite')}
+                {renderPriceCell(p, 'cartao', 'valor_tabela')}
+                {renderPriceCell(p, 'cartao', 'valor_promocional')}
+                {renderPriceCell(p, 'cartao', 'valor_oferta')}
+                {renderPriceCell(p, 'cartao', 'valor_limite')}
 
                 {/* Pix / Boleto (Prioriza 'pix', fallback pra 'boleto') */}
                 {(() => {
@@ -153,19 +198,30 @@ const PlanosTab: React.FC = () => {
                   const modal = hasPix ? 'pix' : 'boleto';
                   return (
                     <>
-                      {renderPriceCell(p.precos, modal, 'valor_tabela')}
-                      {renderPriceCell(p.precos, modal, 'valor_promocional')}
-                      {renderPriceCell(p.precos, modal, 'valor_oferta')}
-                      {renderPriceCell(p.precos, modal, 'valor_limite')}
+                      {renderPriceCell(p, modal, 'valor_tabela')}
+                      {renderPriceCell(p, modal, 'valor_promocional')}
+                      {renderPriceCell(p, modal, 'valor_oferta')}
+                      {renderPriceCell(p, modal, 'valor_limite')}
                     </>
                   );
                 })()}
 
-                <td className="px-4 py-3 text-center border-l border-slate-100">
-                  <div className="flex justify-center">
-                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => { setEditing(p.slug); setEditForm({}); }}>
-                      <Pencil className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
-                    </Button>
+                <td className="px-4 py-3 text-center border-l border-slate-100 bg-slate-50/20">
+                  <div className="flex justify-center items-center gap-1">
+                    {editing === p.slug ? (
+                      <>
+                        <Button size="icon" variant="default" className="h-7 w-7 bg-indigo-600 hover:bg-indigo-700 shadow-sm" onClick={() => salvarPlano(p.slug)} disabled={loading}>
+                          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-slate-400" onClick={() => { setEditing(null); setPricesEditForm({}); }} disabled={loading}>
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
+                      </>
+                    ) : (
+                      <Button size="icon" variant="ghost" className="h-8 w-8 p-0" onClick={() => { setEditing(p.slug); setEditForm({ nome: p.nome, descricao: p.descricao, ativo: p.ativo }); setPricesEditForm({}); }}>
+                        <Pencil className="w-4 h-4 text-slate-400 group-hover:text-indigo-600" />
+                      </Button>
+                    )}
                   </div>
                 </td>
               </tr>
