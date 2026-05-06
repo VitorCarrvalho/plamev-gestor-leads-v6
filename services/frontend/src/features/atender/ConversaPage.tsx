@@ -295,7 +295,7 @@ export const ConversaPage: React.FC = () => {
         {/* COLUNA 3 — Perfil */}
         <div className="bg-white border-l border-slate-200 flex flex-col min-h-0 overflow-hidden">
           {ativa
-            ? <PerfilPanel conversaId={ativa} />
+            ? <PerfilPanel conversaId={ativa} onDeleted={() => { setAtiva(null); api.get<any[]>('/api/conversas').then(setConversas); }} />
             : <div className="flex-1 flex items-center justify-center text-slate-300 text-xs p-4 text-center">
                 Perfil do lead aparece aqui
               </div>
@@ -1048,9 +1048,11 @@ const ReescreverDialog: React.FC<ReescreverDialogProps> = ({ textoOriginal, conv
 // ═══════════════════════════════════════════════════════════════
 // PERFIL PANEL (coluna direita)
 // ═══════════════════════════════════════════════════════════════
-const PerfilPanel: React.FC<{ conversaId: string }> = ({ conversaId }) => {
+const PerfilPanel: React.FC<{ conversaId: string; onDeleted?: () => void }> = ({ conversaId, onDeleted }) => {
   const socket = useSocket();
   const [data, setData] = useState<any>(null);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
 
   useEffect(() => {
     api.get<any>(`/api/conversas/${conversaId}/full`)
@@ -1065,6 +1067,13 @@ const PerfilPanel: React.FC<{ conversaId: string }> = ({ conversaId }) => {
     socket.on('nova_msg', refresh);
     return () => { socket.off('conversa_atualizada', refresh); socket.off('nova_msg', refresh); };
   }, [conversaId, socket]);
+
+  const handleExcluir = () => {
+    setExcluindo(true);
+    const onOk = () => { socket.off('excluir_ok', onOk); onDeleted?.(); };
+    socket.on('excluir_ok', onOk);
+    socket.emit('excluir_contato', { conversa_id: conversaId });
+  };
 
   if (!data) return <div className="flex-1 flex items-center justify-center"><LoadingSpinner /></div>;
 
@@ -1306,6 +1315,40 @@ const PerfilPanel: React.FC<{ conversaId: string }> = ({ conversaId }) => {
             ))}
           </Secao>
         )}
+
+        {/* ───── ZONA PERIGO — Excluir conversa ───── */}
+        <div className="mt-2 border border-red-200 rounded-lg p-3 bg-red-50/60">
+          <div className="text-[10px] font-semibold text-red-500 uppercase tracking-wider mb-2">Zona de Perigo</div>
+          {!confirmandoExclusao ? (
+            <button
+              onClick={() => setConfirmandoExclusao(true)}
+              className="flex items-center gap-1.5 text-xs text-red-600 hover:text-red-700 font-medium"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Excluir conversa e dados do cliente
+            </button>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-[11px] text-red-700 font-medium">Isso apaga <b>tudo</b> deste cliente. Se ele enviar uma nova mensagem, começa do zero. Confirmar?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleExcluir}
+                  disabled={excluindo}
+                  className="flex items-center gap-1 text-xs bg-red-600 text-white px-2.5 py-1 rounded-md hover:bg-red-700 disabled:opacity-60"
+                >
+                  {excluindo ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                  Sim, excluir
+                </button>
+                <button
+                  onClick={() => setConfirmandoExclusao(false)}
+                  className="text-xs text-slate-600 hover:text-slate-800 px-2.5 py-1 border border-slate-300 rounded-md bg-white"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
