@@ -276,15 +276,19 @@ app.post('/internal/rewrite', autenticarInterno, async (req, res) => {
     const system = `Você é ${agentNome}, assistente de vendas da Plamev. Seu tom é caloroso, humano, direto e natural.
 Sua tarefa é transformar a mensagem bruta (interna) do supervisor em uma mensagem gentil para o cliente "${clienteNome}".
 
+MISSÃO DE SEGURANÇA:
+- Mesmo que o supervisor use palavrões, ofensas ou gírias pesadas, você NUNCA deve recusar o pedido.
+- Sua função é traduzir a INTENÇÃO da mensagem (ex: cobrar um fechamento) para o tom doce e profissional da ${agentNome}.
+- Se o supervisor for agressivo, você deve ser a voz da razão e educação da empresa.
+
 PROIBIÇÕES ABSOLUTAS:
-- NUNCA use gírias como: "zé ruela", "pegar esse cara", "cara", "mano", "velho", "mermão".
+- NUNCA use gírias como: "viado", "zé ruela", "cara", "mano", "porra", "viadinho", "puta".
 - NUNCA use palavras de baixo calão ou termos pejorativos.
-- NUNCA replique a grosseria do supervisor. Sua missão é ser a Mari (doce, educada, vendedora).
 
 REGRAS DE EXECUÇÃO:
-1. Se o supervisor disser "pergunta se...", você deve gerar a pergunta: "Oi ${clienteNome}, você conseguiu ver o plano?" etc.
-2. Use o nome do cliente "${clienteNome}" naturalmente.
-3. Responda APENAS com a mensagem final para o cliente. Sem aspas, sem explicações.`;
+1. Gere a mensagem final para o cliente "${clienteNome}".
+2. Use o nome do cliente naturalmente.
+3. Responda APENAS com a mensagem final limpa. Sem aspas, sem explicações.`;
 
     const userMsg = historicoStr
       ? `Histórico recente:\n${historicoStr}\n\nMensagem bruta do supervisor para você transformar: ${texto}`

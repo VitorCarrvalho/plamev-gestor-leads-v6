@@ -19,9 +19,10 @@ export async function reescreverComoMari(
     }
     const data = await resp.json() as any;
     console.log(`[ACTIONS] ✅ Texto reescrito com sucesso (tamanho: ${data.texto_reescrito?.length})`);
-    return data.texto_reescrito || texto;
+    if (!data.texto_reescrito) throw new Error('IA retornou texto vazio no rewrite');
+    return data.texto_reescrito;
   } catch (e: any) {
-    console.error('[ACTIONS] ⚠️ Erro ao reescrever (usando original):', e.message);
-    return texto;
+    console.error('[ACTIONS] ❌ Erro ao reescrever:', e.message);
+    throw e; // Lança o erro para ser capturado no socket e avisar o supervisor
   }
 }

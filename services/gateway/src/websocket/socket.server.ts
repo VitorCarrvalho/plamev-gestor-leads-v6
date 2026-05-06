@@ -49,6 +49,15 @@ async function getConvInfo(conversaId: string) {
   );
 }
 
+function contemTermosProibidos(texto: string): boolean {
+  const termos = [
+    'viado', 'viadinho', 'puta', 'puto', 'caralho', 'porra', 'merda', 'vtnc', 'fdp',
+    'zé ruela', 'ze ruela', 'corno', 'pau no cu', 'imbecil', 'idiota', 'desgraçado'
+  ];
+  const t = (texto || '').toLowerCase();
+  return termos.some(termo => t.includes(termo));
+}
+
 async function enviarEPersistir(conversaId: string, conv: any, msgFinal: string) {
   await internalPost(`${CHANNEL_SERVICE_URL}/internal/send`, {
     message: {
@@ -187,12 +196,24 @@ export function iniciarSocket(server: HttpServer): SocketServer {
         const conv = await getConvInfo(conversa_id);
         if (!conv) { socket.emit('erro', { msg: 'Conversa não encontrada' }); return; }
         let msgFinal = (texto || '').trim();
+
         if (reescrever && msgFinal) {
           try {
-            const r = await internalPost(`${AGENT_AI_URL}/internal/rewrite`, { conversa_id, texto: msgFinal });
-            msgFinal = r.texto_reescrito || msgFinal;
-          } catch { /* fallback para original */ }
+            msgFinal = await reescreverComoMari(conversa_id, msgFinal);
+          } catch (e: any) {
+            console.error('[ACTIONS] ❌ Falha reescrita safety:', e.message);
+            socket.emit('falar_direto_err', { erro: 'A Mari não conseguiu limpar sua mensagem (Linguagem Imprópria detectada ou falha técnica). Ela foi BLOQUEADA por segurança.' });
+            return;
+          }
+        } else {
+          // Se for envio direto sem reescrever, checa termos proibidos
+          if (contemTermosProibidos(msgFinal)) {
+            console.warn(`[ACTIONS] 🛑 Bloqueado: Termo proibido em envio manual.`);
+            socket.emit('falar_direto_err', { erro: 'Mensagem bloqueada: Linguagem imprópria detectada. Remova os termos pejorativos ou use a opção de reescrita.' });
+            return;
+          }
         }
+
         await enviarEPersistir(conversa_id, conv, msgFinal);
         socket.emit('falar_direto_ok', { conversa_id, msg: msgFinal });
       } catch (e: any) {
