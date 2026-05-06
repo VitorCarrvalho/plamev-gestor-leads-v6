@@ -268,18 +268,24 @@ app.post('/internal/rewrite', autenticarInterno, async (req, res) => {
   try {
     const { conv, historico } = await getConversaContext(conversa_id);
     const agentNome = conv?.agent_nome || 'Mari';
+    const clienteNome = conv?.cliente_nome || 'cliente';
     const historicoStr = historico
       .map((m: any) => `${m.role === 'user' ? 'Cliente' : agentNome}: ${m.conteudo}`)
       .join('\n');
 
-    const system = `Você é ${agentNome}, assistente de vendas da Plamev (plano de saúde pet).
-Tom: caloroso, direto, natural — como uma pessoa real no WhatsApp. Sem asteriscos, sem formalidades excessivas.
-Tarefa: reescreva a mensagem a seguir no seu próprio estilo, mantendo o mesmo significado.
-Responda APENAS com o texto reescrito. Sem explicações, sem aspas extras.`;
+    const system = `Você é ${agentNome}, assistente de vendas da Plamev. Seu tom é caloroso, humano, direto e natural.
+Sua tarefa é transformar a mensagem bruta (interna) do supervisor em uma mensagem gentil para o cliente "${clienteNome}".
+
+REGRAS DE OURO:
+1. NUNCA use gírias internas ou termos pejorativos do supervisor (ex: "zé ruela", "pegar esse cara").
+2. Se o supervisor der uma instrução (ex: "pergunta se..."), transforme isso na pergunta direta para o cliente.
+3. Use o nome do cliente "${clienteNome}" de forma natural no início ou meio da frase.
+4. Mantenha o estilo de conversa de WhatsApp: sem asteriscos, sem formalidades excessivas.
+5. Responda APENAS com o texto final para o cliente, sem explicações.`;
 
     const userMsg = historicoStr
-      ? `Contexto (últimas mensagens):\n${historicoStr}\n\nMensagem para reescrever: ${texto}`
-      : `Mensagem para reescrever: ${texto}`;
+      ? `Histórico recente:\n${historicoStr}\n\nMensagem do supervisor para você formatar e enviar ao cliente: ${texto}`
+      : `Mensagem do supervisor para você formatar e enviar ao cliente "${clienteNome}": ${texto}`;
 
     const textoReescrito = await gerarTextoComClaude(system, userMsg);
     res.json({ ok: true, texto_reescrito: textoReescrito || texto });
@@ -305,15 +311,19 @@ app.post('/internal/instrucao', autenticarInterno, async (req, res) => {
       .map((m: any) => `${m.role === 'user' ? 'Cliente' : agentNome}: ${m.conteudo}`)
       .join('\n');
 
-    const system = `Você é ${agentNome}, assistente de vendas da Plamev (plano de saúde pet).
-Tom: caloroso, direto, natural — como uma pessoa real no WhatsApp. Sem asteriscos, sem formalidades excessivas.
+    const system = `Você é ${agentNome}, assistente de vendas da Plamev. Seu tom é caloroso, humano, direto e natural.
 O supervisor lhe passou uma instrução sobre o que deve ser dito ao cliente "${clienteNome}".
-Gere uma mensagem para o cliente seguindo essa instrução, considerando o contexto da conversa.
-Responda APENAS com a mensagem para o cliente. Sem explicações, sem prefixos.`;
+
+REGRAS DE OURO:
+1. NUNCA use gírias internas ou termos pejorativos do supervisor (ex: "zé ruela", "pegar esse cara").
+2. Gere uma mensagem para o cliente seguindo a instrução do supervisor, considerando o contexto da conversa.
+3. Use o nome do cliente "${clienteNome}" de forma natural se couber.
+4. Mantenha o estilo de conversa de WhatsApp: sem asteriscos, sem formalidades excessivas.
+5. Responda APENAS com a mensagem para o cliente. Sem explicações, sem prefixos.`;
 
     const userMsg = historicoStr
-      ? `Contexto da conversa:\n${historicoStr}\n\nInstrução do supervisor: ${instrucao}`
-      : `Instrução do supervisor: ${instrucao}`;
+      ? `Histórico da conversa:\n${historicoStr}\n\nInstrução do supervisor para você: ${instrucao}`
+      : `Instrução do supervisor para você sobre o cliente "${clienteNome}": ${instrucao}`;
 
     const textoGerado = await gerarTextoComClaude(system, userMsg);
     res.json({ ok: true, texto_gerado: textoGerado });
