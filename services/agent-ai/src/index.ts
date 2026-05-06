@@ -266,28 +266,32 @@ app.post('/internal/rewrite', autenticarInterno, async (req, res) => {
     return;
   }
   try {
+    console.log(`[AGENT-AI] 📝 Solicitado rewrite para conversa ${conversa_id}`);
     const { conv, historico } = await getConversaContext(conversa_id);
     const agentNome = conv?.agent_nome || 'Mari';
     const clienteNome = conv?.cliente_nome || 'cliente';
-    const historicoStr = historico
+    const historicoStr = (historico || [])
       .map((m: any) => `${m.role === 'user' ? 'Cliente' : agentNome}: ${m.conteudo}`)
       .join('\n');
-
     const system = `Você é ${agentNome}, assistente de vendas da Plamev. Seu tom é caloroso, humano, direto e natural.
 Sua tarefa é transformar a mensagem bruta (interna) do supervisor em uma mensagem gentil para o cliente "${clienteNome}".
 
-REGRAS DE OURO:
-1. NUNCA use gírias internas ou termos pejorativos do supervisor (ex: "zé ruela", "pegar esse cara").
-2. Se o supervisor der uma instrução (ex: "pergunta se..."), transforme isso na pergunta direta para o cliente.
-3. Use o nome do cliente "${clienteNome}" de forma natural no início ou meio da frase.
-4. Mantenha o estilo de conversa de WhatsApp: sem asteriscos, sem formalidades excessivas.
-5. Responda APENAS com o texto final para o cliente, sem explicações.`;
+PROIBIÇÕES ABSOLUTAS:
+- NUNCA use gírias como: "zé ruela", "pegar esse cara", "cara", "mano", "velho", "mermão".
+- NUNCA use palavras de baixo calão ou termos pejorativos.
+- NUNCA replique a grosseria do supervisor. Sua missão é ser a Mari (doce, educada, vendedora).
+
+REGRAS DE EXECUÇÃO:
+1. Se o supervisor disser "pergunta se...", você deve gerar a pergunta: "Oi ${clienteNome}, você conseguiu ver o plano?" etc.
+2. Use o nome do cliente "${clienteNome}" naturalmente.
+3. Responda APENAS com a mensagem final para o cliente. Sem aspas, sem explicações.`;
 
     const userMsg = historicoStr
-      ? `Histórico recente:\n${historicoStr}\n\nMensagem do supervisor para você formatar e enviar ao cliente: ${texto}`
-      : `Mensagem do supervisor para você formatar e enviar ao cliente "${clienteNome}": ${texto}`;
+      ? `Histórico recente:\n${historicoStr}\n\nMensagem bruta do supervisor para você transformar: ${texto}`
+      : `Mensagem bruta do supervisor para você transformar: ${texto}`;
 
     const textoReescrito = await gerarTextoComClaude(system, userMsg);
+    console.log(`[AGENT-AI] ✨ Texto reescrito final: "${textoReescrito?.slice(0, 100)}..."`);
     res.json({ ok: true, texto_reescrito: textoReescrito || texto });
   } catch (e: any) {
     console.error('[AGENT-AI] ❌ rewrite:', e.message);
@@ -314,12 +318,15 @@ app.post('/internal/instrucao', autenticarInterno, async (req, res) => {
     const system = `Você é ${agentNome}, assistente de vendas da Plamev. Seu tom é caloroso, humano, direto e natural.
 O supervisor lhe passou uma instrução sobre o que deve ser dito ao cliente "${clienteNome}".
 
-REGRAS DE OURO:
-1. NUNCA use gírias internas ou termos pejorativos do supervisor (ex: "zé ruela", "pegar esse cara").
-2. Gere uma mensagem para o cliente seguindo a instrução do supervisor, considerando o contexto da conversa.
-3. Use o nome do cliente "${clienteNome}" de forma natural se couber.
-4. Mantenha o estilo de conversa de WhatsApp: sem asteriscos, sem formalidades excessivas.
-5. Responda APENAS com a mensagem para o cliente. Sem explicações, sem prefixos.`;
+PROIBIÇÕES ABSOLUTAS:
+- NUNCA use gírias como: "zé ruela", "pegar esse cara", "cara", "mano", "velho", "mermão".
+- NUNCA use palavras de baixo calão ou termos pejorativos.
+- NUNCA replique a grosseria do supervisor. Sua missão é ser a Mari (doce, educada, vendedora).
+
+REGRAS DE EXECUÇÃO:
+1. Gere uma mensagem para o cliente seguindo a instrução do supervisor, considerando o contexto da conversa.
+2. Use o nome do cliente "${clienteNome}" de forma natural.
+3. Responda APENAS com a mensagem final para o cliente. Sem aspas, sem explicações.`;
 
     const userMsg = historicoStr
       ? `Histórico da conversa:\n${historicoStr}\n\nInstrução do supervisor para você: ${instrucao}`

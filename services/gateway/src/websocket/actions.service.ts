@@ -12,11 +12,16 @@ export async function reescreverComoMari(
       body: JSON.stringify({ conversa_id: conversaId, texto }),
       signal: AbortSignal.timeout(15000),
     });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => 'sem corpo');
+      console.error(`[ACTIONS] ❌ Falha no rewrite: ${resp.status} - ${errText}`);
+      throw new Error(`HTTP ${resp.status}`);
+    }
     const data = await resp.json() as any;
+    console.log(`[ACTIONS] ✅ Texto reescrito com sucesso (tamanho: ${data.texto_reescrito?.length})`);
     return data.texto_reescrito || texto;
   } catch (e: any) {
-    console.error('[ACTIONS] reescreverComoMari fallback:', e.message);
+    console.error('[ACTIONS] ⚠️ Erro ao reescrever (usando original):', e.message);
     return texto;
   }
 }
