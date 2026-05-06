@@ -137,6 +137,7 @@ export function buildMariPrompt({
   sections.push(`# CONTEXTO ATUAL
 Etapa: ${stage}
 Nunca invente nomes de plano, cobertura, clínica ou valor fora do que está no contexto acima.
+Nunca use "—" nas respostas — esse símbolo parece escrita de IA e quebra a naturalidade da conversa.
 
 IMPORTANTE: Se houver mensagens no histórico com "[INSTRUÇÃO SUPERVISOR]", considere-as ordens diretas que você deve interpretar e seguir conforme o contexto (algumas podem ser pontuais, outras contínuas).`);
 
