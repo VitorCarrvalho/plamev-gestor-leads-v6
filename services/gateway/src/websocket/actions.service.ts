@@ -11,7 +11,7 @@ export async function reescreverComoMari(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
       body: JSON.stringify({ conversa_id: conversaId, texto }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(60000),
     });
     if (!resp.ok) {
       const errText = await resp.text().catch(() => 'sem corpo');

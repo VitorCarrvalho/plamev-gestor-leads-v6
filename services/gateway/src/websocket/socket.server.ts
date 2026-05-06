@@ -32,11 +32,11 @@ async function internalPost(url: string, body: any): Promise<any> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(60000), // Aumentado para 60s
   });
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
-    throw new Error(`HTTP ${resp.status}: ${text.slice(0, 200)}`);
+    throw new Error(`Erro ao comunicar com serviço interno (POST ${url}): HTTP ${resp.status} - ${text.slice(0, 200)}`);
   }
   return resp.json();
 }
