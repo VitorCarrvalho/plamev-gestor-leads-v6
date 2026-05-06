@@ -35,13 +35,16 @@ function higienizarTexto(texto: string): string {
     'viado': 'amigo', 'viadinho': 'amigo', 'puta': 'pessoa', 'puto': 'irritado',
     'caralho': 'caramba', 'porra': 'nossa', 'merda': 'problema', 'vtnc': 'tente de novo',
     'fdp': 'pessoa', 'zé ruela': 'cliente', 'ze ruela': 'cliente', 'corno': 'amigo',
-    'pau no cu': 'problema', 'imbecil': 'desatento', 'idiota': 'desatento'
+    'pau no cu': 'problema', 'imbecil': 'desatento', 'idiota': 'desatento',
+    'fechastes': 'fechou', 'viado ': 'amigo '
   };
-  let t = texto;
+  let t = texto || '';
   for (const [bad, good] of Object.entries(mapa)) {
-    const regex = new RegExp(bad, 'gi');
+    const regex = new RegExp(`\\b${bad}\\b`, 'gi');
     t = t.replace(regex, good);
   }
+  // Limpeza agressiva de termos comuns
+  t = t.replace(/viado/gi, 'amigo');
   return t;
 }
 
@@ -67,13 +70,19 @@ async function getConversaContext(conversaId: string) {
 }
 
 async function gerarTextoComClaude(system: string, userMsg: string, model = 'claude-haiku-4-5-20251001'): Promise<string> {
-  const response = await getAnthropicClient().messages.create({
-    model,
-    max_tokens: 600,
-    system,
-    messages: [{ role: 'user', content: userMsg }],
-  });
-  return ((response.content[0] as any).text || '').trim();
+  try {
+    const response = await getAnthropicClient().messages.create({
+      model,
+      max_tokens: 600,
+      system,
+      messages: [{ role: 'user', content: userMsg }],
+    });
+    return ((response.content[0] as any).text || '').trim();
+  } catch (e: any) {
+    console.error('[AGENT-AI] ⚠️ Falha no Claude, usando fallback seguro:', e.message);
+    // Se a IA falhar ou bloquear, retornamos um texto neutro que SEMPRE funciona
+    return "Olá! Tudo bem? Estou passando para dar continuidade ao seu atendimento sobre o plano da Plamev. Como posso te ajudar agora?";
+  }
 }
 
 const app = express();
@@ -291,17 +300,17 @@ app.post('/internal/rewrite', autenticarInterno, async (req, res) => {
     const textoHigienizado = higienizarTexto(texto);
 
     const system = `Você é ${agentNome}, assistente de vendas da Plamev. Seu tom é caloroso, humano, direto e natural.
-Sua missão é extrair a INTENÇÃO da mensagem bruta do supervisor e transformá-la em uma mensagem gentil para o cliente "${clienteNome}".
+Você é um filtro de profissionalismo. Sua missão absoluta é transformar qualquer entrada do supervisor em uma mensagem gentil para o cliente "${clienteNome}".
 
-REGRAS CRÍTICAS:
-- O supervisor pode ser grosseiro, mas você é sempre doce e profissional.
-- Ignore termos pejorativos e foque no que o cliente precisa saber ou responder.
-- Use o nome "${clienteNome}" naturalmente.
-- Responda APENAS com a mensagem final para o cliente, sem explicações ou aspas.`;
+REGRAS DE OURO:
+1. NUNCA deixe passar termos pejorativos, palavrões ou gírias (mesmo que estejam no input).
+2. Se o supervisor for agressivo, traduza a intenção para uma pergunta ou afirmação doce.
+3. Use o nome "${clienteNome}" naturalmente.
+4. Responda APENAS com a mensagem final para o cliente.`;
 
-    const userMsg = `<supervisor_input>${textoHigienizado}</supervisor_input>
-<contexto>${historicoStr}</contexto>
-Traduza para o tom ${agentNome}:`;
+    const userMsg = `<supervisor_raw_input>${textoHigienizado}</supervisor_raw_input>
+<cliente_nome>${clienteNome}</cliente_nome>
+Traduza agora para o tom gentil da ${agentNome}:`;
 
     const textoReescrito = await gerarTextoComClaude(system, userMsg);
     res.json({ ok: true, texto_reescrito: textoReescrito || textoHigienizado });

@@ -201,9 +201,10 @@ export function iniciarSocket(server: HttpServer): SocketServer {
           try {
             msgFinal = await reescreverComoMari(conversa_id, msgFinal);
           } catch (e: any) {
-            console.error('[ACTIONS] ❌ Falha reescrita safety:', e.message);
-            socket.emit('falar_direto_err', { erro: 'A Mari não conseguiu limpar sua mensagem (Linguagem Imprópria detectada ou falha técnica). Ela foi BLOQUEADA por segurança.' });
-            return;
+            console.error('[ACTIONS] ⚠️ Falha na reescrita, mas prosseguindo com segurança:', e.message);
+            // Aqui não bloqueamos mais, pois o agent-ai já tem fallback seguro interno.
+            // Se falhou feio (rede), usamos um fallback ultra-seguro aqui no gateway também.
+            msgFinal = "Olá! Tudo bem? Estou passando para dar continuidade ao seu atendimento. Como posso te ajudar agora?";
           }
         } else {
           // Se for envio direto sem reescrever, checa termos proibidos
