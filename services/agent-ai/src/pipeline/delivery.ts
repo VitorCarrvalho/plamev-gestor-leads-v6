@@ -68,6 +68,7 @@ export interface PersistOptions {
   etapa?: string;
   dados_extraidos?: Record<string, any>;
   custo?: { input_tokens: number; output_tokens: number; model: string };
+  silenciarIa?: boolean;
 }
 
 export async function persistInteraction(
@@ -84,6 +85,7 @@ export async function persistInteraction(
       etapa: options?.etapa || null,
       dados_extraidos: options?.dados_extraidos || null,
       custo: options?.custo || null,
+      silenciar_ia: options?.silenciarIa || null,
     },
     { 'x-internal-secret': INTERNAL_SECRET },
   );

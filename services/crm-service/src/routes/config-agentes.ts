@@ -512,6 +512,15 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
         .catch(e => console.warn('[INTERNAL] ⚠️ score update:', e.message));
     }).catch(() => {});
 
+    // 10. Escalação para humano (negociação fora do limite de preço)
+    if (req.body?.silenciar_ia === true) {
+      execute(
+        `UPDATE conversas SET ia_silenciada = true, etapa = 'negociacao' WHERE id = $1`,
+        [conversaId]
+      ).catch(e => console.warn('[INTERNAL] ⚠️ silenciar_ia:', e.message));
+      console.log(`[INTERNAL] 🙋 Conversa ${conversaId} escalada para humano (negociação de preço)`);
+    }
+
     console.log(`[INTERNAL] ✅ Interação salva — conversa=${conversaId} etapa=${novaEtapa || '(sem mudança)'} msgs=${texto ? 1 : 0}+${resposta ? 1 : 0} custo=${custo ? `${custo.input_tokens}+${custo.output_tokens}tk` : 'n/a'}`);
   } catch (e: any) {
     console.error('[INTERNAL] ❌ Erro ao salvar interação:', e.message);

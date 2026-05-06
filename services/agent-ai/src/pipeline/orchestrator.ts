@@ -598,6 +598,8 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   // Para cada preço na resposta, identifica o plano mencionado no contexto
   // próximo e valida o valor SOMENTE contra os preços daquele plano específico.
   // Isso impede usar o piso do Slim para validar o Advance Plus, por exemplo.
+  let priceEscalationNeeded = false; // true = cliente pediu abaixo do piso → escala para humano
+
   if (generation.resposta && tabelaPlanos.length > 0) {
     // Monta mapa: slug → { preços válidos, piso mínimo }
     const planPriceData = new Map<string, { valid: Set<string>; floor: number | null }>();
@@ -648,6 +650,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
         }
         if (info.floor !== null && val < info.floor) {
           priceBlockReason = `Preço R$${raw} abaixo do piso R$${info.floor.toFixed(2).replace('.', ',')} do plano "${slug}"`;
+          priceEscalationNeeded = true; // cliente pediu negociação fora do limite
           break;
         }
       } else {
@@ -660,8 +663,10 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     }
 
     if (priceBlockReason) {
-      console.warn(`${tag} ⛔ [PRICE-GUARD] ${priceBlockReason} — substituindo resposta`);
-      generation.resposta = 'Quero te confirmar o valor certinho pra você — só um instante 😊';
+      console.warn(`${tag} ⛔ [PRICE-GUARD] ${priceBlockReason} — substituindo resposta (escalação=${priceEscalationNeeded})`);
+      generation.resposta = priceEscalationNeeded
+        ? 'Nesse preço realmente está fora da minha alçada 😅 Vou chamar meu supervisor e ele conversa contigo, tá bom?'
+        : 'Quero te confirmar o valor certinho pra você — só um instante 😊';
     }
   }
 
@@ -734,6 +739,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       custo: tokensIn > 0
         ? { input_tokens: tokensIn, output_tokens: tokensOut, model: config.model || 'claude-haiku-4-5-20251001' }
         : undefined,
+      silenciarIa: priceEscalationNeeded || undefined,
     });
     crmSpan.end({ output: { ok: true }, metadata: { latency_ms: Date.now() - t6 } });
     console.log(`${tag} [6/7] Persistido no CRM (etapa=${generation.etapa} tokens=${tokensIn}+${tokensOut})`);
