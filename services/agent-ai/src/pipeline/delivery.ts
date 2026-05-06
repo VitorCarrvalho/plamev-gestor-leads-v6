@@ -63,10 +63,17 @@ export async function sendDocument(
   );
 }
 
+export interface PersistOptions {
+  inputTextOverride?: string;
+  etapa?: string;
+  dados_extraidos?: Record<string, any>;
+  custo?: { input_tokens: number; output_tokens: number; model: string };
+}
+
 export async function persistInteraction(
   message: InternalMessage,
   resposta: string,
-  options?: { inputTextOverride?: string; etapa?: string; dados_extraidos?: Record<string, any> },
+  options?: PersistOptions,
 ) {
   return postJson(
     `${CRM_SERVICE_URL}/api/internal/salvar-interacao`,
@@ -76,6 +83,7 @@ export async function persistInteraction(
       input_text_override: options?.inputTextOverride || null,
       etapa: options?.etapa || null,
       dados_extraidos: options?.dados_extraidos || null,
+      custo: options?.custo || null,
     },
     { 'x-internal-secret': INTERNAL_SECRET },
   );

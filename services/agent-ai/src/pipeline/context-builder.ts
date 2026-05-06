@@ -364,8 +364,9 @@ ${decisao.sugestao_plano ? 'Plano sugerido: '+decisao.sugestao_plano : ''}`);
   // se o arquivo sumir do vault.
   const FALLBACK_REGRAS = `# FORMATO DE RESPOSTA
 Responda APENAS em JSON válido e COMPACTO:
-{"r":"sua mensagem ao cliente","e":"etapa","d":{"nc":null,"np":null,"ep":null,"rp":null,"ip":null,"cp":null,"em":null,"cf":null,"pi":null}}
-Chaves: r=resposta, e=etapa, d=dados (nc=nome_cliente, np=nome_pet, ep=especie, rp=raca, ip=idade, cp=cep, em=email, cf=cpf, pi=plano_interesse)
+{"r":"sua mensagem ao cliente","e":"etapa","d":{"nc":null,"np":null,"ep":null,"rp":null,"ip":null,"sx":null,"ca":null,"cp":null,"em":null,"cf":null,"pi":null}}
+Chaves: r=resposta, e=etapa, d=dados (nc=nome_cliente, np=nome_pet, ep=especie, rp=raca, ip=idade_anos, sx=sexo(M/F), ca=castrado(0/1), cp=cep, em=email, cf=cpf, pi=plano_interesse)
+Preencha somente os campos que o cliente mencionou explicitamente; deixe os demais como null.
 IMPORTANTE: resposta em "r" pode ser longa — nunca corte no meio.
 REGRAS ABSOLUTAS: arquivo Mari/Regras-Absolutas.md indisponível — siga comportamento da Identidade.md.`;
   const regrasAbsolutas = vault.carregar(

@@ -447,6 +447,10 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
       if (d.rp) perfilSet.raca         = d.rp;
       if (d.ip) perfilSet.idade_anos   = parseFloat(String(d.ip)) || null;
       if (d.sx) perfilSet.sexo         = d.sx;
+      // ca = castrado: aceita boolean, 0/1 ou texto sim/não
+      if (d.ca !== undefined && d.ca !== null) {
+        perfilSet.castrado = (d.ca === 1 || d.ca === true || d.ca === '1' || /^sim$/i.test(String(d.ca)));
+      }
       if (d.cp) perfilSet.cep          = d.cp;
       if (d.em) perfilSet.email        = d.em;
       if (d.cf) perfilSet.cpf          = d.cf;
@@ -477,7 +481,38 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
       }
     }
 
-    console.log(`[INTERNAL] ✅ Interação salva — conversa=${conversaId} etapa=${novaEtapa || '(sem mudança)'} msgs=${texto ? 1 : 0}+${resposta ? 1 : 0}`);
+    // 8. Registra custo IA na tabela custos_ia (tokens vindos do agent-ai)
+    const custo = req.body?.custo;
+    if (custo && custo.input_tokens > 0) {
+      const custoUsd = ((custo.input_tokens * 0.0008) + (custo.output_tokens * 0.004)) / 1000;
+      execute(
+        `INSERT INTO custos_ia (conversa_id, agent_id, modelo, input_tokens, output_tokens, custo_usd)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [conversaId, agentId, custo.model || 'claude-haiku', custo.input_tokens, custo.output_tokens, custoUsd]
+      ).catch(e => console.warn('[INTERNAL] ⚠️ custos_ia insert:', e.message));
+    }
+
+    // 9. Calcula e persiste score da conversa (0–10)
+    //    Baseado na etapa (funil) + bônus por engajamento (msgs do cliente)
+    const ETAPA_SCORE: Record<string, number> = {
+      acolhimento: 0, qualificacao: 1, apresentacao_planos: 3,
+      objecao: 3, negociacao: 5, pre_fechamento: 7,
+      fechamento: 8, venda_fechada: 10, pago: 10,
+    };
+    const etapaEfetiva = novaEtapa || conversa?.etapa || 'acolhimento';
+    const baseEtapa = ETAPA_SCORE[etapaEfetiva] ?? 0;
+    queryOne<any>(
+      `SELECT COUNT(*) AS cnt FROM mensagens WHERE conversa_id=$1 AND role='user'`,
+      [conversaId]
+    ).then(row => {
+      const msgCount  = parseInt(row?.cnt || '0', 10);
+      const scoreRaw  = Math.min(10, baseEtapa + Math.min(2, msgCount * 0.25));
+      const scoreCalc = Math.round(scoreRaw * 10) / 10;
+      execute(`UPDATE conversas SET score=$1 WHERE id=$2`, [scoreCalc, conversaId])
+        .catch(e => console.warn('[INTERNAL] ⚠️ score update:', e.message));
+    }).catch(() => {});
+
+    console.log(`[INTERNAL] ✅ Interação salva — conversa=${conversaId} etapa=${novaEtapa || '(sem mudança)'} msgs=${texto ? 1 : 0}+${resposta ? 1 : 0} custo=${custo ? `${custo.input_tokens}+${custo.output_tokens}tk` : 'n/a'}`);
   } catch (e: any) {
     console.error('[INTERNAL] ❌ Erro ao salvar interação:', e.message);
   }

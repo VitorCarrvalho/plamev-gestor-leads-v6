@@ -611,32 +611,36 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     return;
   }
 
-  // ── ETAPA 6: Enviar resposta ──────────────────────────────
+  // ── ETAPA 6: Persistir no CRM primeiro (garante dados de pet/score no DB
+  //              antes do nova_msg disparado pelo envio da resposta)
   const t6 = Date.now();
-  console.log(`${tag} [6/7] Enviando: "${resposta.substring(0, 80)}..."`);
-  const sendSpan = trace.span({ name: '6-send-response', input: { canal: msg.canal, phone: msg.phone } });
-  try {
-    await sendResponse(msg, resposta);
-    sendSpan.end({ output: { ok: true }, metadata: { latency_ms: Date.now() - t6 } });
-    console.log(`${tag} ✅ Resposta entregue`);
-  } catch (e: any) {
-    sendSpan.end({ output: { ok: false, error: e.message }, level: 'ERROR' });
-    console.error(`${tag} ❌ Falha ao entregar resposta: ${e.message}`);
-  }
-
-  // ── ETAPA 7: Persistir no CRM ─────────────────────────────
-  const t7 = Date.now();
-  const crmSpan = trace.span({ name: '7-persist-crm', input: { phone: msg.phone, canal: msg.canal } });
+  const crmSpan = trace.span({ name: '6-persist-crm', input: { phone: msg.phone, canal: msg.canal } });
   try {
     await persistInteraction(msg, resposta, {
       etapa: generation.etapa || undefined,
       dados_extraidos: generation.dados_extraidos || undefined,
+      custo: tokensIn > 0
+        ? { input_tokens: tokensIn, output_tokens: tokensOut, model: config.model || 'claude-haiku-4-5-20251001' }
+        : undefined,
     });
-    crmSpan.end({ output: { ok: true }, metadata: { latency_ms: Date.now() - t7 } });
-    console.log(`${tag} [7/7] Persistido no CRM (etapa=${generation.etapa})`);
+    crmSpan.end({ output: { ok: true }, metadata: { latency_ms: Date.now() - t6 } });
+    console.log(`${tag} [6/7] Persistido no CRM (etapa=${generation.etapa} tokens=${tokensIn}+${tokensOut})`);
   } catch (e: any) {
     crmSpan.end({ output: { ok: false, error: e.message }, level: 'WARNING' });
     console.error(`${tag} ❌ Falha ao salvar no CRM: ${e.message}`);
+  }
+
+  // ── ETAPA 7: Enviar resposta ao cliente ───────────────────
+  const t7 = Date.now();
+  console.log(`${tag} [7/7] Enviando: "${resposta.substring(0, 80)}..."`);
+  const sendSpan = trace.span({ name: '7-send-response', input: { canal: msg.canal, phone: msg.phone } });
+  try {
+    await sendResponse(msg, resposta);
+    sendSpan.end({ output: { ok: true }, metadata: { latency_ms: Date.now() - t7 } });
+    console.log(`${tag} ✅ Resposta entregue`);
+  } catch (e: any) {
+    sendSpan.end({ output: { ok: false, error: e.message }, level: 'ERROR' });
+    console.error(`${tag} ❌ Falha ao entregar resposta: ${e.message}`);
   }
 
   const totalLatency = Date.now() - start;
