@@ -595,15 +595,17 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   }
 
   // ── VERIFICAÇÃO DE PREÇO POR PLANO ────────────────────────────────────────
-  // Para cada preço na resposta, identifica o plano mencionado no contexto
-  // próximo e valida o valor SOMENTE contra os preços daquele plano específico.
-  // Isso impede usar o piso do Slim para validar o Advance Plus, por exemplo.
-  let priceEscalationNeeded = false; // true = cliente pediu abaixo do piso → escala para humano
+  // Modo de operação depende do contexto:
+  //   · Usuário mencionou R$ na mensagem → está negociando → todas as validações
+  //   · Usuário não mencionou R$         → LLM apresentando catálogo → só checa piso
+  // Isso evita falsos positivos quando o LLM mostra preços corretos do catálogo.
+  let priceEscalationNeeded = false;
+  const userNegotiatingPrice = /R\$/.test(msg.texto || '');
 
   if (generation.resposta && tabelaPlanos.length > 0) {
     // Monta mapa: slug → { preços válidos, piso mínimo }
     const planPriceData = new Map<string, { valid: Set<string>; floor: number | null }>();
-    const globalValidPrices = new Set<string>(); // fallback quando não há plano identificado
+    const globalValidPrices = new Set<string>();
 
     for (const row of tabelaPlanos) {
       const slug = (row as any).slug as string;
@@ -620,7 +622,6 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       const limite = (row as any)['valor_limite'];
       if (limite != null && !isNaN(Number(limite))) {
         const f = Number(limite);
-        // O piso em si é um valor válido para mencionar ("consigo chegar até R$X")
         info.valid.add(f.toFixed(2));
         globalValidPrices.add(f.toFixed(2));
         if (info.floor === null || f < info.floor) info.floor = f;
@@ -643,19 +644,21 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       const info = slug ? planPriceData.get(slug) : undefined;
 
       if (info) {
-        // Valida contra o plano identificado na frase
-        if (!info.valid.has(valStr)) {
+        // Piso: SEMPRE ativo — garante que nenhum preço abaixo do mínimo seja aceito
+        if (info.floor !== null && val < info.floor) {
+          priceBlockReason = `Preço R$${raw} abaixo do piso R$${info.floor.toFixed(2).replace('.', ',')} do plano "${slug}"`;
+          priceEscalationNeeded = true;
+          break;
+        }
+        // Validação cruzada: só quando usuário está negociando (mencionou R$)
+        // Evita falso positivo quando LLM apresenta catálogo com preços arredondados
+        if (userNegotiatingPrice && !info.valid.has(valStr)) {
           priceBlockReason = `Preço R$${raw} não pertence ao plano "${slug}"`;
           break;
         }
-        if (info.floor !== null && val < info.floor) {
-          priceBlockReason = `Preço R$${raw} abaixo do piso R$${info.floor.toFixed(2).replace('.', ',')} do plano "${slug}"`;
-          priceEscalationNeeded = true; // cliente pediu negociação fora do limite
-          break;
-        }
       } else {
-        // Sem plano identificado — verifica se existe em algum plano (fallback conservador)
-        if (!globalValidPrices.has(valStr)) {
+        // Sem plano identificado: só bloqueia se usuário negociando e preço não existe em nenhum plano
+        if (userNegotiatingPrice && !globalValidPrices.has(valStr)) {
           priceBlockReason = `Preço R$${raw} não existe em nenhum plano`;
           break;
         }
@@ -663,7 +666,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     }
 
     if (priceBlockReason) {
-      console.warn(`${tag} ⛔ [PRICE-GUARD] ${priceBlockReason} — substituindo resposta (escalação=${priceEscalationNeeded})`);
+      console.warn(`${tag} ⛔ [PRICE-GUARD] ${priceBlockReason} — escalação=${priceEscalationNeeded}`);
       generation.resposta = priceEscalationNeeded
         ? 'Nesse preço realmente está fora da minha alçada 😅 Vou chamar meu supervisor e ele conversa contigo, tá bom?'
         : 'Quero te confirmar o valor certinho pra você — só um instante 😊';
