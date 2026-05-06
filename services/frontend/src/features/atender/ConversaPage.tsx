@@ -1199,7 +1199,8 @@ const PerfilPanel: React.FC<{ conversaId: string }> = ({ conversaId }) => {
               );
             })}
           </div>
-          {proximoPassoInfo.hint && (
+          {proximoPassoInfo.hint &&
+           !(proximoPassoInfo.hint === 'Coletar raça + idade do pet' && perfil.raca && perfil.idade_anos) && (
             <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 flex items-start gap-1.5">
               <span className="font-bold">👉</span>
               <span><b className="font-semibold">Próximo:</b> {proximoPassoInfo.hint}</span>
