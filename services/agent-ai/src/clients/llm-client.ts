@@ -104,18 +104,30 @@ async function generateOpenAI(system: string, messages: ChatMessage[], model: st
 }
 
 function parseLLMResponse(text: string): Omit<GenerationResult, '_uso'> {
-  // Limpar markdown code blocks se existirem
-  let cleanText = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-  
+  const cleanText = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+
   const match = cleanText.match(/\{[\s\S]*\}/);
   if (match) {
     try {
       const raw = JSON.parse(match[0]);
+      // Dados gerais do cliente (campo "d" com chaves curtas)
+      const d: Record<string, any> = { ...(raw.d || raw.dados_extraidos || {}) };
+
+      // Campo "pet" com nomes explícitos — mescla nas chaves curtas que o CRM já lê
+      const pet: Record<string, any> = raw.pet || {};
+      if (pet.nome     != null) d.np = d.np ?? pet.nome;
+      if (pet.especie  != null) d.ep = d.ep ?? pet.especie;
+      if (pet.raca     != null) d.rp = d.rp ?? pet.raca;
+      if (pet.idade    != null) d.ip = d.ip ?? pet.idade;
+      if (pet.idade_anos != null) d.ip = d.ip ?? pet.idade_anos;
+      if (pet.sexo     != null) d.sx = d.sx ?? pet.sexo;
+      if (pet.castrado != null) d.ca = d.ca ?? pet.castrado;
+
       return {
         resposta: raw.r || raw.resposta || null,
         etapa: raw.e || raw.etapa || 'acolhimento',
-        dados_extraidos: raw.d || raw.dados_extraidos || {},
-        acoes: raw.acoes || ['salvar_conversa']
+        dados_extraidos: d,
+        acoes: raw.acoes || ['salvar_conversa'],
       };
     } catch {}
   }
@@ -125,6 +137,6 @@ function parseLLMResponse(text: string): Omit<GenerationResult, '_uso'> {
     resposta: cleanText,
     etapa: 'acolhimento',
     dados_extraidos: {},
-    acoes: ['salvar_conversa']
+    acoes: ['salvar_conversa'],
   };
 }

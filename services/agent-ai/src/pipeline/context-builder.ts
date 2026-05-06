@@ -363,11 +363,18 @@ ${decisao.sugestao_plano ? 'Plano sugerido: '+decisao.sugestao_plano : ''}`);
   // O fallback mínimo abaixo garante que o formato JSON continua válido mesmo
   // se o arquivo sumir do vault.
   const FALLBACK_REGRAS = `# FORMATO DE RESPOSTA
-Responda APENAS em JSON válido e COMPACTO:
-{"r":"sua mensagem ao cliente","e":"etapa","d":{"nc":null,"np":null,"ep":null,"rp":null,"ip":null,"sx":null,"ca":null,"cp":null,"em":null,"cf":null,"pi":null}}
-Chaves: r=resposta, e=etapa, d=dados (nc=nome_cliente, np=nome_pet, ep=especie, rp=raca, ip=idade_anos, sx=sexo(M/F), ca=castrado(0/1), cp=cep, em=email, cf=cpf, pi=plano_interesse)
-Preencha somente os campos que o cliente mencionou explicitamente; deixe os demais como null.
-IMPORTANTE: resposta em "r" pode ser longa — nunca corte no meio.
+Responda APENAS em JSON válido com exatamente estes 4 campos:
+{"r":"mensagem ao cliente","e":"etapa","d":{"nc":null,"cp":null,"em":null,"cf":null,"pi":null},"pet":{"nome":null,"especie":null,"raca":null,"idade":null,"sexo":null,"castrado":null}}
+
+Descrição dos campos:
+- r  = sua resposta para o cliente (texto livre, pode ser longa — NUNCA corte no meio)
+- e  = etapa atual da conversa (acolhimento | qualificacao | apresentacao_planos | negociacao | pre_fechamento | fechamento | venda_fechada)
+- d  = dados do CLIENTE: nc=nome_cliente, cp=cep, em=email, cf=cpf, pi=plano_de_interesse
+- pet = dados do PET (preencha APENAS o que o cliente mencionou explicitamente):
+    nome=nome do pet  |  especie=cachorro/gato/outro  |  raca=raça exata
+    idade=número em anos  |  sexo=M ou F  |  castrado=true ou false
+
+Deixe null qualquer campo não mencionado pelo cliente.
 REGRAS ABSOLUTAS: arquivo Mari/Regras-Absolutas.md indisponível — siga comportamento da Identidade.md.`;
   const regrasAbsolutas = vault.carregar(
     'Mari/Regras-Absolutas.md',
