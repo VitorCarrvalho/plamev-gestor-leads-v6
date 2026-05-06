@@ -6,6 +6,7 @@ export async function reescreverComoMari(
   texto: string,
 ): Promise<string> {
   try {
+    console.log(`[ACTIONS] 📡 Chamando rewrite em: ${AGENT_AI_URL}/internal/rewrite (secret ok: ${!!INTERNAL_SECRET})`);
     const resp = await fetch(`${AGENT_AI_URL}/internal/rewrite`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
@@ -15,14 +16,14 @@ export async function reescreverComoMari(
     if (!resp.ok) {
       const errText = await resp.text().catch(() => 'sem corpo');
       console.error(`[ACTIONS] ❌ Falha no rewrite: ${resp.status} - ${errText}`);
-      throw new Error(`HTTP ${resp.status}`);
+      throw new Error(`HTTP ${resp.status}: ${errText}`);
     }
     const data = await resp.json() as any;
-    console.log(`[ACTIONS] ✅ Texto reescrito com sucesso (tamanho: ${data.texto_reescrito?.length})`);
+    console.log(`[ACTIONS] ✅ Texto reescrito recebido (ok: ${data.ok})`);
     if (!data.texto_reescrito) throw new Error('IA retornou texto vazio no rewrite');
     return data.texto_reescrito;
   } catch (e: any) {
     console.error('[ACTIONS] ❌ Erro ao reescrever:', e.message);
-    throw e; // Lança o erro para ser capturado no socket e avisar o supervisor
+    throw e;
   }
 }

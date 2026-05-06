@@ -36,15 +36,16 @@ function higienizarTexto(texto: string): string {
     'caralho': 'caramba', 'porra': 'nossa', 'merda': 'problema', 'vtnc': 'tente de novo',
     'fdp': 'pessoa', 'zé ruela': 'cliente', 'ze ruela': 'cliente', 'corno': 'amigo',
     'pau no cu': 'problema', 'imbecil': 'desatento', 'idiota': 'desatento',
-    'fechastes': 'fechou', 'viado ': 'amigo '
+    'fechastes': 'fechou', 'bicha': 'amigo', 'bichinha': 'amigo'
   };
   let t = texto || '';
   for (const [bad, good] of Object.entries(mapa)) {
     const regex = new RegExp(`\\b${bad}\\b`, 'gi');
     t = t.replace(regex, good);
   }
-  // Limpeza agressiva de termos comuns
+  // Limpeza agressiva
   t = t.replace(/viado/gi, 'amigo');
+  t = t.replace(/bicha/gi, 'amigo');
   return t;
 }
 
@@ -290,7 +291,13 @@ app.post('/internal/rewrite', autenticarInterno, async (req, res) => {
     return;
   }
   try {
+    console.log(`[AGENT-AI] 📩 Recebido rewrite: "${texto}"`);
     const { conv, historico } = await getConversaContext(conversa_id);
+    if (!conv) {
+      console.error('[AGENT-AI] ❌ Conversa não encontrada:', conversa_id);
+      res.status(404).json({ erro: 'Conversa não encontrada' });
+      return;
+    }
     const agentNome = conv?.agent_nome || 'Mari';
     const clienteNome = conv?.cliente_nome || 'cliente';
     const historicoStr = (historico || [])
@@ -298,6 +305,7 @@ app.post('/internal/rewrite', autenticarInterno, async (req, res) => {
       .join('\n');
 
     const textoHigienizado = higienizarTexto(texto);
+    console.log(`[AGENT-AI] 🧼 Texto higienizado: "${textoHigienizado}"`);
 
     const system = `Você é ${agentNome}, assistente de vendas da Plamev. Seu tom é caloroso, humano, direto e natural.
 Você é um filtro de profissionalismo. Sua missão absoluta é transformar qualquer entrada do supervisor em uma mensagem gentil para o cliente "${clienteNome}".
@@ -312,7 +320,9 @@ REGRAS DE OURO:
 <cliente_nome>${clienteNome}</cliente_nome>
 Traduza agora para o tom gentil da ${agentNome}:`;
 
+    console.log('[AGENT-AI] 🤖 Chamando Claude...');
     const textoReescrito = await gerarTextoComClaude(system, userMsg);
+    console.log(`[AGENT-AI] ✨ Resultado final: "${textoReescrito}"`);
     res.json({ ok: true, texto_reescrito: textoReescrito || textoHigienizado });
   } catch (e: any) {
     console.error('[AGENT-AI] ❌ rewrite:', e.message);
