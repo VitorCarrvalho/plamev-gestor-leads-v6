@@ -69,11 +69,6 @@ export async function validateClaims(
   modelName: string,
   context: OutputGuardContext = {},
 ): Promise<ValidationResult> {
-  // OUTPUT GUARD DESATIVADO TEMPORARIAMENTE — reativar removendo o return abaixo
-  return { isValid: true };
-
-  // Reativado! Pode ser desativado via env var se necessário.
-
   const response = generation.resposta;
   if (!response) return { isValid: true };
 
@@ -131,6 +126,29 @@ export async function validateClaims(
 
   const contextPrices = new Set(extractPrices(originalContext));
   const responsePrices = extractPrices(response);
+
+  // Verifica preços abaixo do PISO ABSOLUTO declarado no catálogo injetado
+  const pisoMatches = [...originalContext.matchAll(/PISO ABSOLUTO:\s*R\$\s*([\d.]+,\d{2})/gi)];
+  if (pisoMatches.length > 0 && responsePrices.length > 0) {
+    const pisos = pisoMatches
+      .map(m => parseFloat(m[1].replace(/\./g, '').replace(',', '.')))
+      .filter(v => !isNaN(v));
+    const pisoMinimo = Math.min(...pisos);
+    for (const priceStr of responsePrices) {
+      const val = parseFloat(priceStr);
+      if (!isNaN(val) && val < pisoMinimo) {
+        matchedRules.push('price-below-floor');
+        return {
+          isValid: false,
+          reason: `Preço R$${val.toFixed(2).replace('.', ',')} está abaixo do piso absoluto de R$${pisoMinimo.toFixed(2).replace('.', ',')}`,
+          rewrittenText: 'Quero te passar o melhor valor com segurança — vou confirmar o valor certinho pra você.',
+          matchedRules,
+          severity: 'high',
+        };
+      }
+    }
+  }
+
   // Só bloqueia se o contexto TEM preços e a resposta usa preços diferentes.
   // Se o contexto não tem preços (catálogo não foi injetado), não há base de comparação.
   if (contextPrices.size > 0 && responsePrices.length > 0) {
