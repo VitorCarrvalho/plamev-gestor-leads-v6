@@ -377,7 +377,7 @@ Responda APENAS com a mensagem. Sem explicações.`;
     // Persistir no banco
     await pool.query(
       `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por) VALUES ($1, $2, $3, $4)`,
-      [conversa_id, 'assistant', mensagem, 'supervisora']
+      [conversa_id, 'agent', mensagem, 'supervisora']
     );
 
     console.log(`[AGENT-AI] ✅ provocar → conversa=${conversa_id} mensagem="${mensagem.slice(0, 60)}"`);

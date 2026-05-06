@@ -62,7 +62,7 @@ async function enviarEPersistir(conversaId: string, conv: any, msgFinal: string)
   });
   await execute(
     `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por) VALUES ($1, $2, $3, $4)`,
-    [conversaId, 'assistant', msgFinal, 'supervisora']
+    [conversaId, 'agent', msgFinal, 'supervisora']
   );
   notificarDashboard(conversaId, conv.numero_externo, '', null, msgFinal);
   io.emit('conversa_atualizada', { conversa_id: conversaId });
@@ -176,7 +176,7 @@ export function iniciarSocket(server: HttpServer): SocketServer {
         socket.emit('instrucao_ok', { conversa_id, msg: texto_gerado });
       } catch (e: any) {
         console.error('[ACTIONS] ❌ instrucao:', e.message);
-        socket.emit('erro', { msg: `Falha na instrução: ${e.message}` });
+        socket.emit('instrucao_err', { erro: e.message });
       }
     });
 
