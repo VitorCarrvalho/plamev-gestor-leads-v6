@@ -35,6 +35,7 @@ import {
   detectPriceIntent,
   formatConversationStatePrompt,
   formatProductCatalogPrompt,
+  formatPriceFloorSummary,
   inferTargetStage,
 } from './mari-runtime';
 
@@ -63,6 +64,44 @@ function formatarSecaoRede(result: RedeResult, cep: string): string {
 async function lf_flush() {
   try { await langfuse.flushAsync(); }
   catch (e: any) { console.error('[LANGFUSE] ❌ Flush falhou:', e?.message ?? e); }
+}
+
+// Dado o índice de um preço na resposta, identifica o plano mais próximo mencionado
+// antes (ou logo após) esse preço — retorna o slug do plano ou null.
+function detectPlanSlugForPrice(text: string, priceIndex: number, priceLength: number): string | null {
+  const before = text.substring(Math.max(0, priceIndex - 350), priceIndex);
+  const after  = text.substring(priceIndex + priceLength, Math.min(text.length, priceIndex + priceLength + 100));
+  const ctx    = before + ' ' + after;
+
+  // Ordem importa: padrões mais específicos (plus) devem vir antes dos genéricos
+  const patterns: Array<{ re: RegExp; slug: string }> = [
+    { re: /advance[\s_]plus/gi,  slug: 'advance_plus'  },
+    { re: /platinum[\s_]plus/gi, slug: 'platinum_plus' },
+    { re: /diamond[\s_]plus/gi,  slug: 'diamond_plus'  },
+    { re: /\badvance\b/gi,       slug: 'advance'       },
+    { re: /\bplatinum\b/gi,      slug: 'platinum'      },
+    { re: /\bdiamond\b/gi,       slug: 'diamond'       },
+    { re: /\bslim\b/gi,          slug: 'slim'          },
+  ];
+
+  // Pega a menção com maior índice em `before` (a mais próxima do preço)
+  let lastIdx = -1;
+  let result: string | null = null;
+  for (const { re, slug } of patterns) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(before)) !== null) {
+      if (m.index > lastIdx) { lastIdx = m.index; result = slug; }
+    }
+  }
+  if (result) return result;
+
+  // Se não achou antes, tenta no trecho após o preço
+  for (const { re, slug } of patterns) {
+    re.lastIndex = 0;
+    if (re.test(after)) return slug;
+  }
+  return null;
 }
 
 const HISTORY_LIMIT = 30;
@@ -474,6 +513,8 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     redeCredenciada: redeSection || undefined,
     catalogIntent,
     includePlanContext,
+    // Tabela compacta de pisos injetada sempre (exceto saudações puras)
+    priceFloorTable: !greetingOnly && tabelaPlanos.length > 0 ? formatPriceFloorSummary(tabelaPlanos) : undefined,
   });
 
   const messages: ChatMessage[] = [
@@ -553,25 +594,73 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     return;
   }
 
-  // ── VERIFICAÇÃO DE PREÇO (independente do output guard) ───────────────────
-  // Compara cada valor monetário mencionado na resposta contra TODOS os preços
-  // reais do banco (valor_tabela, valor_promocional, valor_oferta, valor_limite)
-  // para todos os planos ativos. Qualquer preço que não existir no BD é inventado.
+  // ── VERIFICAÇÃO DE PREÇO POR PLANO ────────────────────────────────────────
+  // Para cada preço na resposta, identifica o plano mencionado no contexto
+  // próximo e valida o valor SOMENTE contra os preços daquele plano específico.
+  // Isso impede usar o piso do Slim para validar o Advance Plus, por exemplo.
   if (generation.resposta && tabelaPlanos.length > 0) {
-    const camposPreco = ['valor_tabela', 'valor_promocional', 'valor_oferta', 'valor_limite'];
-    const precosValidos = new Set<string>();
+    // Monta mapa: slug → { preços válidos, piso mínimo }
+    const planPriceData = new Map<string, { valid: Set<string>; floor: number | null }>();
+    const globalValidPrices = new Set<string>(); // fallback quando não há plano identificado
+
     for (const row of tabelaPlanos) {
-      for (const campo of camposPreco) {
+      const slug = (row as any).slug as string;
+      if (!planPriceData.has(slug)) planPriceData.set(slug, { valid: new Set(), floor: null });
+      const info = planPriceData.get(slug)!;
+      for (const campo of ['valor_tabela', 'valor_promocional', 'valor_oferta']) {
         const v = (row as any)[campo];
-        if (v != null && !isNaN(Number(v))) precosValidos.add(Number(v).toFixed(2));
+        if (v != null && !isNaN(Number(v))) {
+          const s = Number(v).toFixed(2);
+          info.valid.add(s);
+          globalValidPrices.add(s);
+        }
+      }
+      const limite = (row as any)['valor_limite'];
+      if (limite != null && !isNaN(Number(limite))) {
+        const f = Number(limite);
+        // O piso em si é um valor válido para mencionar ("consigo chegar até R$X")
+        info.valid.add(f.toFixed(2));
+        globalValidPrices.add(f.toFixed(2));
+        if (info.floor === null || f < info.floor) info.floor = f;
       }
     }
-    const precosNaResposta = (generation.resposta.match(/R\$\s*\d{1,3}(?:\.\d{3})*,\d{2}/g) || [])
-      .map(p => parseFloat(p.replace(/R\$\s*/i, '').replace(/\./g, '').replace(',', '.')))
-      .filter(v => !isNaN(v) && v > 0);
-    const inventados = precosNaResposta.filter(p => !precosValidos.has(p.toFixed(2)));
-    if (inventados.length > 0) {
-      console.warn(`${tag} ⛔ [PRICE-GUARD] Preço(s) não existem no BD: ${inventados.map(p => 'R$' + p.toFixed(2).replace('.', ',')).join(', ')} — substituindo resposta`);
+
+    const priceRegex = /R\$\s*\d{1,3}(?:\.\d{3})*,\d{2}/g;
+    const responseText = generation.resposta;
+    let priceBlockReason: string | null = null;
+    let pm: RegExpExecArray | null;
+    priceRegex.lastIndex = 0;
+
+    while ((pm = priceRegex.exec(responseText)) !== null) {
+      const raw = pm[0];
+      const val = parseFloat(raw.replace(/R\$\s*/i, '').replace(/\./g, '').replace(',', '.'));
+      if (isNaN(val) || val <= 0) continue;
+      const valStr = val.toFixed(2);
+
+      const slug = detectPlanSlugForPrice(responseText, pm.index, raw.length);
+      const info = slug ? planPriceData.get(slug) : undefined;
+
+      if (info) {
+        // Valida contra o plano identificado na frase
+        if (!info.valid.has(valStr)) {
+          priceBlockReason = `Preço R$${raw} não pertence ao plano "${slug}"`;
+          break;
+        }
+        if (info.floor !== null && val < info.floor) {
+          priceBlockReason = `Preço R$${raw} abaixo do piso R$${info.floor.toFixed(2).replace('.', ',')} do plano "${slug}"`;
+          break;
+        }
+      } else {
+        // Sem plano identificado — verifica se existe em algum plano (fallback conservador)
+        if (!globalValidPrices.has(valStr)) {
+          priceBlockReason = `Preço R$${raw} não existe em nenhum plano`;
+          break;
+        }
+      }
+    }
+
+    if (priceBlockReason) {
+      console.warn(`${tag} ⛔ [PRICE-GUARD] ${priceBlockReason} — substituindo resposta`);
       generation.resposta = 'Quero te confirmar o valor certinho pra você — só um instante 😊';
     }
   }

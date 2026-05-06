@@ -100,6 +100,7 @@ export function buildMariPrompt({
   cotacaoPlanos,
   catalogIntent,
   includePlanContext,
+  priceFloorTable,
 }: {
   prompts: PromptBundle;
   stage: string;
@@ -110,6 +111,7 @@ export function buildMariPrompt({
   cotacaoPlanos?: string;
   catalogIntent?: boolean;
   includePlanContext?: boolean;
+  priceFloorTable?: string;
 }) {
   const sections: string[] = [];
 
@@ -129,6 +131,8 @@ export function buildMariPrompt({
   if (knowledgeBase) sections.push(`# BASE DE CONHECIMENTO\n${knowledgeBase}`);
   if (redeCredenciada) sections.push(`# REDE CREDENCIADA\n${redeCredenciada}`);
   if (cotacaoPlanos) sections.push(`# COTAÇÃO — PLANOS DISPONÍVEIS\n${cotacaoPlanos}`);
+  // Tabela de pisos injetada sempre (exceto saudações puras) — ~120 tokens extras
+  if (priceFloorTable) sections.push(priceFloorTable);
 
   sections.push(`# CONTEXTO ATUAL
 Etapa: ${stage}
@@ -298,4 +302,25 @@ export function chooseNonRepeatingFallback(reason: string | undefined, historico
     .map((item) => item.content.trim().toLowerCase());
 
   return fallbacks.find((candidate) => !recentAssistant.includes(candidate.toLowerCase())) || fallbacks[fallbacks.length - 1];
+}
+
+// Tabela compacta de pisos por plano — injetada sempre no system prompt (~120 tokens).
+// Garante que o LLM conheça os limites mesmo fora dos contextos de catálogo completo.
+export function formatPriceFloorSummary(rows: CatalogRow[]): string {
+  if (!rows.length) return '';
+  const grouped = byPlan(rows);
+  const lines = [
+    '# PREÇOS E PISOS POR PLANO (uso interno — jamais mencione "piso" ao cliente)',
+    'Formato: plano/modalidade → vigente | piso mínimo (nunca oferecer abaixo)',
+  ];
+  for (const [slug, plan] of grouped.entries()) {
+    for (const m of plan.modalidades) {
+      const vigente = m.valor_promocional ?? m.valor;
+      const piso    = m.valor_limite;
+      const vStr    = vigente != null ? formatCurrency(vigente) : '—';
+      const pStr    = piso    != null ? formatCurrency(piso)    : '—';
+      lines.push(`${slug}/${m.modalidade}: vigente=${vStr}/mês | piso=${pStr}`);
+    }
+  }
+  return lines.join('\n');
 }
