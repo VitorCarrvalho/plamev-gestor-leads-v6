@@ -6,7 +6,7 @@
 const TOKEN_KEY = 'dash_v5_token';
 // VITE_API_URL é injetado no bundle durante o build via ARG no Dockerfile.
 // Usamos o valor do import.meta.env diretamente.
-const BASE_URL: string = (import.meta as any).env?.VITE_API_URL || '';
+export const BASE_URL: string = (import.meta as any).env?.VITE_API_URL || '';
 
 function getToken() { return localStorage.getItem(TOKEN_KEY); }
 

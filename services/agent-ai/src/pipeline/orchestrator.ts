@@ -194,21 +194,28 @@ async function dispararCotacao(
 async function buscarHistorico(orgId: string, phone: string, canal: string): Promise<ChatMessage[]> {
   try {
     const { rows } = await pool.query(`
-      SELECT m.role, m.conteudo
+      SELECT m.role, m.conteudo, m.enviado_por
       FROM mensagens m
       JOIN conversas c ON c.id = m.conversa_id
       WHERE c.numero_externo = $1
         AND c.org_id = $2
         AND c.canal = $3
         AND c.status = 'ativa'
-        AND m.role IN ('user', 'agent')
+        AND m.role IN ('user', 'agent', 'system')
       ORDER BY m.timestamp DESC
       LIMIT $4
     `, [phone, orgId, canal, HISTORY_LIMIT]);
-    return rows.reverse().map((r: any) => ({
-      role: r.role === 'agent' ? 'assistant' : 'user',
-      content: r.conteudo,
-    } as ChatMessage));
+    return rows.reverse().map((r: any) => {
+      // Mensagens de sistema (supervisora) entram como 'user' no contexto do Claude
+      // para serem interpretadas como ordens/contexto.
+      if (r.role === 'system') {
+        return { role: 'user', content: r.conteudo };
+      }
+      return {
+        role: r.role === 'agent' ? 'assistant' : 'user',
+        content: r.conteudo,
+      };
+    }) as ChatMessage[];
   } catch (e: any) {
     console.warn(`[PIPELINE] ⚠️ Histórico indisponível: ${e.message}`);
     return [];
@@ -343,6 +350,7 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       ? buscarRedeCredenciada(cepDetectado).catch(() => ({ status: 'erro_servico' } as RedeResult))
       : Promise.resolve(null as RedeResult | null),
   ]);
+
 
   // ── Verificar se IA está silenciada ──────────────────────────
   if (conversaAtual?.ia_silenciada) {

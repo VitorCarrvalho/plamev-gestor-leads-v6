@@ -17,7 +17,16 @@ const ANALYTICS_SERVICE_URL = process.env.ANALYTICS_SERVICE_URL || 'http://analy
 const app = express();
 const server = http.createServer(app);
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://hub.plamevbrasil.com.br',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-internal-secret'],
+  credentials: true
+}));
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'gateway' }));
 app.get('/debug/runtime', (_req, res) => {

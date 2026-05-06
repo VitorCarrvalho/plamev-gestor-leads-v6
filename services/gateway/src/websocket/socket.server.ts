@@ -70,7 +70,15 @@ async function enviarEPersistir(conversaId: string, conv: any, msgFinal: string)
 
 export function iniciarSocket(server: HttpServer): SocketServer {
   io = new SocketServer(server, {
-    cors: { origin: '*' },
+    cors: {
+      origin: [
+        'https://hub.plamevbrasil.com.br',
+        'http://localhost:5173',
+        'http://localhost:3000'
+      ],
+      methods: ['GET', 'POST'],
+      credentials: true
+    },
     pingTimeout: 60000,
   });
 
@@ -154,6 +162,15 @@ export function iniciarSocket(server: HttpServer): SocketServer {
       try {
         const conv = await getConvInfo(conversa_id);
         if (!conv) { socket.emit('erro', { msg: 'Conversa não encontrada' }); return; }
+
+        // 1. Salvar a instrução no histórico como uma mensagem de sistema
+        // Isso permite que a IA interprete se a instrução é pontual ou contínua ao ler o histórico.
+        await execute(
+          `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por) VALUES ($1, $2, $3, $4)`,
+          [conversa_id, 'system', `[INSTRUÇÃO SUPERVISOR]: ${texto}`, 'supervisora']
+        );
+
+        // 2. Gerar resposta imediata seguindo a instrução
         const { texto_gerado } = await internalPost(`${AGENT_AI_URL}/internal/instrucao`, { conversa_id, instrucao: texto });
         await enviarEPersistir(conversa_id, conv, texto_gerado);
         socket.emit('instrucao_ok', { conversa_id, msg: texto_gerado });

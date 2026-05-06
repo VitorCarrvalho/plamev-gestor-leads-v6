@@ -2,7 +2,7 @@
  * services/socket.ts — cliente Socket.IO singleton do Dashboard V5.
  */
 import { io, Socket } from 'socket.io-client';
-import { getTokenForSocket } from './api';
+import { getTokenForSocket, BASE_URL } from './api';
 
 let socketInstance: Socket | null = null;
 
@@ -14,7 +14,8 @@ let socketInstance: Socket | null = null;
 export function getSocket(): Socket {
   if (!socketInstance) {
     const token = getTokenForSocket();
-    socketInstance = io('/', {
+    const socketUrl = BASE_URL || window.location.origin;
+    socketInstance = io(socketUrl, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
       auth: { token },

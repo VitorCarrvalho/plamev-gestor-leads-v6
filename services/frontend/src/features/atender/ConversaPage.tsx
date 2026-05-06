@@ -487,6 +487,8 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
       ['provocar_ok',        () => setFeedback({ ok: true, text: '✓ Mari provocou o lead' })],
       ['instrucao_ok',       () => setFeedback({ ok: true, text: '✓ Mari enviou mensagem ao cliente' })],
       ['falar_direto_ok',    () => setFeedback({ ok: true, text: '✓ Mensagem enviada ao cliente' })],
+      ['falar_direto_err',   (d) => setFeedback({ ok: false, text: `Erro: ${d.erro || d.msg}` })],
+      ['instrucao_err',      (d) => setFeedback({ ok: false, text: `Erro: ${d.erro || d.msg}` })],
       ['nota_ok',            () => setFeedback({ ok: true, text: '✓ Nota salva' })],
       ['agendar_ok',         () => setFeedback({ ok: true, text: '✓ Mensagem agendada' })],
       ['ia_status',          (d) => setFeedback({ ok: true, text: `✓ IA ${d.silenciada ? 'silenciada' : 'ativa'}` })],
@@ -502,6 +504,10 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
 
   const executarAcao = () => {
     if (!texto.trim() && aba !== 'mari') return;
+    if (!socket.connected) {
+      setFeedback({ ok: false, text: 'Erro: Chat desconectado. Tente recarregar a página.' });
+      return;
+    }
     setAcaoLoading(true); setFeedback(null);
     if (aba === 'mari')   socket.emit('provocar',   { conversa_id: conversaId });
     if (aba === 'direto') socket.emit('falar_direto', { conversa_id: conversaId, texto, reescrever });
@@ -513,6 +519,10 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
 
   const instruirMari = () => {
     if (!texto.trim()) return;
+    if (!socket.connected) {
+      setFeedback({ ok: false, text: 'Erro: Chat desconectado. Tente recarregar a página.' });
+      return;
+    }
     setAcaoLoading(true); setFeedback(null);
     socket.emit('instrucao', { conversa_id: conversaId, texto });
     setTexto('');

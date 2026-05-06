@@ -132,7 +132,9 @@ export function buildMariPrompt({
 
   sections.push(`# CONTEXTO ATUAL
 Etapa: ${stage}
-Nunca invente nomes de plano, cobertura, clínica ou valor fora do que está no contexto acima.`);
+Nunca invente nomes de plano, cobertura, clínica ou valor fora do que está no contexto acima.
+
+IMPORTANTE: Se houver mensagens no histórico com "[INSTRUÇÃO SUPERVISOR]", considere-as ordens diretas que você deve interpretar e seguir conforme o contexto (algumas podem ser pontuais, outras contínuas).`);
 
   return sections.filter(Boolean).join('\n\n');
 }

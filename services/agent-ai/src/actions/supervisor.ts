@@ -203,10 +203,11 @@ async function executar(resultado, { conversa, cliente, perfil, msg }) {
 
   // ── 5. Escalar ────────────────────────────────────────────
   if (escalonar) {
-    await db.run(
-      `INSERT INTO instrucoes_ativas (conversa_id, instrucao, ativa)
-       VALUES ($1, $2, true)`,
-      [conversa.id, 'ESCALONADO: cliente precisa de atenção humana']
+    await db.salvarMensagem(
+      conversa.id,
+      'system',
+      '[INSTRUÇÃO SUPERVISOR]: ESCALONADO: cliente precisa de atenção humana',
+      'supervisora'
     ).catch(() => {});
     console.log(`[ACTIONS] 🚨 Escalonado: ${msg.phone}`);
   }
