@@ -69,6 +69,10 @@ export async function validateClaims(
   modelName: string,
   context: OutputGuardContext = {},
 ): Promise<ValidationResult> {
+  // OUTPUT GUARD DESATIVADO — muitos falsos positivos.
+  // A proteção de preço é feita diretamente no orchestrator via checkPriceGuard().
+  return { isValid: true };
+
   const response = generation.resposta;
   if (!response) return { isValid: true };
 

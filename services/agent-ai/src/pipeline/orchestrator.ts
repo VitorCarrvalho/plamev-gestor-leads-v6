@@ -553,6 +553,29 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
     return;
   }
 
+  // ── VERIFICAÇÃO DE PREÇO (independente do output guard) ───────────────────
+  // Compara cada valor monetário mencionado na resposta contra TODOS os preços
+  // reais do banco (valor_tabela, valor_promocional, valor_oferta, valor_limite)
+  // para todos os planos ativos. Qualquer preço que não existir no BD é inventado.
+  if (generation.resposta && tabelaPlanos.length > 0) {
+    const camposPreco = ['valor_tabela', 'valor_promocional', 'valor_oferta', 'valor_limite'];
+    const precosValidos = new Set<string>();
+    for (const row of tabelaPlanos) {
+      for (const campo of camposPreco) {
+        const v = (row as any)[campo];
+        if (v != null && !isNaN(Number(v))) precosValidos.add(Number(v).toFixed(2));
+      }
+    }
+    const precosNaResposta = (generation.resposta.match(/R\$\s*\d{1,3}(?:\.\d{3})*,\d{2}/g) || [])
+      .map(p => parseFloat(p.replace(/R\$\s*/i, '').replace(/\./g, '').replace(',', '.')))
+      .filter(v => !isNaN(v) && v > 0);
+    const inventados = precosNaResposta.filter(p => !precosValidos.has(p.toFixed(2)));
+    if (inventados.length > 0) {
+      console.warn(`${tag} ⛔ [PRICE-GUARD] Preço(s) não existem no BD: ${inventados.map(p => 'R$' + p.toFixed(2).replace('.', ',')).join(', ')} — substituindo resposta`);
+      generation.resposta = 'Quero te confirmar o valor certinho pra você — só um instante 😊';
+    }
+  }
+
   // ── ETAPA 5: Output Guard ─────────────────────────────────
   const t5 = Date.now();
   const outGuardSpan = trace.span({
