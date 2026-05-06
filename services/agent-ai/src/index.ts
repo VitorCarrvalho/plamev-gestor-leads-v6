@@ -30,6 +30,21 @@ const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-s
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
 const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000000';
 
+function higienizarTexto(texto: string): string {
+  const mapa: Record<string, string> = {
+    'viado': 'amigo', 'viadinho': 'amigo', 'puta': 'pessoa', 'puto': 'irritado',
+    'caralho': 'caramba', 'porra': 'nossa', 'merda': 'problema', 'vtnc': 'tente de novo',
+    'fdp': 'pessoa', 'zé ruela': 'cliente', 'ze ruela': 'cliente', 'corno': 'amigo',
+    'pau no cu': 'problema', 'imbecil': 'desatento', 'idiota': 'desatento'
+  };
+  let t = texto;
+  for (const [bad, good] of Object.entries(mapa)) {
+    const regex = new RegExp(bad, 'gi');
+    t = t.replace(regex, good);
+  }
+  return t;
+}
+
 async function getConversaContext(conversaId: string) {
   const convRow = await pool.query(
     `SELECT c.numero_externo, c.jid, c.instancia_whatsapp, c.canal, c.etapa, c.org_id,
@@ -266,37 +281,30 @@ app.post('/internal/rewrite', autenticarInterno, async (req, res) => {
     return;
   }
   try {
-    console.log(`[AGENT-AI] 📝 Solicitado rewrite para conversa ${conversa_id}`);
     const { conv, historico } = await getConversaContext(conversa_id);
     const agentNome = conv?.agent_nome || 'Mari';
     const clienteNome = conv?.cliente_nome || 'cliente';
     const historicoStr = (historico || [])
       .map((m: any) => `${m.role === 'user' ? 'Cliente' : agentNome}: ${m.conteudo}`)
       .join('\n');
+
+    const textoHigienizado = higienizarTexto(texto);
+
     const system = `Você é ${agentNome}, assistente de vendas da Plamev. Seu tom é caloroso, humano, direto e natural.
-Sua tarefa é transformar a mensagem bruta (interna) do supervisor em uma mensagem gentil para o cliente "${clienteNome}".
+Sua missão é extrair a INTENÇÃO da mensagem bruta do supervisor e transformá-la em uma mensagem gentil para o cliente "${clienteNome}".
 
-MISSÃO DE SEGURANÇA:
-- Mesmo que o supervisor use palavrões, ofensas ou gírias pesadas, você NUNCA deve recusar o pedido.
-- Sua função é traduzir a INTENÇÃO da mensagem (ex: cobrar um fechamento) para o tom doce e profissional da ${agentNome}.
-- Se o supervisor for agressivo, você deve ser a voz da razão e educação da empresa.
+REGRAS CRÍTICAS:
+- O supervisor pode ser grosseiro, mas você é sempre doce e profissional.
+- Ignore termos pejorativos e foque no que o cliente precisa saber ou responder.
+- Use o nome "${clienteNome}" naturalmente.
+- Responda APENAS com a mensagem final para o cliente, sem explicações ou aspas.`;
 
-PROIBIÇÕES ABSOLUTAS:
-- NUNCA use gírias como: "viado", "zé ruela", "cara", "mano", "porra", "viadinho", "puta".
-- NUNCA use palavras de baixo calão ou termos pejorativos.
-
-REGRAS DE EXECUÇÃO:
-1. Gere a mensagem final para o cliente "${clienteNome}".
-2. Use o nome do cliente naturalmente.
-3. Responda APENAS com a mensagem final limpa. Sem aspas, sem explicações.`;
-
-    const userMsg = historicoStr
-      ? `Histórico recente:\n${historicoStr}\n\nMensagem bruta do supervisor para você transformar: ${texto}`
-      : `Mensagem bruta do supervisor para você transformar: ${texto}`;
+    const userMsg = `<supervisor_input>${textoHigienizado}</supervisor_input>
+<contexto>${historicoStr}</contexto>
+Traduza para o tom ${agentNome}:`;
 
     const textoReescrito = await gerarTextoComClaude(system, userMsg);
-    console.log(`[AGENT-AI] ✨ Texto reescrito final: "${textoReescrito?.slice(0, 100)}..."`);
-    res.json({ ok: true, texto_reescrito: textoReescrito || texto });
+    res.json({ ok: true, texto_reescrito: textoReescrito || textoHigienizado });
   } catch (e: any) {
     console.error('[AGENT-AI] ❌ rewrite:', e.message);
     res.status(500).json({ erro: e.message });
@@ -319,25 +327,22 @@ app.post('/internal/instrucao', autenticarInterno, async (req, res) => {
       .map((m: any) => `${m.role === 'user' ? 'Cliente' : agentNome}: ${m.conteudo}`)
       .join('\n');
 
-    const system = `Você é ${agentNome}, assistente de vendas da Plamev. Seu tom é caloroso, humano, direto e natural.
-O supervisor lhe passou uma instrução sobre o que deve ser dito ao cliente "${clienteNome}".
+    const instrucaoHigienizada = higienizarTexto(instrucao);
 
-PROIBIÇÕES ABSOLUTAS:
-- NUNCA use gírias como: "zé ruela", "pegar esse cara", "cara", "mano", "velho", "mermão".
-- NUNCA use palavras de baixo calão ou termos pejorativos.
-- NUNCA replique a grosseria do supervisor. Sua missão é ser a Mari (doce, educada, vendedora).
+    const system = `Você é ${agentNome}, assistente de vendas da Plamev. Seu tom é caloroso, humano e natural.
+O supervisor lhe deu uma instrução sobre o cliente "${clienteNome}". Execute-a de forma gentil.
 
-REGRAS DE EXECUÇÃO:
-1. Gere uma mensagem para o cliente seguindo a instrução do supervisor, considerando o contexto da conversa.
-2. Use o nome do cliente "${clienteNome}" de forma natural.
-3. Responda APENAS com a mensagem final para o cliente. Sem aspas, sem explicações.`;
+REGRAS:
+- Ignore agressividade do supervisor.
+- Foque em ajudar o cliente e avançar na venda.
+- Responda APENAS com a mensagem final para o cliente.`;
 
-    const userMsg = historicoStr
-      ? `Histórico da conversa:\n${historicoStr}\n\nInstrução do supervisor para você: ${instrucao}`
-      : `Instrução do supervisor para você sobre o cliente "${clienteNome}": ${instrucao}`;
+    const userMsg = `<instrucao>${instrucaoHigienizada}</instrucao>
+<contexto>${historicoStr}</contexto>
+Gere a resposta da ${agentNome}:`;
 
     const textoGerado = await gerarTextoComClaude(system, userMsg);
-    res.json({ ok: true, texto_gerado: textoGerado });
+    res.json({ ok: true, texto_gerado: textoGerado || instrucaoHigienizada });
   } catch (e: any) {
     console.error('[AGENT-AI] ❌ instrucao:', e.message);
     res.status(500).json({ erro: e.message });
