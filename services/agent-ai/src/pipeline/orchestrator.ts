@@ -595,14 +595,17 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   }
 
   // ── VERIFICAÇÃO DE PREÇO POR PLANO ────────────────────────────────────────
-  // Só roda quando o usuário mencionou R$ explicitamente na mensagem —
-  // sinal de que está negociando um valor. Sem R$ na mensagem do usuário,
-  // o LLM está apenas apresentando o catálogo e a proteção já está no system prompt.
+  // Roda em TODA resposta do LLM que contenha preços.
+  // Três checks com gates distintos:
+  //   1. Cross-plan (preço não existe no plano citado) → sempre ativo
+  //   2. Floor + escalação (preço abaixo do piso)      → só quando usuário mencionou R$
+  //   3. Global (preço não existe em nenhum plano)      → só quando usuário mencionou R$
+  // O gate no floor/global evita falsa escalação quando o LLM apresenta catálogo
+  // e a detecção de plano associa preço ao plano errado.
   let priceEscalationNeeded = false;
-  const userNegotiatingPrice = /R\$/.test(msg.texto || '');
+  const userMentionedPrice = /R\$/.test(msg.texto || '');
 
-  if (generation.resposta && tabelaPlanos.length > 0 && userNegotiatingPrice) {
-    // Monta mapa: slug → { preços válidos, piso mínimo }
+  if (generation.resposta && tabelaPlanos.length > 0) {
     const planPriceData = new Map<string, { valid: Set<string>; floor: number | null }>();
     const globalValidPrices = new Set<string>();
 
@@ -643,18 +646,20 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
       const info = slug ? planPriceData.get(slug) : undefined;
 
       if (info) {
-        // Piso: SEMPRE ativo — garante que nenhum preço abaixo do mínimo seja aceito
-        if (info.floor !== null && val < info.floor) {
+        // Check 2: piso — só quando usuário negociando (evita falsa escalação por plano errado)
+        if (userMentionedPrice && info.floor !== null && val < info.floor) {
           priceBlockReason = `Preço R$${raw} abaixo do piso R$${info.floor.toFixed(2).replace('.', ',')} do plano "${slug}"`;
           priceEscalationNeeded = true;
           break;
         }
+        // Check 1: cross-plan — sempre ativo (preço atribuído a plano que não o possui)
         if (!info.valid.has(valStr)) {
           priceBlockReason = `Preço R$${raw} não pertence ao plano "${slug}"`;
           break;
         }
       } else {
-        if (!globalValidPrices.has(valStr)) {
+        // Check 3: global — só quando usuário negociando (evita falso positivo em totais calculados)
+        if (userMentionedPrice && !globalValidPrices.has(valStr)) {
           priceBlockReason = `Preço R$${raw} não existe em nenhum plano`;
           break;
         }
