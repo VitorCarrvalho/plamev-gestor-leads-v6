@@ -595,14 +595,13 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   }
 
   // ── VERIFICAÇÃO DE PREÇO POR PLANO ────────────────────────────────────────
-  // Modo de operação depende do contexto:
-  //   · Usuário mencionou R$ na mensagem → está negociando → todas as validações
-  //   · Usuário não mencionou R$         → LLM apresentando catálogo → só checa piso
-  // Isso evita falsos positivos quando o LLM mostra preços corretos do catálogo.
+  // Só roda quando o usuário mencionou R$ explicitamente na mensagem —
+  // sinal de que está negociando um valor. Sem R$ na mensagem do usuário,
+  // o LLM está apenas apresentando o catálogo e a proteção já está no system prompt.
   let priceEscalationNeeded = false;
   const userNegotiatingPrice = /R\$/.test(msg.texto || '');
 
-  if (generation.resposta && tabelaPlanos.length > 0) {
+  if (generation.resposta && tabelaPlanos.length > 0 && userNegotiatingPrice) {
     // Monta mapa: slug → { preços válidos, piso mínimo }
     const planPriceData = new Map<string, { valid: Set<string>; floor: number | null }>();
     const globalValidPrices = new Set<string>();
@@ -650,15 +649,12 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
           priceEscalationNeeded = true;
           break;
         }
-        // Validação cruzada: só quando usuário está negociando (mencionou R$)
-        // Evita falso positivo quando LLM apresenta catálogo com preços arredondados
-        if (userNegotiatingPrice && !info.valid.has(valStr)) {
+        if (!info.valid.has(valStr)) {
           priceBlockReason = `Preço R$${raw} não pertence ao plano "${slug}"`;
           break;
         }
       } else {
-        // Sem plano identificado: só bloqueia se usuário negociando e preço não existe em nenhum plano
-        if (userNegotiatingPrice && !globalValidPrices.has(valStr)) {
+        if (!globalValidPrices.has(valStr)) {
           priceBlockReason = `Preço R$${raw} não existe em nenhum plano`;
           break;
         }
