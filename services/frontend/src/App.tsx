@@ -1,7 +1,3 @@
-/**
- * App.tsx — Dashboard V5
- * Shell: Sidebar dark 232px + main light. 4 pilares: Monitorar, Atender, Analisar, Sistema.
- */
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Eye, EyeOff, Loader2, Menu } from 'lucide-react';
 import { isLoggedIn, login, logout, getUser } from './services/api';
@@ -10,34 +6,37 @@ import { PageHeader } from './components/layout/PageHeader';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 
-// Pilar Monitorar (Fase 2)
-import { LiveFeedPage } from './features/monitorar/LiveFeedPage';
-import { FilaPage }     from './features/monitorar/FilaPage';
-import { StatsPage }    from './features/monitorar/StatsPage';
+// Monitorar
+import { DashboardPage }      from './features/monitorar/DashboardPage';
+import { PipelineKanbanPage } from './features/atender/PipelineKanbanPage';
 
-// Pilar Atender (Fase 3)
-import { ConversaPage }         from './features/atender/ConversaPage';
-import { PerfilPage }           from './features/atender/PerfilPage';
-import { PipelineKanbanPage }   from './features/atender/PipelineKanbanPage';
-import { ChatSimulatorPage }    from './features/atender/ChatSimulatorPage';
+// Atender
+import { ConversaPage }       from './features/atender/ConversaPage';
+import { ContactsPage }       from './features/atender/ContactsPage';
+import { ConfiguracaoPage }   from './features/sistema/ConfiguracaoPage';
+import { PerfilPage }         from './features/atender/PerfilPage';
 
-// Pilar Sistema (Fase 4)
-import { SqlBrowserPage } from './features/sistema/SqlBrowserPage';
-import { AgendaPage }     from './features/sistema/AgendaPage';
-import { ConfigPage }     from './features/sistema/ConfigPage';
-
-// Pilar Analisar (Fase 5)
+// Analisar
 import { SalvasPage }  from './features/analisar/SalvasPage';
 import { FunilPage }   from './features/analisar/FunilPage';
 import { AgentesPage } from './features/analisar/AgentesPage';
 
-// Novidades (Fase 6)
-import { AuditoriaPage }      from './features/sistema/AuditoriaPage';
-import { TemplatesPage }      from './features/sistema/TemplatesPage';
-import { ConfiguracaoPage }   from './features/sistema/ConfiguracaoPage';
-import { ProvedoresPage }     from './features/sistema/ProvedoresPage';
-import { PlanosPage }         from './features/sistema/PlanosPage';
+// Sistema
+import { ChatSimulatorPage } from './features/atender/ChatSimulatorPage';
+import { SqlBrowserPage }    from './features/sistema/SqlBrowserPage';
+import { AuditoriaPage }     from './features/sistema/AuditoriaPage';
+import { TemplatesPage }     from './features/sistema/TemplatesPage';
+import { PlanosPage }        from './features/sistema/PlanosPage';
+
+// Configurações
+import { ProvedoresPage } from './features/sistema/ProvedoresPage';
+
+// Legado (manter temporariamente)
+import { AgendaPage } from './features/sistema/AgendaPage';
+import { ConfigPage } from './features/sistema/ConfigPage';
+
 import { useNotifications } from './hooks/useNotifications';
+import { UserProfileModal } from './components/UserProfileModal';
 
 // ── LOGIN ─────────────────────────────────────────────────────
 const Login: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
@@ -114,9 +113,10 @@ const Placeholder: React.FC<{ titulo: string; subtitulo: string; fase: string }>
 
 // ── SHELL ─────────────────────────────────────────────────────
 const Shell: React.FC = () => {
-  const [pilar, setPilar] = useState<Pilar>('monitorar');
-  const [subPage, setSubPage] = useState<string>('live');
+  const [pilar, setPilar]       = useState<Pilar>('monitorar');
+  const [subPage, setSubPage]   = useState<string>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [perfilOpen, setPerfilOpen] = useState(false);
 
   // Event bus leve: qualquer componente pode chamar
   //   window.dispatchEvent(new CustomEvent('dashv5-navegar', { detail: { pilar, subPage, conversaId? } }))
@@ -140,24 +140,36 @@ const Shell: React.FC = () => {
   const renderPagina = () => {
     const key = `${pilar}/${subPage}`;
     switch (key) {
-      case 'monitorar/live':    return <LiveFeedPage />;
-      case 'monitorar/fila':    return <FilaPage />;
-      case 'monitorar/stats':   return <StatsPage />;
-      case 'atender/conversa':   return <ConversaPage />;
-      case 'atender/perfil':     return <PerfilPage onAbrirConversa={() => navegar('atender', 'conversa')} />;
-      case 'atender/kanban':     return <PipelineKanbanPage />;
-      case 'atender/simulador':  return <ChatSimulatorPage />;
-      case 'analisar/salvas':   return <SalvasPage />;
-      case 'analisar/funil':    return <FunilPage />;
-      case 'analisar/agentes':  return <AgentesPage />;
-      case 'sistema/agenda':    return <AgendaPage />;
-      case 'sistema/sql':       return <SqlBrowserPage />;
-      case 'sistema/auditoria':     return <AuditoriaPage />;
-      case 'sistema/planos':        return <PlanosPage />;
-      case 'sistema/templates':     return <TemplatesPage />;
-      case 'sistema/configuracao':   return <ConfiguracaoPage />;
-      case 'sistema/provedores':     return <ProvedoresPage />;
-      case 'sistema/config':         return <ConfigPage />;
+      // Monitorar
+      case 'monitorar/dashboard': return <DashboardPage />;
+      case 'monitorar/pipeline':  return <PipelineKanbanPage />;
+
+      // Atender
+      case 'atender/chat':     return <ConversaPage />;
+      case 'atender/contatos': return <ContactsPage />;
+      case 'atender/agentes':  return <ConfiguracaoPage />;
+      case 'atender/perfil':   return <PerfilPage onAbrirConversa={() => navegar('atender', 'chat')} />;
+
+      // Analisar
+      case 'analisar/salvas':      return <SalvasPage />;
+      case 'analisar/funil':       return <FunilPage />;
+      case 'analisar/performance': return <AgentesPage />;
+
+      // Sistema
+      case 'sistema/simulador':  return <ChatSimulatorPage />;
+      case 'sistema/sql':        return <SqlBrowserPage />;
+      case 'sistema/auditoria':  return <AuditoriaPage />;
+      case 'sistema/templates':  return <TemplatesPage />;
+      case 'sistema/planos':     return <PlanosPage />;
+
+      // Configurações
+      case 'configuracoes/agentes':    return <ConfiguracaoPage />;
+      case 'configuracoes/provedores': return <ProvedoresPage />;
+
+      // Legado
+      case 'sistema/agenda': return <AgendaPage />;
+      case 'sistema/config': return <ConfigPage />;
+
       default: return <div className="p-6 text-slate-500">Página não encontrada</div>;
     }
   };
@@ -169,10 +181,13 @@ const Shell: React.FC = () => {
         subPage={subPage}
         onNavigate={navegar}
         onLogout={() => { logout(); window.location.reload(); }}
+        onPerfilClick={() => setPerfilOpen(true)}
         userEmail={user?.email}
+        userName={user?.nome}
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
       />
+      {perfilOpen && <UserProfileModal onClose={() => setPerfilOpen(false)} />}
       <main className="flex-1 md:ml-[232px] min-h-screen flex flex-col bg-slate-50 overflow-hidden">
         {/* Barra top mobile com hambúrguer */}
         <div className="md:hidden sticky top-0 z-20 bg-white border-b border-slate-200 h-12 flex items-center gap-2 px-3 shrink-0">

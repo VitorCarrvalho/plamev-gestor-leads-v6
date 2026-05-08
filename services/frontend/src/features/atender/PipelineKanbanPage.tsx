@@ -87,7 +87,7 @@ function avatarGrad(c: any): string {
 function abrirConversa(conversaId: string) {
   localStorage.setItem('dashv5_conversa_ativa', conversaId);
   window.dispatchEvent(new CustomEvent('dashv5-navegar', {
-    detail: { pilar: 'atender', subPage: 'conversa', conversaId },
+    detail: { pilar: 'atender', subPage: 'chat', conversaId },
   }));
 }
 

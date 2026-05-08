@@ -72,7 +72,7 @@ export const FilaPage: React.FC = () => {
                 <TableBody>
                   {fila.map(c => {
                     const abrir = () => window.dispatchEvent(new CustomEvent('dashv5-navegar', {
-                      detail: { pilar: 'atender', subPage: 'conversa', conversaId: c.conversa_id },
+                      detail: { pilar: 'atender', subPage: 'chat', conversaId: c.conversa_id },
                     }));
                     return (
                     <TableRow

@@ -21,6 +21,8 @@ import conhecimentoRouter from './routes/conhecimento';
 import llmConfigRouter    from './routes/llm-config';
 import analisarRouter     from './routes/analisar';
 import { planosRouter }   from './routes/planos';
+import dashboardRouter    from './routes/dashboard';
+import contatosRouter     from './routes/contatos';
 
 config({ path: path.join(__dirname, '../../.env') });
 
@@ -161,6 +163,8 @@ app.use('/api/config/planos',        planosRouter);
 app.use('/api/config/agentes',       agenteRouter);
 app.use('/api/config/agentes/:agenteId/conhecimento', conhecimentoRouter);
 app.use('/api/analisar',             analisarRouter);
+app.use('/api/dashboard',            dashboardRouter);
+app.use('/api/contatos',             contatosRouter);
 app.use('/api/internal',             internalRouter);
 
 // ── Rota de manutenção: re-rodar migrations ──────────────────────
