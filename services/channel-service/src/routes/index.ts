@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { isDuplicate, messageQueue, redisClient } from '../utils/redis';
 import { normalizeMessage } from '../utils/normalizer';
-import { enviar, enviarDocumentoWA } from '../services/sender';
+import { enviar, enviarDocumentoWA, enviarReacaoWA, enviarMidiaWA } from '../services/sender';
 
 const router = Router();
 
@@ -271,6 +271,40 @@ internalRouter.post('/send-document', async (req: Request, res: Response) => {
     );
   } catch (e: any) {
     console.error('[CHANNEL-SERVICE] ❌ Falha ao enviar documento:', e.message);
+  }
+});
+
+internalRouter.post('/send-reaction', async (req: Request, res: Response) => {
+  const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+  if (req.headers['x-internal-secret'] !== INTERNAL_SECRET) {
+    res.status(401).json({ erro: 'Não autorizado' }); return;
+  }
+  const { phone, jid, instancia, msgIdExterno, emoji } = req.body || {};
+  if (!phone || !msgIdExterno || !emoji) {
+    res.status(400).json({ erro: 'phone, msgIdExterno e emoji são obrigatórios' }); return;
+  }
+  res.json({ ok: true });
+  try {
+    await enviarReacaoWA(phone, jid ?? null, instancia ?? null, msgIdExterno, emoji);
+  } catch (e: any) {
+    console.error('[CHANNEL-SERVICE] ❌ Falha ao enviar reação:', e.message);
+  }
+});
+
+internalRouter.post('/send-media', async (req: Request, res: Response) => {
+  const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+  if (req.headers['x-internal-secret'] !== INTERNAL_SECRET) {
+    res.status(401).json({ erro: 'Não autorizado' }); return;
+  }
+  const { phone, jid, instancia, base64, mimeType, fileName, caption } = req.body || {};
+  if (!phone || !base64 || !mimeType) {
+    res.status(400).json({ erro: 'phone, base64 e mimeType são obrigatórios' }); return;
+  }
+  res.json({ ok: true });
+  try {
+    await enviarMidiaWA(phone, jid ?? null, instancia ?? null, base64, mimeType, fileName ?? 'arquivo', caption ?? '');
+  } catch (e: any) {
+    console.error('[CHANNEL-SERVICE] ❌ Falha ao enviar mídia:', e.message);
   }
 });
 

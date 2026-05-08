@@ -167,6 +167,46 @@ app.use('/api/dashboard',            dashboardRouter);
 app.use('/api/contatos',             contatosRouter);
 app.use('/api/internal',             internalRouter);
 
+// ── Enviar mídia (áudio gravado / arquivo anexado) ──────────────
+// Chamado pelo frontend (MessageInput). Salva a msg no histórico e
+// encaminha o base64 ao channel-service para envio via Evolution API.
+app.post('/api/mensagens/enviar-midia', autenticar, async (req, res) => {
+  try {
+    const { conversa_id, base64, mimeType, fileName, caption } = req.body || {};
+    if (!conversa_id || !base64 || !mimeType) {
+      res.status(400).json({ erro: 'conversa_id, base64 e mimeType são obrigatórios' }); return;
+    }
+
+    const conv = await queryOne<any>(
+      `SELECT numero_externo AS phone, jid, instancia_whatsapp AS instancia
+       FROM conversas WHERE id=$1`, [conversa_id]
+    );
+    if (!conv) { res.status(404).json({ erro: 'Conversa não encontrada' }); return; }
+
+    const rotulo = mimeType.startsWith('audio/') ? `[🎵 áudio ${fileName || 'gravacao'} enviado]`
+      : mimeType.startsWith('image/') ? `[🖼️ imagem ${fileName || 'imagem'} enviada]`
+      : mimeType.startsWith('video/') ? `[🎬 vídeo ${fileName || 'video'} enviado]`
+      : `[📋 arquivo ${fileName || 'documento'} enviado]`;
+
+    await execute(
+      `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por, metadata)
+       VALUES ($1,'agent',$2,'supervisora',$3::jsonb)`,
+      [conversa_id, caption || rotulo, JSON.stringify({ mediaType: mimeType.split('/')[0], mimeType, fileName, mediaBase64: base64 })]
+    );
+
+    const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
+    const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+    fetch(`${CHANNEL_SERVICE_URL}/internal/send-media`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
+      body: JSON.stringify({ phone: conv.phone, jid: conv.jid, instancia: conv.instancia, base64, mimeType, fileName, caption }),
+      signal: AbortSignal.timeout(8000),
+    }).catch(e => console.warn('[CRM/enviar-midia] Falha ao encaminhar ao channel-service:', e.message));
+
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
+});
+
 // ── Rota de manutenção: re-rodar migrations ──────────────────────
 app.post('/api/internal/migrate', async (req, res) => {
   const secret = process.env.INTERNAL_SECRET || 'plamev-internal';

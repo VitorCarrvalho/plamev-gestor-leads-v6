@@ -142,6 +142,66 @@ export async function enviarDocumentoWA(
   return false;
 }
 
+export async function enviarReacaoWA(
+  phone: string,
+  jid: string | null,
+  instanciaExplicita: string | null,
+  msgIdExterno: string,
+  emoji: string,
+): Promise<boolean> {
+  let inst = instanciaExplicita;
+  if (!inst) inst = getInstancia(phone);
+  if (!inst) return false;
+
+  const { baseUrl, apiKey } = getEvoConfig(inst);
+  const numero = normalizarJID(phone, jid);
+
+  const r = await wppPost(baseUrl, `/message/sendReaction/${inst}`, {
+    key: { id: msgIdExterno, remoteJid: numero, fromMe: false },
+    reaction: emoji,
+  }, apiKey).catch(() => ({}));
+
+  if (r.key || r.id || r.sent) {
+    console.log(`[SENDER] ✅ Reação WA ${emoji} → ${msgIdExterno}`);
+    return true;
+  }
+  console.log(`[SENDER] ❌ Reação WA falhou:`, JSON.stringify(r).substring(0, 120));
+  return false;
+}
+
+export async function enviarMidiaWA(
+  phone: string,
+  jid: string | null,
+  instanciaExplicita: string | null,
+  base64: string,
+  mimeType: string,
+  fileName: string,
+  caption = '',
+): Promise<boolean> {
+  let inst = instanciaExplicita;
+  if (!inst) inst = getInstancia(phone);
+  if (!inst) return false;
+
+  const { baseUrl, apiKey } = getEvoConfig(inst);
+  const numero = normalizarJID(phone, jid);
+
+  const mediatype = mimeType.startsWith('image/') ? 'image'
+    : mimeType.startsWith('video/') ? 'video'
+    : mimeType.startsWith('audio/') ? 'audio'
+    : 'document';
+
+  const body: any = { number: numero, mediatype, mimetype: mimeType, media: base64, caption };
+  if (mediatype === 'document' || mediatype === 'audio') body.fileName = fileName;
+
+  const r = await wppPost(baseUrl, `/message/sendMedia/${inst}`, body, apiKey).catch(() => ({}));
+  if (r.key || r.id) {
+    console.log(`[SENDER] ✅ Mídia WA (${mediatype}) → ${numero}`);
+    return true;
+  }
+  console.log(`[SENDER] ❌ Mídia WA falhou:`, JSON.stringify(r).substring(0, 120));
+  return false;
+}
+
 function tgPost(path: string, body: any, token: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const b = JSON.stringify(body);

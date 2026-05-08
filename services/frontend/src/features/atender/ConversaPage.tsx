@@ -3,15 +3,21 @@
  * Layout 3 colunas: lista | chat | perfil.
  * Cada coluna com scroll isolado.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  MessageCircle, Phone, Search, Clock, ChevronRight, RefreshCw,
-  Flame, CircleOff, Send, Sparkles, FileText, Bell, Loader2,
-  CheckCircle2, AlertCircle, VolumeX, Volume2, Zap, Calendar,
-  UserCircle, Bookmark, ArrowLeftRight, Pencil, Trash2, X, Save,
-  Brain, DollarSign, Mail, MapPin, User as UserIcon, Thermometer,
-  Paperclip, Image as ImageIcon, FileAudio, Download,
+  MessageCircle, Phone, Search, ChevronRight, RefreshCw,
+  Flame, CircleOff, Send, Sparkles, FileText, Loader2,
+  AlertCircle, Zap, Calendar, CheckCircle2,
+  Bookmark, Pencil, Trash2, X, Save,
+  DollarSign, Mail, MapPin, User as UserIcon, UserCircle,
+  Download, PanelLeftClose, PanelLeftOpen, ArrowLeftRight,
+  Paperclip, Image as ImageIcon, FileAudio,
 } from 'lucide-react';
+import { ChatHeader } from './components/ChatHeader';
+import { DetailsDrawer } from './components/DetailsDrawer';
+import { MessageBubble } from './components/MessageBubble';
+import { MessageInput } from './components/MessageInput';
+import { DateSeparator } from './components/DateSeparator';
 
 // Detecta markers de anexo salvos como texto em mensagens.conteudo e
 // devolve { tipo, rotulo } pra renderizar um card em vez do texto cru.
@@ -83,7 +89,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+// Tabs removido do ChatWindow — mantido para ModalAgendar futuro
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -146,7 +152,6 @@ const CONVERSA_ATIVA_KEY = 'dashv5_conversa_ativa';
 export const ConversaPage: React.FC = () => {
   const socket = useSocket();
   const [conversas, setConversas] = useState<any[]>([]);
-  // Lê conversa pré-selecionada (navegação vinda de outras telas — LiveFeed, Fila, etc)
   const [ativa, setAtiva] = useState<string | null>(() => {
     const preselected = localStorage.getItem(CONVERSA_ATIVA_KEY);
     if (preselected) { localStorage.removeItem(CONVERSA_ATIVA_KEY); return preselected; }
@@ -156,6 +161,7 @@ export const ConversaPage: React.FC = () => {
   const [filtroEtapa, setFiltroEtapa] = useState<string>('todas');
   const [filtroTemp, setFiltroTemp] = useState<string>('todas');
   const [loading, setLoading] = useState(true);
+  const [listaRecolhida, setListaRecolhida] = useState(false);
 
   useEffect(() => {
     api.get<any[]>('/api/conversas').then(cs => { setConversas(cs); setLoading(false); });
@@ -201,10 +207,21 @@ export const ConversaPage: React.FC = () => {
         <Badge variant="green" className="gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> ao vivo</Badge>
       </PageHeader>
 
-      <div className="flex-1 grid grid-cols-[320px_minmax(0,1fr)_360px] gap-0 min-h-0 overflow-hidden">
+      <div className={cn(
+        'flex-1 grid gap-0 min-h-0 overflow-hidden transition-[grid-template-columns] duration-300',
+        listaRecolhida ? 'grid-cols-[48px_minmax(0,1fr)]' : 'grid-cols-[320px_minmax(0,1fr)]'
+      )}>
         {/* COLUNA 1 — Conversas + filtros + legenda */}
-        <div className="bg-white border-r border-slate-200 flex flex-col min-h-0 overflow-hidden">
-          <div className="flex-shrink-0">
+        <div className="bg-white border-r border-slate-200 flex flex-col min-h-0 overflow-hidden relative">
+          {/* Botão de recolher a lista */}
+          <button
+            onClick={() => setListaRecolhida(v => !v)}
+            className="absolute top-2 right-2 z-10 p-1 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            title={listaRecolhida ? 'Expandir lista' : 'Recolher lista'}
+          >
+            {listaRecolhida ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          </button>
+          <div className={cn('flex-shrink-0', listaRecolhida && 'hidden')}>
             <div className="px-3 py-1.5 bg-slate-100 border-b border-slate-200 text-[10px] font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1">
               <MessageCircle className="w-3 h-3" /> Conversas
               <span className="ml-auto text-slate-400 font-normal normal-case">{filtradas.length} de {conversas.length}</span>
@@ -270,7 +287,7 @@ export const ConversaPage: React.FC = () => {
           </div>
 
           {/* Lista de conversas — ocupa todo o espaço restante */}
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className={cn('flex-1 min-h-0 overflow-y-auto', listaRecolhida && 'hidden')}>
             {loading ? <LoadingSpinner />
               : filtradas.length === 0 ? <EmptyState icon={MessageCircle} title="Nada encontrado" />
               : filtradas.map(c => (
@@ -292,15 +309,6 @@ export const ConversaPage: React.FC = () => {
           }
         </div>
 
-        {/* COLUNA 3 — Perfil */}
-        <div className="bg-white border-l border-slate-200 flex flex-col min-h-0 overflow-hidden">
-          {ativa
-            ? <PerfilPanel conversaId={ativa} onDeleted={() => { setAtiva(null); api.get<any[]>('/api/conversas').then(setConversas); }} />
-            : <div className="flex-1 flex items-center justify-center text-slate-300 text-xs p-4 text-center">
-                Perfil do lead aparece aqui
-              </div>
-          }
-        </div>
       </div>
     </div>
   );
@@ -443,19 +451,21 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
   const socket = useSocket();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [aba, setAba] = useState<'mari' | 'direto' | 'nota'>('mari');
-  const [texto, setTexto] = useState('');
-  const [reescrever, setReescrever] = useState(true);
   const [acaoLoading, setAcaoLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
   const [modalAgendar, setModalAgendar] = useState(false);
+  const [detalhesOpen, setDetalhesOpen] = useState(false);
+  const [replyTo, setReplyTo] = useState<{ id: string; conteudo: string; enviado_por: string } | null>(null);
+  const [reactions, setReactions] = useState<Record<string, string[]>>({});
   const msgsRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  // Ref para sempre chamar a versão mais recente de carregarConversa dentro dos handlers de socket
   const carregarConversaRef = useRef<() => void>(() => {});
 
-  // Auto-foca o input quando a ação termina OU quando troca de aba
-  useEffect(() => { if (!acaoLoading) inputRef.current?.focus(); }, [acaoLoading, aba, conversaId]);
+  // Carrega reações ao mudar de conversa
+  useEffect(() => {
+    api.get<any>(`/api/mensagens/${conversaId}/reactions`)
+      .then(r => setReactions(r.reactions || {}))
+      .catch(() => {});
+  }, [conversaId]);
 
   const carregarConversa = async () => {
     setLoading(true);
@@ -502,43 +512,32 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
     return () => { wrappedHandlers.forEach(([e, h]) => socket.off(e, h)); };
   }, [socket, conversaId]);
 
-  const executarAcao = () => {
-    if (!texto.trim() && aba !== 'mari') return;
+  const handleSend = useCallback((modo: 'mari' | 'direto' | 'nota', texto: string, opts?: { reescrever?: boolean }) => {
     if (!socket.connected) {
       setFeedback({ ok: false, text: 'Erro: Chat desconectado. Tente recarregar a página.' });
       return;
     }
     setAcaoLoading(true); setFeedback(null);
-    if (aba === 'mari')   socket.emit('provocar',   { conversa_id: conversaId });
-    if (aba === 'direto') socket.emit('falar_direto', { conversa_id: conversaId, texto, reescrever });
-    if (aba === 'nota')   socket.emit('salvar_nota', { conversa_id: conversaId, texto });
-    setTexto('');
-    // Re-foca imediatamente (ainda em loading) — permite digitar a próxima msg
-    setTimeout(() => inputRef.current?.focus(), 0);
-  };
-
-  const instruirMari = () => {
-    if (!texto.trim()) return;
-    if (!socket.connected) {
-      setFeedback({ ok: false, text: 'Erro: Chat desconectado. Tente recarregar a página.' });
-      return;
+    if (modo === 'mari')  {
+      if (texto.trim()) socket.emit('instrucao', { conversa_id: conversaId, texto });
+      else              socket.emit('provocar',  { conversa_id: conversaId });
     }
-    setAcaoLoading(true); setFeedback(null);
-    socket.emit('instrucao', { conversa_id: conversaId, texto });
-    setTexto('');
-    setTimeout(() => inputRef.current?.focus(), 0);
-  };
+    if (modo === 'direto') socket.emit('falar_direto', { conversa_id: conversaId, texto, reescrever: opts?.reescrever ?? true });
+    if (modo === 'nota')   socket.emit('salvar_nota',  { conversa_id: conversaId, texto });
+    setReplyTo(null);
+  }, [socket, conversaId]);
 
-  // Enter envia, Shift+Enter quebra linha
-  const onKeyDownInput = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (aba === 'mari')
-        (texto.trim() ? instruirMari : executarAcao)();
-      else
-        executarAcao();
-    }
-  };
+  const handleReact = useCallback(async (msgId: string, emoji: string) => {
+    try {
+      await api.post(`/api/mensagens/${msgId}/reaction`, { emoji });
+      // Atualiza localmente (toggle)
+      setReactions(prev => {
+        const current = prev[msgId] || [];
+        const jaExiste = current.includes(emoji);
+        return { ...prev, [msgId]: jaExiste ? current.filter(e => e !== emoji) : [...current, emoji] };
+      });
+    } catch (e: any) { console.error('[REACT] Erro:', e.message); }
+  }, []);
 
   const [toggleIaLoading, setToggleIaLoading] = useState(false);
   const toggleIa = async () => {
@@ -596,52 +595,17 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
   const iaSilenciada = conversa.ia_silenciada;
 
   return (
-    <div className="flex flex-col h-full min-h-0 overflow-hidden">
-      {/* Header da conversa */}
-      <div className="bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3 flex-shrink-0">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-          {(conversa.nome_cliente || '?')[0].toUpperCase()}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold text-slate-900 text-sm flex items-center gap-2">
-            {conversa.nome_cliente || fmtFone(conversa.phone)}
-            <Badge variant={conversa.canal === 'whatsapp' ? 'green' : 'blue'} className="text-[10px]">
-              {conversa.canal}
-            </Badge>
-          </div>
-          <div className="text-xs text-slate-500 flex items-center gap-2">
-            <Phone className="w-3 h-3" /> {fmtFone(conversa.phone)}
-            {conversa.etapa && <><span>·</span><span>{conversa.etapa}</span></>}
-            {conversa.score != null && <><span>·</span><span className="font-semibold">{conversa.score}/10</span></>}
-          </div>
-        </div>
-        <Button size="sm" variant={iaSilenciada ? 'danger-outline' : 'outline'} onClick={toggleIa} disabled={toggleIaLoading}>
-          {toggleIaLoading
-            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Aguarde…</>
-            : iaSilenciada ? <><Volume2 className="w-3.5 h-3.5" /> Ativar IA</> : <><VolumeX className="w-3.5 h-3.5" /> Silenciar IA</>}
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => setModalAgendar(true)}>
-          <Calendar className="w-3.5 h-3.5" /> Agendar
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setModalIntelV1(true)}
-          title="Salvar conversa em Conversas Salvas"
-        >
-          <Bookmark className="w-3.5 h-3.5" /> Salvar
-        </Button>
-        {conversa.etapa !== 'pago' && (
-          <Button
-            size="sm"
-            variant={conversa.etapa === 'venda_fechada' ? 'default' : 'outline'}
-            onClick={() => mudarEtapa('pago')}
-            title="Marcar como pago (adesão confirmada no ERP)"
-          >
-            <DollarSign className="w-3.5 h-3.5" /> Marcar Pago
-          </Button>
-        )}
-      </div>
+    <div className="flex flex-col h-full min-h-0 overflow-hidden" style={{ background: '#e5ddd5' }}>
+      <ChatHeader
+        conversa={conversa}
+        iaSilenciada={iaSilenciada}
+        toggleIaLoading={toggleIaLoading}
+        onToggleIa={toggleIa}
+        onAgendar={() => setModalAgendar(true)}
+        onSalvar={() => setModalIntelV1(true)}
+        onMarcarPago={() => mudarEtapa('pago')}
+        onAbrirDetalhes={() => setDetalhesOpen(true)}
+      />
 
       <Dialog open={modalIntelV1} onOpenChange={setModalIntelV1}>
         <DialogContent>
@@ -686,89 +650,50 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
       )}
 
       {/* Mensagens */}
-      <div ref={msgsRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2">
+      <div ref={msgsRef} className="flex-1 min-h-0 overflow-y-auto py-3">
         {mensagens.length === 0
           ? <div className="text-center text-slate-400 text-sm py-10">Sem mensagens</div>
-          : mensagens.map((m: any) => (
-            <Bolha
-              key={m.id}
-              msg={{ ...m, conversa_id: conversaId }}
-              onChange={() => socket.emit('get_conversa', conversaId)}
-            />
-          ))}
+          : mensagens.map((m: any, idx: number) => {
+              const prev = mensagens[idx - 1] || null;
+              const next = mensagens[idx + 1] || null;
+              // Separador de data
+              const showSep = !prev || new Date(m.timestamp).toDateString() !== new Date(prev.timestamp).toDateString();
+              return (
+                <React.Fragment key={m.id}>
+                  {showSep && <DateSeparator date={new Date(m.timestamp)} />}
+                  <MessageBubble
+                    msg={{ ...m, conversa_id: conversaId }}
+                    prevMsg={prev}
+                    nextMsg={next}
+                    onChange={() => { carregarConversaRef.current(); }}
+                    onReply={setReplyTo}
+                    reactions={reactions[m.id] || []}
+                    onReact={handleReact}
+                  />
+                </React.Fragment>
+              );
+            })}
       </div>
 
-      {/* Ações — Tabs (rodapé FIXO, fora da rolagem das mensagens) */}
-      <div className="bg-white border-t-2 border-slate-200 p-3 flex-shrink-0 shadow-[0_-4px_12px_-4px_rgba(0,0,0,0.06)] z-10">
-        <Tabs value={aba} onValueChange={v => setAba(v as any)}>
-          <div className="flex items-center gap-2 mb-2">
-            <TabsList>
-              <TabsTrigger value="mari"><Sparkles className="w-3 h-3" /> Mari</TabsTrigger>
-              <TabsTrigger value="direto"><Send className="w-3 h-3" /> Direto</TabsTrigger>
-              <TabsTrigger value="nota"><FileText className="w-3 h-3" /> Nota</TabsTrigger>
-            </TabsList>
-            {aba === 'direto' && (
-              <label className="text-xs text-slate-500 flex items-center gap-1 ml-auto">
-                <input type="checkbox" checked={reescrever} onChange={e => setReescrever(e.target.checked)} />
-                Reescrever no tom Mari
-              </label>
-            )}
-          </div>
-
-          <TabsContent value="mari" className="mt-0">
-            <Textarea
-              ref={aba === 'mari' ? inputRef : undefined}
-              value={texto}
-              onChange={e => setTexto(e.target.value)}
-              onKeyDown={onKeyDownInput}
-              placeholder="(opcional) Instrução para Mari. Deixe vazio para gerar provocação. · Enter envia, Shift+Enter quebra linha"
-              className="min-h-[50px] max-h-[120px] text-sm resize-none"
-              autoFocus
-            />
-            <div className="flex gap-2 mt-2">
-              <Button onClick={texto.trim() ? instruirMari : executarAcao} disabled={acaoLoading} size="sm">
-                {acaoLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-                {texto.trim() ? 'Instruir Mari' : 'Provocar'}
-              </Button>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="direto" className="mt-0">
-            <Textarea
-              ref={aba === 'direto' ? inputRef : undefined}
-              value={texto}
-              onChange={e => setTexto(e.target.value)}
-              onKeyDown={onKeyDownInput}
-              placeholder="Escreva no nome da Mari… · Enter envia, Shift+Enter quebra linha"
-              className="min-h-[50px] max-h-[120px] text-sm resize-none"
-              autoFocus
-            />
-            <Button onClick={executarAcao} disabled={acaoLoading || !texto.trim()} size="sm" className="mt-2">
-              {acaoLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              Enviar
-            </Button>
-          </TabsContent>
-
-          <TabsContent value="nota" className="mt-0">
-            <Textarea
-              ref={aba === 'nota' ? inputRef : undefined}
-              value={texto}
-              onChange={e => setTexto(e.target.value)}
-              onKeyDown={onKeyDownInput}
-              placeholder="Nota interna (não visível ao cliente)… · Enter envia"
-              className="min-h-[50px] max-h-[120px] text-sm resize-none"
-              autoFocus
-            />
-            <Button onClick={executarAcao} disabled={acaoLoading || !texto.trim()} size="sm" className="mt-2">
-              {acaoLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
-              Salvar nota
-            </Button>
-          </TabsContent>
-        </Tabs>
-      </div>
+      <MessageInput
+        conversaId={conversaId}
+        acaoLoading={acaoLoading}
+        replyTo={replyTo}
+        onClearReply={() => setReplyTo(null)}
+        onSend={handleSend}
+        onAgendar={() => setModalAgendar(true)}
+      />
 
       {/* Modal Agendar */}
       {modalAgendar && <ModalAgendar conversaId={conversaId} onClose={() => setModalAgendar(false)} />}
+
+      {/* Painel de detalhes (drawer lateral) */}
+      <DetailsDrawer open={detalhesOpen} onClose={() => setDetalhesOpen(false)}>
+        <PerfilPanel
+          conversaId={conversaId}
+          onDeleted={() => { setDetalhesOpen(false); carregarConversaRef.current(); }}
+        />
+      </DetailsDrawer>
     </div>
   );
 };

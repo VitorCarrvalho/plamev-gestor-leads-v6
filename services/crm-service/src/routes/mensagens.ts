@@ -8,9 +8,12 @@
  */
 import { Router } from 'express';
 import { autenticar, soAdmin } from '../middleware/auth';
-import { queryOne, execute } from '../config/db';
+import { query, queryOne, execute } from '../config/db';
 import { gravar as auditGravar } from '../services/audit.service';
 import { reescreverComoMari } from '../services/actions.service';
+
+const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
 
 const router = Router();
 
@@ -79,6 +82,74 @@ router.post('/reescrever', autenticar, async (req, res) => {
     });
 
     res.json({ ok: true, texto_reescrito: reescrita });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
+});
+
+// ── Reações ────────────────────────────────────────────────────
+// GET /:conversaId/reactions → mapa de msgId → emoji[]
+router.get('/:conversaId/reactions', autenticar, async (req, res) => {
+  try {
+    const rows = await query<any>(
+      `SELECT msg_id::text, emoji FROM message_reactions WHERE msg_id IN (
+         SELECT id FROM mensagens WHERE conversa_id=$1
+       ) ORDER BY criado_em ASC`,
+      [req.params.conversaId]
+    );
+    const mapa: Record<string, string[]> = {};
+    for (const r of rows) {
+      if (!mapa[r.msg_id]) mapa[r.msg_id] = [];
+      if (!mapa[r.msg_id].includes(r.emoji)) mapa[r.msg_id].push(r.emoji);
+    }
+    res.json({ ok: true, reactions: mapa });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
+});
+
+// POST /:msgId/reaction → { emoji } — salva e envia via Evolution
+router.post('/:msgId/reaction', autenticar, async (req, res) => {
+  try {
+    const { emoji } = req.body || {};
+    if (!emoji) { res.status(400).json({ erro: 'emoji obrigatório' }); return; }
+
+    const msg = await queryOne<any>(
+      `SELECT m.id, m.msg_id_externo, m.conversa_id,
+              c.numero_externo AS phone, c.jid, c.instancia_whatsapp AS instancia
+       FROM mensagens m JOIN conversas c ON c.id = m.conversa_id WHERE m.id=$1`,
+      [req.params.msgId]
+    );
+    if (!msg) { res.status(404).json({ erro: 'Mensagem não encontrada' }); return; }
+
+    // Idempotência: remove reação anterior do mesmo supervisor nessa mensagem
+    await execute(
+      `DELETE FROM message_reactions WHERE msg_id=$1 AND enviado_por=$2`,
+      [req.params.msgId, (req as any).user?.email || 'supervisora']
+    );
+
+    // Emoji vazio = remover reação
+    if (emoji !== '') {
+      await execute(
+        `INSERT INTO message_reactions (msg_id, msg_id_externo, emoji, enviado_por)
+         VALUES ($1,$2,$3,$4)`,
+        [req.params.msgId, msg.msg_id_externo || null, emoji, (req as any).user?.email || 'supervisora']
+      );
+    }
+
+    // Envia reação para WhatsApp apenas se tiver Evolution message ID
+    if (msg.msg_id_externo && msg.phone) {
+      fetch(`${CHANNEL_SERVICE_URL}/internal/send-reaction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
+        body: JSON.stringify({
+          phone: msg.phone,
+          jid: msg.jid || null,
+          instancia: msg.instancia || null,
+          msgIdExterno: msg.msg_id_externo,
+          emoji: emoji || '❌',
+        }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(e => console.warn('[MENSAGENS] Falha ao enviar reação WA:', e.message));
+    }
+
+    res.json({ ok: true });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
 
