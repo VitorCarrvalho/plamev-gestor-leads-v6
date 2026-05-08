@@ -6,21 +6,47 @@ const router = Router();
 
 router.post('/login', async (req, res) => {
   const { email, senha } = req.body || {};
-  const OK_EMAIL = process.env.ADMIN_EMAIL || 'geta.hubcenter@gmail.com';
-  const OK_PASS  = process.env.ADMIN_PASS  || 'Plamev@2026';
-
-  if (email === OK_EMAIL && senha === OK_PASS) {
-    const usuario = await queryOne<any>(
-      `SELECT id, nome, email, perfil, foto_url, preferencias FROM usuarios WHERE email = $1`, [email]
-    ).catch(() => null);
-    const nome = usuario?.nome || 'Admin';
-    const foto_url = usuario?.foto_url || null;
-    const preferencias = usuario?.preferencias || {};
-    const token = gerarJWT({ id: usuario?.id || 1, email, nome, role: 'admin' });
-    res.json({ token, email, role: 'admin', nome, foto_url, preferencias });
-    return;
+  if (!email || !senha) {
+    res.status(400).json({ erro: 'email e senha são obrigatórios' }); return;
   }
-  res.status(401).json({ erro: 'Credenciais inválidas' });
+  try {
+    // Todos os usuários autenticam via banco — incluindo admins.
+    // Para criar o primeiro admin, use o endpoint POST /api/usuarios (sem autenticação no boot).
+    const usuario = await queryOne<any>(
+      `SELECT id, nome, email, perfil, foto_url, preferencias, ativo
+       FROM usuarios
+       WHERE email = $1 AND senha_hash = crypt($2, senha_hash)`,
+      [email, senha]
+    );
+
+    if (!usuario) {
+      res.status(401).json({ erro: 'Credenciais inválidas' }); return;
+    }
+    if (!usuario.ativo) {
+      res.status(403).json({ erro: 'Usuário desativado. Contate o administrador.' }); return;
+    }
+
+    const token = gerarJWT({
+      id: usuario.id,
+      email: usuario.email,
+      nome: usuario.nome,
+      role: usuario.perfil || 'operador',
+    });
+
+    // Registrar último login (não-bloqueante)
+    execute('UPDATE usuarios SET ultimo_login = NOW() WHERE id = $1', [usuario.id]).catch(() => {});
+
+    res.json({
+      token,
+      email: usuario.email,
+      role: usuario.perfil || 'operador',
+      nome: usuario.nome,
+      foto_url: usuario.foto_url || null,
+      preferencias: usuario.preferencias || {},
+    });
+  } catch (e: any) {
+    res.status(500).json({ erro: e.message });
+  }
 });
 
 router.get('/me', autenticar, async (req, res) => {

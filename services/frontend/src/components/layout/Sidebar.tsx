@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  LayoutDashboard, Users, MessageSquare,
+  LayoutDashboard, Users, Users2, MessageSquare,
   Bookmark, Filter, Award,
   Database, ShieldCheck, FileCode2, Bot, KeyRound, Package,
   LogOut, LucideIcon, Sparkles, Columns3, X,
@@ -72,6 +72,7 @@ export const NAV_TREE: NavGroup[] = [
     items: [
       { id: 'agentes',    label: 'Agentes',    icon: Bot },
       { id: 'provedores', label: 'Provedores', icon: KeyRound },
+      { id: 'usuarios',   label: 'Usuários',   icon: Users2 },
     ],
   },
 ];

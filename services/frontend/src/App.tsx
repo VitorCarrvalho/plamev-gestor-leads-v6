@@ -31,6 +31,7 @@ import { PlanosPage }        from './features/sistema/PlanosPage';
 
 // Configurações
 import { ProvedoresPage } from './features/sistema/ProvedoresPage';
+import { UsuariosPage }  from './features/sistema/UsuariosPage';
 
 // Legado (manter temporariamente)
 import { AgendaPage } from './features/sistema/AgendaPage';
@@ -168,6 +169,7 @@ const Shell: React.FC = () => {
       // Configurações
       case 'configuracoes/agentes':    return <ConfiguracaoPage />;
       case 'configuracoes/provedores': return <ProvedoresPage />;
+      case 'configuracoes/usuarios':   return <UsuariosPage />;
 
       // Legado
       case 'sistema/agenda': return <AgendaPage />;

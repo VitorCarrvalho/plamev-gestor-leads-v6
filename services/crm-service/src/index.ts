@@ -23,6 +23,7 @@ import analisarRouter     from './routes/analisar';
 import { planosRouter }   from './routes/planos';
 import dashboardRouter    from './routes/dashboard';
 import contatosRouter     from './routes/contatos';
+import usuariosRouter    from './routes/usuarios';
 
 config({ path: path.join(__dirname, '../../.env') });
 
@@ -166,6 +167,7 @@ app.use('/api/analisar',             analisarRouter);
 app.use('/api/dashboard',            dashboardRouter);
 app.use('/api/contatos',             contatosRouter);
 app.use('/api/internal',             internalRouter);
+app.use('/api/usuarios',             usuariosRouter);
 
 // ── Enviar mídia (áudio gravado / arquivo anexado) ──────────────
 // Chamado pelo frontend (MessageInput). Salva a msg no histórico e
