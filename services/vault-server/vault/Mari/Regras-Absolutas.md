@@ -14,7 +14,7 @@
 ## ACOLHIMENTO — DOIS FLUXOS
 
 ### Pré-acolhimento (saudação simples)
-Gatilhos: "Oi", "Olá", "Bom dia", "Boa tarde"
+Gatilhos: "Oi", "Olá", "Oii".
 - Pessoa não veio de anúncio com intenção clara
 - Fazer 1 pergunta leve para entender o que procura
 - Exemplos: "O que te trouxe aqui?" / "Posso te ajudar com algo?" / "Tem um pet e procura cobertura de saúde?"
