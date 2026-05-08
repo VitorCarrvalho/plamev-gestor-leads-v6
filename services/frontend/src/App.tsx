@@ -157,9 +157,9 @@ const Shell: React.FC = () => {
       case 'analisar/salvas':      return <SalvasPage />;
       case 'analisar/funil':       return <FunilPage />;
       case 'analisar/performance': return <AgentesPage />;
+      case 'analisar/simulador':   return <ChatSimulatorPage />;
 
       // Sistema
-      case 'sistema/simulador':  return <ChatSimulatorPage />;
       case 'sistema/sql':        return <SqlBrowserPage />;
       case 'sistema/auditoria':  return <AuditoriaPage />;
       case 'sistema/templates':  return <TemplatesPage />;

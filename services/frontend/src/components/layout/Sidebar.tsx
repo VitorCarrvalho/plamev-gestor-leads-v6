@@ -51,6 +51,7 @@ export const NAV_TREE: NavGroup[] = [
       { id: 'salvas',      label: 'Conversas Salvas', icon: Bookmark },
       { id: 'funil',       label: 'Funil',            icon: Filter },
       { id: 'performance', label: 'Performance',      icon: Award },
+      { id: 'simulador',   label: 'Chat Simulator',   icon: Sparkles },
     ],
   },
   {
@@ -58,7 +59,6 @@ export const NAV_TREE: NavGroup[] = [
     label: 'Sistema',
     icon: Wrench,
     items: [
-      { id: 'simulador',  label: 'Chat Simulator', icon: Sparkles },
       { id: 'sql',        label: 'SQL Browser',    icon: Database },
       { id: 'auditoria',  label: 'Auditoria',      icon: ShieldCheck },
       { id: 'templates',  label: 'Templates',      icon: FileCode2 },
