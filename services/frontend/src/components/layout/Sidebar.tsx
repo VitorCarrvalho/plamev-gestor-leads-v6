@@ -171,16 +171,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}>
           {!collapsed && (
             <>
-              <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
-                <LayoutDashboard className="w-4.5 h-4.5 text-indigo-400" />
-              </div>
-              <div className="flex flex-col min-w-0 flex-1">
-                <span className="text-sm font-semibold text-slate-100 leading-tight">Dashboard</span>
-                <span className="text-[10px] text-slate-500 uppercase tracking-wider">V5 · Plamev</span>
-              </div>
+              <img src="/plamev-logo.png" alt="Plamev" className="h-8 object-contain flex-1 min-w-0" />
               <button
                 onClick={onClose}
-                className="md:hidden text-slate-500 hover:text-slate-100 p-1 ml-auto"
+                className="md:hidden text-slate-500 hover:text-slate-100 p-1 ml-2"
                 aria-label="Fechar"
               >
                 <X className="w-4 h-4" />
@@ -188,8 +182,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </>
           )}
           {collapsed && (
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center">
-              <LayoutDashboard className="w-4 h-4 text-indigo-400" />
+            <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center">
+              <img src="/p-logo.png" alt="P" className="w-full h-full object-contain" />
             </div>
           )}
         </div>

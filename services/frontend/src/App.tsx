@@ -59,14 +59,8 @@ const Login: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
     <div className="min-h-screen flex items-center justify-center p-4"
       style={{ background: 'radial-gradient(circle at 20% 80%, rgba(99,102,241,0.08) 0%, transparent 60%), radial-gradient(circle at 80% 20%, rgba(139,92,246,0.06) 0%, transparent 60%), #f8fafc' }}>
       <div className="w-full max-w-[380px] bg-white rounded-2xl border border-slate-200 shadow-xl p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center">
-            <LayoutDashboard className="w-6 h-6 text-indigo-600" />
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900 leading-tight">Dashboard</h1>
-            <p className="text-xs text-slate-500 uppercase tracking-wider">V5 · Plamev</p>
-          </div>
+        <div className="flex items-center justify-center mb-6">
+          <img src="/plamev-logo.png" alt="Plamev" className="h-14 object-contain" />
         </div>
         <p className="text-sm text-slate-500 mb-5">Supervisão de atendimento em tempo real.</p>
 
@@ -90,7 +84,7 @@ const Login: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
         {erro && <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 text-center">{erro}</div>}
 
         <div className="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-400 text-center">
-          Dashboard V5 · dashv5.plamevbrasil.com.br
+          Plamev · dashv5.plamevbrasil.com.br
         </div>
       </div>
     </div>
@@ -210,8 +204,8 @@ const Shell: React.FC = () => {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <LayoutDashboard className="w-4 h-4 text-indigo-600" />
-            <span className="text-sm font-semibold text-slate-900">Dashboard V5</span>
+            <img src="/p-logo.png" alt="P" className="w-6 h-6 object-contain" />
+            <span className="text-sm font-semibold text-slate-900">Plamev</span>
           </div>
         </div>
         {renderPagina()}
