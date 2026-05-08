@@ -4,7 +4,7 @@ import { checkInputGuard } from './guards/input-guard';
 import { validateClaims } from './guards/output-guard';
 import { generateResponse, ChatMessage } from '../clients/llm-client';
 import { langfuse } from '../clients/langfuse-client';
-import { sendResponse, persistInteraction, sendDocument } from './delivery';
+import { sendResponse, persistInteraction, sendDocument, atualizarMsgIdExterno } from './delivery';
 import { carregar as vaultCarregar } from '../services/vault';
 import { buscarRedeCredenciada, normalizarCep, validarCep, type RedeResult } from '../services/rede-credenciada';
 import {
@@ -527,8 +527,11 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   if (greetingOnly) {
     const greetingResponse = buildGreetingResponse(conversaAtual, isFirstContact);
     console.log(`${tag} [3.2/7] Saudação determinística acionada`);
-    await sendResponse(msg, greetingResponse);
+    const greetSendResult = await sendResponse(msg, greetingResponse);
     await persistInteraction(msg, greetingResponse);
+    if (greetSendResult?.msg_id_externo) {
+      atualizarMsgIdExterno(msg, greetSendResult.msg_id_externo);
+    }
     trace.update({
       output: greetingResponse,
       metadata: {
@@ -757,9 +760,12 @@ export async function processMessage(msg: InternalMessage, runtimeContext?: Pipe
   console.log(`${tag} [7/7] Enviando: "${resposta.substring(0, 80)}..."`);
   const sendSpan = trace.span({ name: '7-send-response', input: { canal: msg.canal, phone: msg.phone } });
   try {
-    await sendResponse(msg, resposta);
+    const sendResult = await sendResponse(msg, resposta);
     sendSpan.end({ output: { ok: true }, metadata: { latency_ms: Date.now() - t7 } });
     console.log(`${tag} ✅ Resposta entregue`);
+    if (sendResult?.msg_id_externo) {
+      atualizarMsgIdExterno(msg, sendResult.msg_id_externo);
+    }
   } catch (e: any) {
     sendSpan.end({ output: { ok: false, error: e.message }, level: 'ERROR' });
     console.error(`${tag} ❌ Falha ao entregar resposta: ${e.message}`);

@@ -285,13 +285,13 @@ app.post('/internal/cotacao', autenticarInterno, async (req, res) => {
 // ── POST /internal/rewrite ────────────────────────────────────────────────
 // Reescreve o texto do supervisor no estilo da Mari
 app.post('/internal/rewrite', autenticarInterno, async (req, res) => {
-  const { conversa_id, texto } = req.body;
+  const { conversa_id, texto, instrucao } = req.body;
   if (!conversa_id || !texto) {
     res.status(400).json({ erro: 'conversa_id e texto são obrigatórios' });
     return;
   }
   try {
-    console.log(`[AGENT-AI] 📩 Recebido rewrite: "${texto}"`);
+    console.log(`[AGENT-AI] 📩 Recebido rewrite: "${texto}"${instrucao ? ` instrucao="${instrucao}"` : ''}`);
     const { conv, historico } = await getConversaContext(conversa_id);
     if (!conv) {
       console.error('[AGENT-AI] ❌ Conversa não encontrada:', conversa_id);
@@ -300,9 +300,6 @@ app.post('/internal/rewrite', autenticarInterno, async (req, res) => {
     }
     const agentNome = conv?.agent_nome || 'Mari';
     const clienteNome = conv?.cliente_nome || 'cliente';
-    const historicoStr = (historico || [])
-      .map((m: any) => `${m.role === 'user' ? 'Cliente' : agentNome}: ${m.conteudo}`)
-      .join('\n');
 
     const textoHigienizado = higienizarTexto(texto);
     console.log(`[AGENT-AI] 🧼 Texto higienizado: "${textoHigienizado}"`);
@@ -314,9 +311,14 @@ REGRAS DE OURO:
 1. NUNCA deixe passar termos pejorativos, palavrões ou gírias (mesmo que estejam no input).
 2. Se o supervisor for agressivo, traduza a intenção para uma pergunta ou afirmação doce.
 3. Use o nome "${clienteNome}" naturalmente.
-4. Responda APENAS com a mensagem final para o cliente.`;
+4. Responda APENAS com a mensagem final para o cliente, sem explicações ou prefácios.`;
 
-    const userMsg = `<supervisor_raw_input>${textoHigienizado}</supervisor_raw_input>
+    const userMsg = instrucao
+      ? `<supervisor_raw_input>${textoHigienizado}</supervisor_raw_input>
+<instrucao_do_supervisor>${instrucao}</instrucao_do_supervisor>
+<cliente_nome>${clienteNome}</cliente_nome>
+Aplique a instrução e reescreva no tom gentil da ${agentNome}:`
+      : `<supervisor_raw_input>${textoHigienizado}</supervisor_raw_input>
 <cliente_nome>${clienteNome}</cliente_nome>
 Traduza agora para o tom gentil da ${agentNome}:`;
 

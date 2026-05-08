@@ -77,7 +77,7 @@ export async function enviarWA(
   instanciaExplicita: string | null,
   quotedIdExterno?: string | null,
   quotedFromMe?: boolean,
-): Promise<boolean> {
+): Promise<string | false> {
   let inst = instanciaExplicita;
   if (!inst) inst = getInstancia(phone);
   if (!inst) {
@@ -106,9 +106,10 @@ export async function enviarWA(
       body.quoted = { key: { id: quotedIdExterno, remoteJid: num, fromMe: quotedFromMe ?? false } };
     }
     const r = await wppPost(baseUrl, `/message/sendText/${inst}`, body, apiKey).catch(() => ({}));
-    if (r.key || r.id) {
-      console.log(`[SENDER] ✅ WA ${inst} → ${num}${quotedIdExterno ? ' (quoted)' : ''}`);
-      return true;
+    const msgId: string | undefined = r.key?.id || r.id;
+    if (msgId) {
+      console.log(`[SENDER] ✅ WA ${inst} → ${num}${quotedIdExterno ? ' (quoted)' : ''} id=${msgId}`);
+      return msgId;
     }
   }
 
@@ -251,15 +252,15 @@ export async function enviar(
   resposta: string,
   quotedIdExterno?: string | null,
   quotedFromMe?: boolean,
-): Promise<void> {
-  if (!resposta) return;
+): Promise<string | null> {
+  if (!resposta) return null;
 
   const chave = msg.phone || msg.chatId;
   const ultimas = _ultimasEnviadas.get(chave) || [];
   const ehChecagem = /deixa eu checar|um segundo 🔍/i.test(resposta);
   if (ehChecagem && ultimas.some(u => /deixa eu checar|um segundo 🔍/i.test(u))) {
     console.log('[SENDER] ⚡ "Deixa eu checar" duplicado bloqueado');
-    return;
+    return null;
   }
   ultimas.unshift(resposta.slice(0, 100));
   if (ultimas.length > 3) ultimas.pop();
@@ -267,6 +268,7 @@ export async function enviar(
   setTimeout(() => _ultimasEnviadas.delete(chave), 300000);
 
   const blocos = resposta.split(/\n\n+/).filter(b => b.trim());
+  let firstMsgId: string | null = null;
 
   for (let i = 0; i < blocos.length; i++) {
     const bloco = blocos[i].trim();
@@ -276,7 +278,8 @@ export async function enviar(
     } else {
       // quoted only applied on the first block
       const qId = i === 0 ? (quotedIdExterno ?? undefined) : undefined;
-      await enviarWA(msg.phone, msg.jid, bloco, msg.instancia, qId, quotedFromMe);
+      const result = await enviarWA(msg.phone, msg.jid, bloco, msg.instancia, qId, quotedFromMe);
+      if (result && !firstMsgId) firstMsgId = result;
     }
     if (i < blocos.length - 1) {
       const palavras = blocos[i].split(/\s+/).length;
@@ -284,6 +287,8 @@ export async function enviar(
       await sleep(intervalo);
     }
   }
+
+  return firstMsgId;
 }
 
 export async function atualizarMensagemWA(

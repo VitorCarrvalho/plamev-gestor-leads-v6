@@ -138,29 +138,23 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
   // - Bolha única ou primeira de um grupo: tem "cauda" (sharp corner no lado do sender)
   // - Mensagens do meio do grupo: sem cauda
   // - Última do grupo: sharp corner
+  // Cliente fica à ESQUERDA (tail no canto superior-esquerdo), agente à DIREITA (tail no canto superior-direito)
   const radius = ehCliente
-    ? cn('rounded-[18px]', !sameSenderAsPrev && 'rounded-tr-[4px]', !sameSenderAsNext && 'rounded-br-[4px]')
-    : cn('rounded-[18px]', !sameSenderAsPrev && 'rounded-tl-[4px]', !sameSenderAsNext && 'rounded-bl-[4px]');
+    ? cn('rounded-[18px]', !sameSenderAsPrev && 'rounded-tl-[4px]', !sameSenderAsNext && 'rounded-bl-[4px]')
+    : cn('rounded-[18px]', !sameSenderAsPrev && 'rounded-tr-[4px]', !sameSenderAsNext && 'rounded-br-[4px]');
 
   const gap = sameSenderAsPrev ? 'mt-0.5' : 'mt-3';
 
   return (
     <>
       <div
-        className={cn('flex group items-end px-3', ehCliente ? 'justify-end' : 'justify-start', gap)}
+        className={cn('flex group items-end px-3', ehCliente ? 'justify-start' : 'justify-end', gap)}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => { setHovered(false); setEmojiOpen(false); }}
       >
-        {/* Hover actions — lado esquerdo (para bolhas do cliente, que ficam à direita) */}
+        {/* Hover actions — lado direito da bolha do CLIENTE (que fica à esquerda) */}
         {ehCliente && hovered && !editando && (
-          <div className="flex items-center gap-1 mr-1 mb-1 opacity-0 group-hover:opacity-100 transition-opacity relative">
-            <button
-              onClick={() => setEmojiOpen(v => !v)}
-              className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
-              title="Reagir"
-            >
-              <Smile className="w-3.5 h-3.5" />
-            </button>
+          <div className="flex items-center gap-1 ml-1 mb-1 opacity-0 group-hover:opacity-100 transition-opacity relative">
             <button
               onClick={() => onReply(msg)}
               className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
@@ -168,17 +162,18 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             >
               <Reply className="w-3.5 h-3.5" />
             </button>
+            <button
+              onClick={() => setEmojiOpen(v => !v)}
+              className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
+              title="Reagir"
+            >
+              <Smile className="w-3.5 h-3.5" />
+            </button>
             {admin && (
-              <>
-                <button onClick={() => { setTextoEdit(msg.conteudo); setEditando(true); }}
-                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="Editar">
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={excluir}
-                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors" title="Excluir">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </>
+              <button onClick={excluir}
+                className="p-1.5 rounded-full bg-white shadow-sm hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors" title="Excluir">
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
             )}
             {/* Emoji picker */}
             {emojiOpen && (
@@ -197,8 +192,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           'relative max-w-[72%] px-3 py-2 shadow-sm',
           radius,
           ehCliente
-            ? 'bg-[#dcf8c6] text-slate-800'
-            : 'bg-white border border-slate-200 text-slate-800'
+            ? 'bg-white border border-slate-200 text-slate-800'
+            : 'bg-[#dcf8c6] text-slate-800'
         )}>
           {editando ? (
             <div className="space-y-2 min-w-[240px]">
@@ -233,16 +228,25 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           )}
         </div>
 
-        {/* Hover actions — lado direito (para bolhas do agente, que ficam à esquerda) */}
+        {/* Hover actions — lado esquerdo da bolha do AGENTE (que fica à direita) */}
         {!ehCliente && hovered && !editando && (
-          <div className="flex items-center gap-1 ml-1 mb-1 opacity-0 group-hover:opacity-100 transition-opacity relative">
-            <button
-              onClick={() => onReply(msg)}
-              className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
-              title="Responder"
-            >
-              <Reply className="w-3.5 h-3.5" />
-            </button>
+          <div className="flex items-center gap-1 mr-1 mb-1 opacity-0 group-hover:opacity-100 transition-opacity relative">
+            {admin && (
+              <>
+                <button onClick={excluir}
+                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors" title="Excluir">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => { setTextoEdit(msg.conteudo); setEditando(true); }}
+                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="Editar">
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => setReescritaOpen(true)}
+                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 transition-colors" title="Reescrever como Mari">
+                  <Sparkles className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
             <button
               onClick={() => setEmojiOpen(v => !v)}
               className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
@@ -250,22 +254,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             >
               <Smile className="w-3.5 h-3.5" />
             </button>
-            {admin && (
-              <>
-                <button onClick={() => setReescritaOpen(true)}
-                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 transition-colors" title="Reescrever como Mari">
-                  <Sparkles className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={() => { setTextoEdit(msg.conteudo); setEditando(true); }}
-                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="Editar">
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={excluir}
-                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors" title="Excluir">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </>
-            )}
+            <button
+              onClick={() => onReply(msg)}
+              className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
+              title="Responder"
+            >
+              <Reply className="w-3.5 h-3.5" />
+            </button>
             {/* Emoji picker */}
             {emojiOpen && (
               <div ref={emojiRef} className="absolute bottom-8 right-0 bg-white rounded-2xl shadow-xl border border-slate-200 px-3 py-2 flex gap-1.5 z-20">

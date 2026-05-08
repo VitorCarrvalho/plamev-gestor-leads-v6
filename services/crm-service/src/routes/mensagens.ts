@@ -106,6 +106,50 @@ router.post('/reescrever', autenticar, async (req, res) => {
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
 
+// ── Envio de mídia pelo supervisor ───────────────────────────────────────
+router.post('/enviar-midia', autenticar, async (req, res) => {
+  try {
+    const { conversa_id, base64, mimeType, fileName } = req.body || {};
+    if (!conversa_id || !base64 || !mimeType) {
+      res.status(400).json({ erro: 'conversa_id, base64 e mimeType são obrigatórios' }); return;
+    }
+    const conversa = await queryOne<any>(
+      `SELECT numero_externo, jid, instancia_whatsapp FROM conversas WHERE id=$1`,
+      [conversa_id]
+    );
+    if (!conversa) { res.status(404).json({ erro: 'Conversa não encontrada' }); return; }
+
+    const tipoLabel = mimeType.startsWith('image/') ? 'imagem'
+      : mimeType.startsWith('video/') ? 'vídeo'
+      : mimeType.startsWith('audio/') ? 'áudio'
+      : 'arquivo';
+    const conteudo = `[📎 ${tipoLabel}: ${fileName || 'arquivo'} enviado]`;
+
+    await execute(
+      `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por, metadata)
+       VALUES ($1,'agent',$2,'supervisora',$3)`,
+      [conversa_id, conteudo, JSON.stringify({ mediaType: tipoLabel, mimeType, fileName: fileName || 'arquivo' })]
+    );
+
+    fetch(`${CHANNEL_SERVICE_URL}/internal/send-media`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
+      body: JSON.stringify({
+        phone: conversa.numero_externo,
+        jid: conversa.jid || null,
+        instancia: conversa.instancia_whatsapp || null,
+        base64,
+        mimeType,
+        fileName: fileName || 'arquivo',
+        caption: '',
+      }),
+      signal: AbortSignal.timeout(30000),
+    }).catch(e => console.warn('[MENSAGENS] Falha ao enviar mídia WA:', e.message));
+
+    res.json({ ok: true });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
+});
+
 // ── Reações ────────────────────────────────────────────────────
 // GET /:conversaId/reactions → mapa de msgId → emoji[]
 router.get('/:conversaId/reactions', autenticar, async (req, res) => {

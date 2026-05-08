@@ -65,7 +65,7 @@ async function enviarEPersistir(
   quotedIdExterno?: string | null,
   quotedFromMe?: boolean,
 ) {
-  await internalPost(`${CHANNEL_SERVICE_URL}/internal/send`, {
+  const sendResult = await internalPost(`${CHANNEL_SERVICE_URL}/internal/send`, {
     message: {
       phone: conv.numero_externo,
       jid: conv.jid,
@@ -77,9 +77,10 @@ async function enviarEPersistir(
     quoted_id_externo: quotedIdExterno ?? null,
     quoted_from_me: quotedFromMe ?? false,
   });
+  const msgIdExterno: string | null = sendResult?.msg_id_externo ?? null;
   await execute(
-    `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por) VALUES ($1, $2, $3, $4)`,
-    [conversaId, 'agent', msgFinal, 'supervisora']
+    `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por, msg_id_externo) VALUES ($1, $2, $3, $4, $5)`,
+    [conversaId, 'agent', msgFinal, 'supervisora', msgIdExterno]
   );
   notificarDashboard(conversaId, conv.numero_externo, '', null, msgFinal);
   io.emit('conversa_atualizada', { conversa_id: conversaId });

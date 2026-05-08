@@ -240,11 +240,12 @@ internalRouter.post('/send', async (req: Request, res: Response) => {
     res.status(400).json({ erro: 'message e resposta são obrigatórios' });
     return;
   }
-  res.json({ ok: true });
   try {
-    await enviar(message, resposta, quoted_id_externo ?? null, quoted_from_me ?? false);
+    const msgIdExterno = await enviar(message, resposta, quoted_id_externo ?? null, quoted_from_me ?? false);
+    res.json({ ok: true, msg_id_externo: msgIdExterno });
   } catch (e: any) {
     console.error('[CHANNEL-SERVICE] ❌ Falha ao enviar resposta:', e.message);
+    res.json({ ok: false, msg_id_externo: null });
   }
 });
 

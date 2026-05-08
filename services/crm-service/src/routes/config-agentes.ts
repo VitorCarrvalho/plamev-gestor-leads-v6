@@ -425,9 +425,10 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
 
     // 5. Salva resposta da IA
     if (resposta) {
+      const msgIdExternoResp = req.body?.msg_id_externo_resp || null;
       await execute(
-        `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por) VALUES ($1,'agent',$2,'ia')`,
-        [conversaId, resposta]
+        `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por, msg_id_externo) VALUES ($1,'agent',$2,'ia',$3)`,
+        [conversaId, resposta, msgIdExternoResp]
       );
     }
 
@@ -580,6 +581,32 @@ internalRouter.post('/reset-contato', async (req, res) => {
     res.json({ ok: true, removed });
   } catch (e: any) {
     console.error('[INTERNAL] ❌ Falha ao resetar contato:', e.message);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+internalRouter.post('/atualizar-msg-id-externo', async (req, res) => {
+  if (!checkInternalSecret(req, res)) return;
+  const { phone, canal, msg_id_externo } = req.body || {};
+  if (!phone || !canal || !msg_id_externo) {
+    res.status(400).json({ erro: 'phone, canal e msg_id_externo são obrigatórios' }); return;
+  }
+  try {
+    await execute(
+      `UPDATE mensagens SET msg_id_externo = $1
+       WHERE id = (
+         SELECT m.id FROM mensagens m
+         JOIN conversas c ON c.id = m.conversa_id
+         WHERE c.numero_externo = $2 AND c.canal = $3 AND c.status = 'ativa'
+           AND m.role = 'agent' AND m.msg_id_externo IS NULL
+         ORDER BY m.timestamp DESC
+         LIMIT 1
+       )`,
+      [msg_id_externo, phone, canal]
+    );
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error('[INTERNAL] ❌ atualizar-msg-id-externo:', e.message);
     res.status(500).json({ erro: e.message });
   }
 });

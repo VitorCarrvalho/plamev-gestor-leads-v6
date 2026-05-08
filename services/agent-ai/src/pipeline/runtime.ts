@@ -50,12 +50,13 @@ async function handleAudioMessage(msg: InternalMessage, runtimeConfig: PipelineR
 
   if (!transcricao) {
     const fallback = 'Oi! Não consegui ouvir seu áudio, pode me enviar em texto? 😊';
-    await sendResponse(msg, fallback);
+    const sendResult = await sendResponse(msg, fallback);
     await persistInteraction(msg, fallback, {
       inputTextOverride: '[🎤 áudio recebido]',
       mediaBase64: audioBase64 || undefined,
       mediaMimeType: audioMimeType || 'audio/ogg',
       mediaFileName: 'audio.ogg',
+      msgIdExternoResp: sendResult?.msg_id_externo ?? null,
     }).catch(() => {});
     return;
   }
@@ -90,11 +91,12 @@ async function handleDocumentMessage(msg: InternalMessage, orgId: string) {
 
   if (!resposta) return;
 
-  await sendResponse(msg, resposta);
+  const sendDocResult = await sendResponse(msg, resposta);
   await persistInteraction(msg, resposta, {
     inputTextOverride: `[📄 ${docFileName || msg.documento?.fileName || 'documento enviado'}]`,
     mediaMimeType: docMimeType || undefined,
     mediaFileName: docFileName || msg.documento?.fileName || undefined,
+    msgIdExternoResp: sendDocResult?.msg_id_externo ?? null,
   }).catch(() => {});
 }
 
@@ -129,13 +131,13 @@ async function handleImageMessage(msg: InternalMessage, orgId: string) {
 
   if (!resposta) {
     const fallback = 'Que foto linda! 😊 Me conta mais sobre seu pet?';
-    await sendResponse(msg, fallback);
-    await persistInteraction(msg, fallback, mediaOpts).catch(() => {});
+    const sendImgResult = await sendResponse(msg, fallback);
+    await persistInteraction(msg, fallback, { ...mediaOpts, msgIdExternoResp: sendImgResult?.msg_id_externo ?? null }).catch(() => {});
     return;
   }
 
-  await sendResponse(msg, resposta);
-  await persistInteraction(msg, resposta, mediaOpts).catch(() => {});
+  const sendImgResult2 = await sendResponse(msg, resposta);
+  await persistInteraction(msg, resposta, { ...mediaOpts, msgIdExternoResp: sendImgResult2?.msg_id_externo ?? null }).catch(() => {});
 }
 
 export async function processIncomingMessage(msg: InternalMessage) {

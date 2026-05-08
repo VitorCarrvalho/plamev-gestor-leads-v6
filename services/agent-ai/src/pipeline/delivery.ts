@@ -37,12 +37,20 @@ export function postJson(url: string, body: any, headers: Record<string, string>
   });
 }
 
-export async function sendResponse(message: InternalMessage, resposta: string) {
+export async function sendResponse(message: InternalMessage, resposta: string): Promise<{ ok: boolean; msg_id_externo?: string | null }> {
   return postJson(
     `${CHANNEL_SERVICE_URL}/internal/send`,
     { message, resposta },
     { 'x-internal-secret': INTERNAL_SECRET },
   );
+}
+
+export async function atualizarMsgIdExterno(message: InternalMessage, msgIdExterno: string): Promise<void> {
+  await postJson(
+    `${CRM_SERVICE_URL}/api/internal/atualizar-msg-id-externo`,
+    { phone: message.phone, canal: message.canal, msg_id_externo: msgIdExterno },
+    { 'x-internal-secret': INTERNAL_SECRET },
+  ).catch(e => console.warn('[DELIVERY] ⚠️ Falha ao atualizar msg_id_externo:', e.message));
 }
 
 export async function sendDocument(
@@ -72,6 +80,7 @@ export interface PersistOptions {
   mediaBase64?: string;
   mediaMimeType?: string;
   mediaFileName?: string;
+  msgIdExternoResp?: string | null;
 }
 
 export async function persistInteraction(
@@ -92,6 +101,7 @@ export async function persistInteraction(
       media_base64: options?.mediaBase64 || null,
       media_mime_type: options?.mediaMimeType || null,
       media_file_name: options?.mediaFileName || null,
+      msg_id_externo_resp: options?.msgIdExternoResp ?? null,
     },
     { 'x-internal-secret': INTERNAL_SECRET },
   );
