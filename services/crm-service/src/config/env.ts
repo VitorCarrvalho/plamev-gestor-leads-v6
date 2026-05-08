@@ -34,6 +34,7 @@ export const env = {
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
   claudeModel:  process.env.MODEL_AGENTE || 'claude-haiku-4-5',
   mariApiUrl:   process.env.MARI_API_URL || 'http://localhost:3401',
+  plamevToken:  process.env.PLAMEV_SERVICE_AUTHORIZATION_TOKEN || '',
   corsOrigins:  (process.env.CORS_ORIGINS || '*').split(',').map(s => s.trim()),
   nodeEnv:      process.env.NODE_ENV || 'development',
   isDev:        DEV,

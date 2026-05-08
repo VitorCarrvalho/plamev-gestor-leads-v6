@@ -8,6 +8,7 @@ import { Router } from 'express';
 import { autenticar } from '../middleware/auth';
 import { query, queryOne } from '../config/db';
 import { processarMensagem } from '../services/sandbox-engine';
+import { env } from '../config/env';
 
 const router = Router();
 
@@ -73,7 +74,7 @@ router.post('/cep', autenticar, async (req, res) => {
     return;
   }
 
-  const token = process.env.PLAMEV_SERVICE_AUTHORIZATION_TOKEN;
+  const token = env.plamevToken;
   if (!token) {
     res.json({ cobertura: false, clinicas: [], texto: null, cep: cepLimpo,
                aviso: 'PLAMEV_SERVICE_AUTHORIZATION_TOKEN não configurado' });
