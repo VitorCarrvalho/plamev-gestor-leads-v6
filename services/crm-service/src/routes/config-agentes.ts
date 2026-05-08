@@ -339,10 +339,19 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
     if (!agentId) { console.warn(`[INTERNAL] agente não encontrado: ${agentSlug}`); return; }
 
     // 2. Upsert cliente via phone
-    const ident = await queryOne<any>(
+    let ident = await queryOne<any>(
       `SELECT client_id FROM identificadores_cliente WHERE tipo='phone' AND valor=$1`,
       [phone]
     );
+    // Verifica se o cliente existe (pode ser órfão após exclusão manual)
+    if (ident) {
+      const clienteExiste = await queryOne<any>('SELECT id FROM clientes WHERE id=$1', [ident.client_id]);
+      if (!clienteExiste) {
+        console.warn(`[INTERNAL] ⚠️ Identificador órfão phone=${phone} → limpando e recriando`);
+        await execute(`DELETE FROM identificadores_cliente WHERE tipo='phone' AND valor=$1`, [phone]).catch(() => {});
+        ident = null;
+      }
+    }
     let clientId: string;
     if (ident) {
       clientId = ident.client_id;

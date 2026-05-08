@@ -28,14 +28,20 @@ export async function buscarOuCriarCliente(orgId: string, identificador: string,
     'SELECT client_id FROM identificadores_cliente WHERE tipo=$1 AND valor=$2',
     [tipo, identificador]
   );
-  if (ident) return one('SELECT * FROM clientes WHERE id=$1 AND org_id=$2', [ident.client_id, orgId]);
+  if (ident) {
+    const cliente = await one('SELECT * FROM clientes WHERE id=$1 AND org_id=$2', [ident.client_id, orgId]);
+    if (cliente) return cliente;
+    // Registro órfão: cliente foi deletado mas identificador permaneceu — limpa e recria
+    console.warn(`[DB] ⚠️ Identificador órfão detectado para ${tipo}=${identificador} → limpando e recriando cliente`);
+    await run('DELETE FROM identificadores_cliente WHERE tipo=$1 AND valor=$2', [tipo, identificador]).catch(() => {});
+  }
 
   const cliente = await one(
     'INSERT INTO clientes (org_id, nome, origem) VALUES ($1, $2, $3) RETURNING *',
     [orgId, nome || 'Cliente', origem || 'direto']
   );
   await run(
-    'INSERT INTO identificadores_cliente (client_id, tipo, valor) VALUES ($1, $2, $3)',
+    'INSERT INTO identificadores_cliente (client_id, tipo, valor) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
     [cliente.id, tipo, identificador]
   );
   return cliente;

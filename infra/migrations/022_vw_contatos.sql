@@ -21,7 +21,7 @@ SELECT
   c.numero_externo             AS numero_externo,
   c.criado_em                  AS inicio_conversa,
   c.ultima_interacao           AS ultima_interacao,
-  c.agente_id                  AS agente_id,
+  c.agent_id                   AS agente_id,
   c.org_id                     AS org_id,
 
   -- plano recomendado (campo direto na conversa se existir)
