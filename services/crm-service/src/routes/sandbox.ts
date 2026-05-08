@@ -6,11 +6,25 @@
  */
 import { Router } from 'express';
 import { autenticar } from '../middleware/auth';
-import { query, queryOne } from '../config/db';
+import { query, queryOne, execute } from '../config/db';
 import { processarMensagem } from '../services/sandbox-engine';
 import { env } from '../config/env';
 
 const router = Router();
+
+// Garante que a tabela existe independente do histórico de migrations
+execute(`
+  CREATE TABLE IF NOT EXISTS sandbox_cenarios (
+    id          SERIAL PRIMARY KEY,
+    nome        TEXT NOT NULL,
+    descricao   TEXT,
+    etapa       TEXT DEFAULT 'acolhimento',
+    canal       TEXT DEFAULT 'whatsapp',
+    perfil_lead JSONB DEFAULT '{}',
+    mensagens   JSONB DEFAULT '[]',
+    criado_em   TIMESTAMPTZ DEFAULT NOW()
+  )
+`).catch(e => console.warn('[SANDBOX] Erro ao criar tabela sandbox_cenarios:', e.message));
 
 const PLAMEV_CEP_URL = 'https://service.plamev.com.br/Credenciados/BuscarRedeCredenciadaPorLocalidade';
 const ETAPAS = [
