@@ -37,6 +37,8 @@ interface ReplyPreview {
   id: string;
   conteudo: string;
   enviado_por: string;
+  msg_id_externo?: string | null;
+  role?: string;
 }
 
 interface MessageInputProps {
@@ -44,7 +46,7 @@ interface MessageInputProps {
   acaoLoading: boolean;
   replyTo: ReplyPreview | null;
   onClearReply: () => void;
-  onSend: (modo: Modo, texto: string, opts?: { reescrever?: boolean }) => void;
+  onSend: (modo: Modo, texto: string, opts?: { reescrever?: boolean; quoted_id_externo?: string | null; quoted_from_me?: boolean }) => void;
   onAgendar: () => void;
 }
 
@@ -73,7 +75,11 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       return;
     }
     if (!texto.trim()) return;
-    onSend(modo, texto, modo === 'direto' ? { reescrever } : undefined);
+    onSend(modo, texto, modo === 'direto' ? {
+      reescrever,
+      quoted_id_externo: replyTo?.msg_id_externo ?? null,
+      quoted_from_me: replyTo?.role !== undefined ? replyTo.role !== 'user' : false,
+    } : undefined);
     setTexto('');
     setTimeout(() => inputRef.current?.focus(), 0);
   }, [texto, modo, reescrever, acaoLoading, onSend]);

@@ -23,7 +23,12 @@ router.patch('/:id', soAdmin, async (req, res) => {
     if (!conteudo || typeof conteudo !== 'string') {
       res.status(400).json({ erro: 'conteudo obrigatório' }); return;
     }
-    const antes = await queryOne<any>(`SELECT conversa_id, conteudo FROM mensagens WHERE id=$1`, [req.params.id]);
+    const antes = await queryOne<any>(
+      `SELECT m.conversa_id, m.conteudo, m.msg_id_externo, m.role,
+              c.numero_externo AS phone, c.jid, c.instancia_whatsapp AS instancia
+       FROM mensagens m JOIN conversas c ON c.id = m.conversa_id WHERE m.id=$1`,
+      [req.params.id]
+    );
     if (!antes) { res.status(404).json({ erro: 'Mensagem não encontrada' }); return; }
 
     await execute(`UPDATE mensagens SET conteudo=$1 WHERE id=$2`, [conteudo, req.params.id]);
@@ -37,6 +42,22 @@ router.patch('/:id', soAdmin, async (req, res) => {
       alvo_id: req.params.id,
       detalhe: { conversa_id: antes.conversa_id, antes: antes.conteudo, depois: conteudo },
     });
+
+    // Propagate text edit to WhatsApp if message was sent by the bot and has an Evolution key
+    if (antes.msg_id_externo && antes.role === 'agent' && antes.phone && antes.instancia) {
+      fetch(`${CHANNEL_SERVICE_URL}/internal/update-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
+        body: JSON.stringify({
+          phone: antes.phone,
+          jid: antes.jid || null,
+          instancia: antes.instancia,
+          msgIdExterno: antes.msg_id_externo,
+          novoTexto: conteudo,
+        }),
+        signal: AbortSignal.timeout(5000),
+      }).catch(e => console.warn('[MENSAGENS] Falha ao propagar edição WA:', e.message));
+    }
 
     res.json({ ok: true });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }

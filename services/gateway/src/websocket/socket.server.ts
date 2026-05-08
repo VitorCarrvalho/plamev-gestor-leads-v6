@@ -58,7 +58,13 @@ function contemTermosProibidos(texto: string): boolean {
   return termos.some(termo => t.includes(termo));
 }
 
-async function enviarEPersistir(conversaId: string, conv: any, msgFinal: string) {
+async function enviarEPersistir(
+  conversaId: string,
+  conv: any,
+  msgFinal: string,
+  quotedIdExterno?: string | null,
+  quotedFromMe?: boolean,
+) {
   await internalPost(`${CHANNEL_SERVICE_URL}/internal/send`, {
     message: {
       phone: conv.numero_externo,
@@ -68,6 +74,8 @@ async function enviarEPersistir(conversaId: string, conv: any, msgFinal: string)
       agentSlug: conv.agent_slug,
     },
     resposta: msgFinal,
+    quoted_id_externo: quotedIdExterno ?? null,
+    quoted_from_me: quotedFromMe ?? false,
   });
   await execute(
     `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por) VALUES ($1, $2, $3, $4)`,
@@ -190,7 +198,7 @@ export function iniciarSocket(server: HttpServer): SocketServer {
     });
 
     // ── AÇÃO: falar direto (supervisor → Mari reescreve → envia) ─
-    socket.on('falar_direto', async ({ conversa_id, texto, reescrever }: any) => {
+    socket.on('falar_direto', async ({ conversa_id, texto, reescrever, quoted_id_externo, quoted_from_me }: any) => {
       console.log(`[ACTIONS] 🎯 falar_direto → conversa=${conversa_id} reescrever=${reescrever} texto="${(texto||'').slice(0,50)}"`);
       try {
         const conv = await getConvInfo(conversa_id);
@@ -214,7 +222,7 @@ export function iniciarSocket(server: HttpServer): SocketServer {
           }
         }
 
-        await enviarEPersistir(conversa_id, conv, msgFinal);
+        await enviarEPersistir(conversa_id, conv, msgFinal, quoted_id_externo ?? null, quoted_from_me ?? false);
         socket.emit('falar_direto_ok', { conversa_id, msg: msgFinal });
       } catch (e: any) {
         console.error('[ACTIONS] ❌ falar_direto:', e.message);

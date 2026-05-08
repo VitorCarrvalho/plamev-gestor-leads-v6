@@ -70,7 +70,14 @@ function getEvoConfig(instancia: string): { baseUrl: string; apiKey: string } {
   return { baseUrl, apiKey };
 }
 
-export async function enviarWA(phone: string, jid: string | null, texto: string, instanciaExplicita: string | null): Promise<boolean> {
+export async function enviarWA(
+  phone: string,
+  jid: string | null,
+  texto: string,
+  instanciaExplicita: string | null,
+  quotedIdExterno?: string | null,
+  quotedFromMe?: boolean,
+): Promise<boolean> {
   let inst = instanciaExplicita;
   if (!inst) inst = getInstancia(phone);
   if (!inst) {
@@ -94,9 +101,13 @@ export async function enviarWA(phone: string, jid: string | null, texto: string,
 
   for (const num of tentativas) {
     if (!num) continue;
-    const r = await wppPost(baseUrl, `/message/sendText/${inst}`, { number: num, text: texto }, apiKey).catch(() => ({}));
+    const body: any = { number: num, text: texto };
+    if (quotedIdExterno) {
+      body.quoted = { key: { id: quotedIdExterno, remoteJid: num, fromMe: quotedFromMe ?? false } };
+    }
+    const r = await wppPost(baseUrl, `/message/sendText/${inst}`, body, apiKey).catch(() => ({}));
     if (r.key || r.id) {
-      console.log(`[SENDER] ✅ WA ${inst} → ${num}`);
+      console.log(`[SENDER] ✅ WA ${inst} → ${num}${quotedIdExterno ? ' (quoted)' : ''}`);
       return true;
     }
   }
@@ -235,7 +246,12 @@ export async function enviarTG(chatId: string, texto: string, token: string): Pr
 
 const _ultimasEnviadas = new Map<string, string[]>();
 
-export async function enviar(msg: any, resposta: string): Promise<void> {
+export async function enviar(
+  msg: any,
+  resposta: string,
+  quotedIdExterno?: string | null,
+  quotedFromMe?: boolean,
+): Promise<void> {
   if (!resposta) return;
 
   const chave = msg.phone || msg.chatId;
@@ -258,7 +274,9 @@ export async function enviar(msg: any, resposta: string): Promise<void> {
       const token = tokenTelegramPorAgente(msg.agentSlug || 'mari');
       await enviarTG(msg.chatId || msg.phone, bloco, token);
     } else {
-      await enviarWA(msg.phone, msg.jid, bloco, msg.instancia);
+      // quoted only applied on the first block
+      const qId = i === 0 ? (quotedIdExterno ?? undefined) : undefined;
+      await enviarWA(msg.phone, msg.jid, bloco, msg.instancia, qId, quotedFromMe);
     }
     if (i < blocos.length - 1) {
       const palavras = blocos[i].split(/\s+/).length;
@@ -266,4 +284,32 @@ export async function enviar(msg: any, resposta: string): Promise<void> {
       await sleep(intervalo);
     }
   }
+}
+
+export async function atualizarMensagemWA(
+  phone: string,
+  jid: string | null,
+  instanciaExplicita: string | null,
+  msgIdExterno: string,
+  novoTexto: string,
+): Promise<boolean> {
+  let inst = instanciaExplicita;
+  if (!inst) inst = getInstancia(phone);
+  if (!inst) return false;
+
+  const { baseUrl, apiKey } = getEvoConfig(inst);
+  const numero = normalizarJID(phone, jid);
+
+  const r = await wppPost(baseUrl, `/message/updateMessage/${inst}`, {
+    number: numero,
+    key: { id: msgIdExterno, remoteJid: numero, fromMe: true },
+    text: novoTexto,
+  }, apiKey).catch(() => ({}));
+
+  if (r.key || r.id || r.updated) {
+    console.log(`[SENDER] ✅ Update WA ${msgIdExterno}`);
+    return true;
+  }
+  console.log(`[SENDER] ❌ Update WA falhou:`, JSON.stringify(r).substring(0, 120));
+  return false;
 }

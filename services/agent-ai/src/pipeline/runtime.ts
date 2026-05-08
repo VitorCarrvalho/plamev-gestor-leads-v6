@@ -45,18 +45,31 @@ async function buildConversationContext(msg: InternalMessage, orgId: string) {
 }
 
 async function handleAudioMessage(msg: InternalMessage, runtimeConfig: PipelineRuntimeContext) {
-  const transcricao = await audioSvc.transcreverAudio(msg.instancia, msg.id, msg.audio?._type);
+  const { texto: transcricao, base64: audioBase64, mimeType: audioMimeType } =
+    await audioSvc.transcreverAudio(msg.instancia, msg.id, msg.audio?._type);
+
   if (!transcricao) {
     const fallback = 'Oi! Não consegui ouvir seu áudio, pode me enviar em texto? 😊';
     await sendResponse(msg, fallback);
-    await persistInteraction(msg, fallback, { inputTextOverride: '[🎤 áudio recebido]' }).catch(() => {});
+    await persistInteraction(msg, fallback, {
+      inputTextOverride: '[🎤 áudio recebido]',
+      mediaBase64: audioBase64 || undefined,
+      mediaMimeType: audioMimeType || 'audio/ogg',
+      mediaFileName: 'audio.ogg',
+    }).catch(() => {});
     return;
   }
 
-  await processMessage({
-    ...msg,
-    texto: transcricao,
-  }, runtimeConfig);
+  // Pre-save the audio message with base64 so it renders in the UI.
+  // salvar-interacao deduplicates by msg_id_externo, so processMessage won't re-save the user message.
+  await persistInteraction(msg, '', {
+    inputTextOverride: '[🎤 áudio recebido]',
+    mediaBase64: audioBase64 || undefined,
+    mediaMimeType: audioMimeType || 'audio/ogg',
+    mediaFileName: 'audio.ogg',
+  }).catch(() => {});
+
+  await processMessage({ ...msg, texto: transcricao }, runtimeConfig);
 }
 
 async function handleDocumentMessage(msg: InternalMessage, orgId: string) {
@@ -65,26 +78,31 @@ async function handleDocumentMessage(msg: InternalMessage, orgId: string) {
     ? `Pet: ${perfil.nome}${perfil.especie ? ` (${perfil.especie})` : ''}`
     : null;
 
-  const resposta = await documentSvc.processarDocumento(
-    msg.instancia,
-    msg.id,
-    msg.documento?._type,
-    msg.documento?.fileName || 'documento',
-    ctxPet,
-    historico,
-  );
+  const { resposta, mimeType: docMimeType, fileName: docFileName } =
+    await documentSvc.processarDocumento(
+      msg.instancia,
+      msg.id,
+      msg.documento?._type,
+      msg.documento?.fileName || 'documento',
+      ctxPet,
+      historico,
+    );
 
   if (!resposta) return;
 
   await sendResponse(msg, resposta);
   await persistInteraction(msg, resposta, {
-    inputTextOverride: `[📄 ${msg.documento?.fileName || 'documento enviado'}]`,
+    inputTextOverride: `[📄 ${docFileName || msg.documento?.fileName || 'documento enviado'}]`,
+    mediaMimeType: docMimeType || undefined,
+    mediaFileName: docFileName || msg.documento?.fileName || undefined,
   }).catch(() => {});
 }
 
+const MAX_IMG_BASE64 = 5 * 1024 * 1024; // 5 MB cap to avoid bloating DB
+
 async function handleImageMessage(msg: InternalMessage, orgId: string) {
   const { cliente, conversa, perfil, historico } = await buildConversationContext(msg, orgId);
-  const resposta = await imageSvc.processarImagem(
+  const { resposta, base64: imgBase64, mimeType: imgMimeType } = await imageSvc.processarImagem(
     msg.instancia,
     msg.id,
     {
@@ -102,15 +120,22 @@ async function handleImageMessage(msg: InternalMessage, orgId: string) {
     buildDbAdapter(orgId),
   );
 
+  const mediaOpts = {
+    inputTextOverride: '[📸 imagem enviada]',
+    mediaBase64: (imgBase64 && imgBase64.length <= MAX_IMG_BASE64) ? imgBase64 : undefined,
+    mediaMimeType: imgMimeType || 'image/jpeg',
+    mediaFileName: 'imagem.jpg',
+  };
+
   if (!resposta) {
     const fallback = 'Que foto linda! 😊 Me conta mais sobre seu pet?';
     await sendResponse(msg, fallback);
-    await persistInteraction(msg, fallback, { inputTextOverride: '[📸 imagem enviada]' }).catch(() => {});
+    await persistInteraction(msg, fallback, mediaOpts).catch(() => {});
     return;
   }
 
   await sendResponse(msg, resposta);
-  await persistInteraction(msg, resposta, { inputTextOverride: '[📸 imagem enviada]' }).catch(() => {});
+  await persistInteraction(msg, resposta, mediaOpts).catch(() => {});
 }
 
 export async function processIncomingMessage(msg: InternalMessage) {

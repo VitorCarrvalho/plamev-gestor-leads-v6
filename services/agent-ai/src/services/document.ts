@@ -169,17 +169,23 @@ async function processarDocumento(instancia, messageId, messageType, fileName, c
 
     if (!texto) {
       console.log(`[DOC] ⚠️ Não conseguiu extrair texto de ${nomeArq}`);
-      return `Recebi seu documento! 😊 Mas não consegui ler o conteúdo de ${nomeArq}. Pode enviar em PDF ou formato de texto?`;
+      return {
+        resposta: `Recebi seu documento! 😊 Mas não consegui ler o conteúdo de ${nomeArq}. Pode enviar em PDF ou formato de texto?`,
+        base64, mimeType: mimetype, fileName: nomeArq,
+      };
     }
 
     console.log(`[DOC] ✅ ${tipo} extraído: ${texto.length} chars${paginas ? ` (${paginas} págs)` : ''}`);
 
     const resposta = await analisarComClaude(texto, tipo, nomeArq, contextoPet, historico);
-    return resposta || `Recebi seu documento ${nomeArq}! 📄 Vou verificar o conteúdo e te retorno em breve. 😊`;
+    return {
+      resposta: resposta || `Recebi seu documento ${nomeArq}! 📄 Vou verificar o conteúdo e te retorno em breve. 😊`,
+      base64, mimeType: mimetype, fileName: nomeArq,
+    };
 
   } catch (e) {
     console.error('[DOC] ❌ Erro:', e.message);
-    return null;
+    return { resposta: null, base64: '', mimeType: '', fileName: fileName || 'documento' };
   }
 }
 

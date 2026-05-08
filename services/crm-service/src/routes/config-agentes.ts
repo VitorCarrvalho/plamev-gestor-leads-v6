@@ -382,11 +382,35 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
         ? await queryOne<any>('SELECT id FROM mensagens WHERE msg_id_externo=$1', [msgIdExterno])
         : null;
       if (!jaExiste) {
-        await execute(
-          `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por, msg_id_externo)
-           VALUES ($1,'user',$2,'humano',$3)`,
-          [conversaId, texto, msgIdExterno]
-        );
+        const mediaBase64Raw: string | null = req.body?.media_base64 || null;
+        const mediaMimeType: string | null  = req.body?.media_mime_type || null;
+        const mediaFileName: string | null  = req.body?.media_file_name || null;
+        const MAX_BASE64 = 5 * 1024 * 1024;
+        const base64ToStore = (mediaBase64Raw && mediaBase64Raw.length <= MAX_BASE64) ? mediaBase64Raw : null;
+        const metadata = base64ToStore
+          ? JSON.stringify({
+              mediaType: mediaMimeType?.split('/')[0] || 'audio',
+              mimeType: mediaMimeType,
+              fileName: mediaFileName,
+              mediaBase64: base64ToStore,
+            })
+          : (mediaMimeType
+              ? JSON.stringify({ mediaType: mediaMimeType.split('/')[0], mimeType: mediaMimeType, fileName: mediaFileName })
+              : null);
+
+        if (metadata) {
+          await execute(
+            `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por, msg_id_externo, metadata)
+             VALUES ($1,'user',$2,'humano',$3,$4::jsonb)`,
+            [conversaId, texto, msgIdExterno, metadata]
+          );
+        } else {
+          await execute(
+            `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por, msg_id_externo)
+             VALUES ($1,'user',$2,'humano',$3)`,
+            [conversaId, texto, msgIdExterno]
+          );
+        }
       }
     }
 

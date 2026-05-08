@@ -69,6 +69,9 @@ export interface PersistOptions {
   dados_extraidos?: Record<string, any>;
   custo?: { input_tokens: number; output_tokens: number; model: string };
   silenciarIa?: boolean;
+  mediaBase64?: string;
+  mediaMimeType?: string;
+  mediaFileName?: string;
 }
 
 export async function persistInteraction(
@@ -86,6 +89,9 @@ export async function persistInteraction(
       dados_extraidos: options?.dados_extraidos || null,
       custo: options?.custo || null,
       silenciar_ia: options?.silenciarIa || null,
+      media_base64: options?.mediaBase64 || null,
+      media_mime_type: options?.mediaMimeType || null,
+      media_file_name: options?.mediaFileName || null,
     },
     { 'x-internal-secret': INTERNAL_SECRET },
   );

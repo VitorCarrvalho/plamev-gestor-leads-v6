@@ -55,8 +55,15 @@ function baixarBase64(instancia: string, messageId: string, messageType = 'audio
   });
 }
 
-export async function transcreverAudio(instancia: string, messageId: string, messageType?: string): Promise<string | null> {
+export interface AudioResult {
+  texto: string | null;
+  base64: string;
+  mimeType: string;
+}
+
+export async function transcreverAudio(instancia: string, messageId: string, messageType?: string): Promise<AudioResult> {
   const tmpPath = path.join(os.tmpdir(), `mari_audio_${Date.now()}.ogg`);
+  const mimeType = messageType === 'pttMessage' ? 'audio/ogg; codecs=opus' : 'audio/ogg';
   try {
     console.log(`[AUDIO] 🎤 Baixando áudio msg:${messageId} inst:${instancia}`);
     const base64 = await baixarBase64(instancia, messageId, messageType || 'audioMessage');
@@ -71,10 +78,10 @@ export async function transcreverAudio(instancia: string, messageId: string, mes
 
     const texto = transcription.text?.trim() || null;
     console.log(`[AUDIO] ✅ Transcrito: "${(texto || '').slice(0, 80)}"`);
-    return texto;
+    return { texto, base64, mimeType };
   } catch (e: any) {
     console.error('[AUDIO] ❌ Erro:', e.message);
-    return null;
+    return { texto: null, base64: '', mimeType };
   } finally {
     try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
   }

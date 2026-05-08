@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { isDuplicate, messageQueue, redisClient } from '../utils/redis';
 import { normalizeMessage } from '../utils/normalizer';
-import { enviar, enviarDocumentoWA, enviarReacaoWA, enviarMidiaWA } from '../services/sender';
+import { enviar, enviarDocumentoWA, enviarReacaoWA, enviarMidiaWA, atualizarMensagemWA } from '../services/sender';
 
 const router = Router();
 
@@ -235,14 +235,14 @@ internalRouter.post('/send', async (req: Request, res: Response) => {
     res.status(401).json({ erro: 'Não autorizado' });
     return;
   }
-  const { message, resposta } = req.body || {};
+  const { message, resposta, quoted_id_externo, quoted_from_me } = req.body || {};
   if (!message || !resposta) {
     res.status(400).json({ erro: 'message e resposta são obrigatórios' });
     return;
   }
   res.json({ ok: true });
   try {
-    await enviar(message, resposta);
+    await enviar(message, resposta, quoted_id_externo ?? null, quoted_from_me ?? false);
   } catch (e: any) {
     console.error('[CHANNEL-SERVICE] ❌ Falha ao enviar resposta:', e.message);
   }
@@ -305,6 +305,23 @@ internalRouter.post('/send-media', async (req: Request, res: Response) => {
     await enviarMidiaWA(phone, jid ?? null, instancia ?? null, base64, mimeType, fileName ?? 'arquivo', caption ?? '');
   } catch (e: any) {
     console.error('[CHANNEL-SERVICE] ❌ Falha ao enviar mídia:', e.message);
+  }
+});
+
+internalRouter.post('/update-message', async (req: Request, res: Response) => {
+  const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+  if (req.headers['x-internal-secret'] !== INTERNAL_SECRET) {
+    res.status(401).json({ erro: 'Não autorizado' }); return;
+  }
+  const { phone, jid, instancia, msgIdExterno, novoTexto } = req.body || {};
+  if (!phone || !msgIdExterno || !novoTexto) {
+    res.status(400).json({ erro: 'phone, msgIdExterno e novoTexto são obrigatórios' }); return;
+  }
+  res.json({ ok: true });
+  try {
+    await atualizarMensagemWA(phone, jid ?? null, instancia ?? null, msgIdExterno, novoTexto);
+  } catch (e: any) {
+    console.error('[CHANNEL-SERVICE] ❌ Falha ao atualizar mensagem:', e.message);
   }
 });
 

@@ -166,11 +166,11 @@ async function processarImagem(instancia, messageId, contexto, db) {
       }
     }
 
-    return analise.resposta_mari || null;
+    return { resposta: analise.resposta_mari || null, base64, mimeType: mimetype };
 
   } catch (e) {
     console.error('[IMG] ❌ Erro:', e.message);
-    return null;
+    return { resposta: null, base64: '', mimeType: 'image/jpeg' };
   }
 }
 
@@ -184,3 +184,4 @@ async function analisarImagem_legado(instancia, messageId, contextoPet) {
 }
 
 module.exports = { processarImagem, analisarImagem: analisarImagem_legado };
+

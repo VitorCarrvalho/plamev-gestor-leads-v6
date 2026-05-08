@@ -455,7 +455,7 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
   const [modalAgendar, setModalAgendar] = useState(false);
   const [detalhesOpen, setDetalhesOpen] = useState(false);
-  const [replyTo, setReplyTo] = useState<{ id: string; conteudo: string; enviado_por: string } | null>(null);
+  const [replyTo, setReplyTo] = useState<{ id: string; conteudo: string; enviado_por: string; msg_id_externo?: string | null; role?: string } | null>(null);
   const [reactions, setReactions] = useState<Record<string, string[]>>({});
   const msgsRef = useRef<HTMLDivElement>(null);
   const carregarConversaRef = useRef<() => void>(() => {});
@@ -512,7 +512,7 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
     return () => { wrappedHandlers.forEach(([e, h]) => socket.off(e, h)); };
   }, [socket, conversaId]);
 
-  const handleSend = useCallback((modo: 'mari' | 'direto' | 'nota', texto: string, opts?: { reescrever?: boolean }) => {
+  const handleSend = useCallback((modo: 'mari' | 'direto' | 'nota', texto: string, opts?: { reescrever?: boolean; quoted_id_externo?: string | null; quoted_from_me?: boolean }) => {
     if (!socket.connected) {
       setFeedback({ ok: false, text: 'Erro: Chat desconectado. Tente recarregar a página.' });
       return;
@@ -522,7 +522,13 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
       if (texto.trim()) socket.emit('instrucao', { conversa_id: conversaId, texto });
       else              socket.emit('provocar',  { conversa_id: conversaId });
     }
-    if (modo === 'direto') socket.emit('falar_direto', { conversa_id: conversaId, texto, reescrever: opts?.reescrever ?? true });
+    if (modo === 'direto') socket.emit('falar_direto', {
+      conversa_id: conversaId,
+      texto,
+      reescrever: opts?.reescrever ?? true,
+      quoted_id_externo: opts?.quoted_id_externo ?? null,
+      quoted_from_me: opts?.quoted_from_me ?? false,
+    });
     if (modo === 'nota')   socket.emit('salvar_nota',  { conversa_id: conversaId, texto });
     setReplyTo(null);
   }, [socket, conversaId]);
