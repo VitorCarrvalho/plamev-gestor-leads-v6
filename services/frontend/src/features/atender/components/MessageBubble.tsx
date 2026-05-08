@@ -151,8 +151,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => { setHovered(false); setEmojiOpen(false); }}
       >
-        {/* Hover actions — lado esquerdo (para bolhas de agente) */}
-        {!ehCliente && hovered && !editando && (
+        {/* Hover actions — lado esquerdo (para bolhas do cliente, que ficam à direita) */}
+        {ehCliente && hovered && !editando && (
           <div className="flex items-center gap-1 mr-1 mb-1 opacity-0 group-hover:opacity-100 transition-opacity relative">
             <button
               onClick={() => setEmojiOpen(v => !v)}
@@ -170,10 +170,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             </button>
             {admin && (
               <>
-                <button onClick={() => setReescritaOpen(true)}
-                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 transition-colors" title="Reescrever como Mari">
-                  <Sparkles className="w-3.5 h-3.5" />
-                </button>
                 <button onClick={() => { setTextoEdit(msg.conteudo); setEditando(true); }}
                   className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="Editar">
                   <Pencil className="w-3.5 h-3.5" />
@@ -237,9 +233,39 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           )}
         </div>
 
-        {/* Hover actions — lado direito (para bolhas do cliente) */}
-        {ehCliente && hovered && !editando && (
+        {/* Hover actions — lado direito (para bolhas do agente, que ficam à esquerda) */}
+        {!ehCliente && hovered && !editando && (
           <div className="flex items-center gap-1 ml-1 mb-1 opacity-0 group-hover:opacity-100 transition-opacity relative">
+            <button
+              onClick={() => onReply(msg)}
+              className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
+              title="Responder"
+            >
+              <Reply className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setEmojiOpen(v => !v)}
+              className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
+              title="Reagir"
+            >
+              <Smile className="w-3.5 h-3.5" />
+            </button>
+            {admin && (
+              <>
+                <button onClick={() => setReescritaOpen(true)}
+                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-indigo-50 text-slate-500 hover:text-indigo-600 transition-colors" title="Reescrever como Mari">
+                  <Sparkles className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => { setTextoEdit(msg.conteudo); setEditando(true); }}
+                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="Editar">
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={excluir}
+                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors" title="Excluir">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
             {/* Emoji picker */}
             {emojiOpen && (
               <div ref={emojiRef} className="absolute bottom-8 right-0 bg-white rounded-2xl shadow-xl border border-slate-200 px-3 py-2 flex gap-1.5 z-20">
@@ -249,26 +275,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 ))}
               </div>
             )}
-            {admin && (
-              <>
-                <button onClick={excluir}
-                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-red-50 text-slate-500 hover:text-red-600 transition-colors" title="Excluir">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={() => { setTextoEdit(msg.conteudo); setEditando(true); }}
-                  className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="Editar">
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-              </>
-            )}
-            <button onClick={() => onReply(msg)}
-              className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="Responder">
-              <Reply className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={() => setEmojiOpen(v => !v)}
-              className="p-1.5 rounded-full bg-white shadow-sm hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors" title="Reagir">
-              <Smile className="w-3.5 h-3.5" />
-            </button>
           </div>
         )}
       </div>
