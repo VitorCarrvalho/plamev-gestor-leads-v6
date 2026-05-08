@@ -1,106 +1,122 @@
 /**
- * routes/sandbox.ts — Proxy para Intelligence V1 (Chat Simulator)
+ * routes/sandbox.ts — Chat Simulator (sandbox autônomo)
  *
- * Encaminha chamadas de /api/sandbox/* para o Intelligence V1 (porta 3471),
- * repassando o token JWT do operador.
- * O Intelligence V1 valida o mesmo token (compartilham segredo JWT).
+ * Substituiu o proxy para Intelligence V1 (porta 3471) que não existia.
+ * Agora chama o Anthropic diretamente via sandbox-engine.ts.
  */
 import { Router } from 'express';
 import { autenticar } from '../middleware/auth';
-import http from 'http';
+import { query, queryOne } from '../config/db';
+import { processarMensagem } from '../services/sandbox-engine';
 
 const router = Router();
 
-const INTEL_BASE = process.env.INTELLIGENCE_V1_URL || 'http://localhost:3471';
+const PLAMEV_CEP_URL = 'https://service.plamev.com.br/Credenciados/BuscarRedeCredenciadaPorLocalidade';
+const ETAPAS = [
+  'acolhimento', 'qualificacao', 'apresentacao_planos',
+  'validacao_cep', 'negociacao', 'objecao', 'pre_fechamento', 'fechamento',
+];
 
-function proxyPost(targetPath: string, req: any, res: any) {
-  const body = JSON.stringify(req.body || {});
-  const token = (req.headers.authorization || '').replace('Bearer ', '');
+// ── POST /chat/mensagem — processa mensagem na Mari ───────────────────────────
+router.post('/chat/mensagem', autenticar, async (req, res) => {
+  try {
+    const result = await processarMensagem(req.body);
+    res.json(result);
+  } catch (e: any) {
+    console.error('[SANDBOX/chat] Erro:', e.message);
+    res.status(500).json({ erro: e.message });
+  }
+});
 
-  const url = new URL(targetPath, INTEL_BASE);
-  const options: http.RequestOptions = {
-    hostname: url.hostname,
-    port: Number(url.port) || 80,
-    path: url.pathname + url.search,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(body),
-      'Authorization': `Bearer ${token}`,
-    },
-  };
+// ── GET /chat/etapas — lista etapas do funil ──────────────────────────────────
+router.get('/chat/etapas', autenticar, (_req, res) => {
+  res.json({ etapas: ETAPAS });
+});
 
-  const proxyReq = http.request(options, (proxyRes) => {
-    let data = '';
-    proxyRes.on('data', chunk => { data += chunk; });
-    proxyRes.on('end', () => {
-      res.status(proxyRes.statusCode || 200)
-        .set('Content-Type', 'application/json')
-        .send(data);
+// ── GET /cenarios — lista cenários salvos ─────────────────────────────────────
+router.get('/cenarios', autenticar, async (_req, res) => {
+  try {
+    const rows = await query<any>(
+      `SELECT id, nome, descricao, etapa, canal, criado_em
+       FROM sandbox_cenarios ORDER BY criado_em DESC LIMIT 50`
+    );
+    res.json({ ok: true, cenarios: rows });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
+});
+
+// ── POST /cenarios — salva cenário ────────────────────────────────────────────
+router.post('/cenarios', autenticar, async (req, res) => {
+  const { nome, descricao, etapa, canal, perfil_lead, mensagens } = req.body || {};
+  if (!nome?.trim()) { res.status(400).json({ erro: 'nome é obrigatório' }); return; }
+  try {
+    const row = await queryOne<any>(
+      `INSERT INTO sandbox_cenarios (nome, descricao, etapa, canal, perfil_lead, mensagens)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+       RETURNING id, nome, criado_em`,
+      [
+        nome.trim(), descricao || null,
+        etapa || 'acolhimento', canal || 'whatsapp',
+        JSON.stringify(perfil_lead || {}),
+        JSON.stringify(mensagens  || []),
+      ]
+    );
+    res.json({ ok: true, cenario: row });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
+});
+
+// ── POST /cep — consulta rede credenciada Plamev ──────────────────────────────
+router.post('/cep', autenticar, async (req, res) => {
+  const cepLimpo = String(req.body?.cep || '').replace(/\D/g, '');
+
+  if (!/^\d{8}$/.test(cepLimpo)) {
+    res.json({ cobertura: false, clinicas: [], texto: null, cep: cepLimpo });
+    return;
+  }
+
+  const token = process.env.PLAMEV_SERVICE_AUTHORIZATION_TOKEN;
+  if (!token) {
+    res.json({ cobertura: false, clinicas: [], texto: null, cep: cepLimpo,
+               aviso: 'PLAMEV_SERVICE_AUTHORIZATION_TOKEN não configurado' });
+    return;
+  }
+
+  try {
+    const apiRes = await fetch(PLAMEV_CEP_URL, {
+      method: 'POST',
+      headers: { Authorization: token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ Cep: cepLimpo, Raio: '50' }),
+      signal: AbortSignal.timeout(10_000),
     });
-  });
 
-  proxyReq.on('error', (e) => {
-    res.status(502).json({ erro: `Intelligence V1 indisponível: ${e.message}` });
-  });
+    const lista: any[] = apiRes.ok
+      ? await apiRes.json().catch(() => [])
+      : [];
 
-  proxyReq.write(body);
-  proxyReq.end();
-}
+    lista.sort((a, b) => parseFloat(a.DistanciaKm || '0') - parseFloat(b.DistanciaKm || '0'));
 
-function proxyGet(targetPath: string, req: any, res: any) {
-  const token = (req.headers.authorization || '').replace('Bearer ', '');
-  const qs = new URLSearchParams(req.query as any).toString();
-  const url = new URL(targetPath + (qs ? `?${qs}` : ''), INTEL_BASE);
+    const cobertura = lista.length > 0;
+    let texto: string | null = null;
 
-  const options: http.RequestOptions = {
-    hostname: url.hostname,
-    port: Number(url.port) || 80,
-    path: url.pathname + url.search,
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-  };
+    if (cobertura) {
+      const top3 = lista.slice(0, 3);
+      const nomeCli = (c: any) =>
+        c.CredenciadosNomeCredenciado?.trim() ||
+        c.IndividuosNomeFantasia?.trim() ||
+        c.IndividuosNome?.trim() || 'Clinica';
+      const distFmt = (c: any) => {
+        const d = parseFloat(c.DistanciaKm);
+        return d < 1 ? `${(d * 1000).toFixed(0)}m` : `${d.toFixed(1)}km`;
+      };
+      texto =
+        `Encontrei ${top3.length} clinica${top3.length !== 1 ? 's' : ''} proxima${top3.length !== 1 ? 's' : ''} ao seu CEP:\n` +
+        top3.map((c, i) => `${i + 1}. *${nomeCli(c)}* - ${c.IndividuosEnderecosBairro || ''} (${distFmt(c)})`).join('\n');
+    }
 
-  const proxyReq = http.request(options, (proxyRes) => {
-    let data = '';
-    proxyRes.on('data', chunk => { data += chunk; });
-    proxyRes.on('end', () => {
-      res.status(proxyRes.statusCode || 200)
-        .set('Content-Type', 'application/json')
-        .send(data);
-    });
-  });
-
-  proxyReq.on('error', (e) => {
-    res.status(502).json({ erro: `Intelligence V1 indisponível: ${e.message}` });
-  });
-
-  proxyReq.end();
-}
-
-// Chat Simulator
-router.post('/chat/mensagem', autenticar, (req, res) => {
-  proxyPost('/api/sandbox/chat/mensagem', req, res);
-});
-
-router.get('/chat/etapas', autenticar, (req, res) => {
-  proxyGet('/api/sandbox/chat/etapas', req, res);
-});
-
-// Cenários: salvar e listar simulações
-router.get('/cenarios', autenticar, (req, res) => {
-  proxyGet('/api/sandbox/cenarios', req, res);
-});
-
-router.post('/cenarios', autenticar, (req, res) => {
-  proxyPost('/api/sandbox/cenarios', req, res);
-});
-
-// CEP (usado no perfil do simulador)
-router.post('/cep', autenticar, (req, res) => {
-  proxyPost('/api/sistema/cep', req, res);
+    res.json({ cobertura, clinicas: lista, texto, cep: cepLimpo });
+  } catch (e: any) {
+    console.error('[SANDBOX/cep] Erro:', e.message);
+    res.json({ cobertura: false, clinicas: [], texto: null, cep: cepLimpo });
+  }
 });
 
 export default router;
