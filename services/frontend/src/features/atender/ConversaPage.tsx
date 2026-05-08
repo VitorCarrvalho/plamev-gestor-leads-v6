@@ -570,11 +570,11 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
         `/api/analisar/enviar-intel-v1/${conversaId}`,
         { motivo: motivoIntelV1 }
       );
-      setFeedback({ ok: true, text: `✓ Enviado ao Intel V1 (#${r.id})` });
+      setFeedback({ ok: true, text: `✓ Conversa salva (#${r.id})` });
       setModalIntelV1(false); setMotivoIntelV1('');
       setTimeout(() => setFeedback(null), 3000);
     } catch (e: any) {
-      setFeedback({ ok: false, text: e?.message || 'Erro ao enviar' });
+      setFeedback({ ok: false, text: e?.message || 'Erro ao salvar' });
     } finally { setEnviandoIntelV1(false); }
   };
 
@@ -627,9 +627,9 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
           size="sm"
           variant="outline"
           onClick={() => setModalIntelV1(true)}
-          title="Enviar esta conversa ao Intelligence V1 para análise"
+          title="Salvar conversa em Conversas Salvas"
         >
-          <Brain className="w-3.5 h-3.5" /> Análise
+          <Bookmark className="w-3.5 h-3.5" /> Salvar
         </Button>
         {conversa.etapa !== 'pago' && (
           <Button
@@ -646,27 +646,26 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
       <Dialog open={modalIntelV1} onOpenChange={setModalIntelV1}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Enviar conversa para análise no Intelligence V1</DialogTitle>
+            <DialogTitle>Salvar conversa</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-slate-600">
-              Será criado um snapshot das mensagens e do perfil atuais. O Intelligence V1 vai
-              listar esta conversa em <span className="font-medium">Sandbox · Análise</span>.
+              Um snapshot das mensagens e do perfil atual será salvo em <span className="font-medium">Analisar &gt; Conversas Salvas</span>.
             </p>
             <label className="text-xs font-medium text-slate-600 block">
-              Motivo / o que analisar (opcional)
+              Observação (opcional)
             </label>
             <Textarea
               value={motivoIntelV1}
               onChange={e => setMotivoIntelV1(e.target.value)}
-              placeholder="Ex: Mari enviou preço 3x e parou de responder. Verificar apresentacao-planos."
+              placeholder="Ex: conversa interessante de objeção de preço, ver resposta da Mari na etapa negociacao."
               rows={3}
             />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalIntelV1(false)}>Cancelar</Button>
             <Button onClick={enviarParaIntelV1} disabled={enviandoIntelV1}>
-              {enviandoIntelV1 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Enviando…</> : <>Enviar <Brain className="w-3.5 h-3.5" /></>}
+              {enviandoIntelV1 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Salvando…</> : <><Bookmark className="w-3.5 h-3.5" /> Salvar</>}
             </Button>
           </DialogFooter>
         </DialogContent>

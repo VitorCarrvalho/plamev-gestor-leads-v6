@@ -23,7 +23,7 @@ export const SalvasPage: React.FC = () => {
 
   useEffect(() => { carregar(); }, []);
 
-  const abrir = async (id: number) => {
+  const abrir = async (id: string) => {
     const d = await api.get<any>(`/api/analisar/salvas/${id}`);
     setSelecionada(d.conversa);
   };
@@ -38,7 +38,7 @@ export const SalvasPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const excluir = async (id: number) => {
+  const excluir = async (id: string) => {
     if (!confirm('Excluir esta conversa salva?')) return;
     await api.delete(`/api/analisar/salvas/${id}`);
     carregar();
@@ -62,7 +62,7 @@ export const SalvasPage: React.FC = () => {
                   <TableRow>
                     <TableHead>Título</TableHead>
                     <TableHead>Cliente/Pet</TableHead>
-                    <TableHead>Tags</TableHead>
+                    <TableHead>Tipo / Tags</TableHead>
                     <TableHead>Salva em</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
@@ -80,7 +80,15 @@ export const SalvasPage: React.FC = () => {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {(c.tags || []).slice(0, 3).map((t: string) => <Badge key={t} variant="outline" className="text-[10px]">{t}</Badge>)}
+                          <Badge
+                            variant={c.tipo === 'sandbox' ? 'blue' : 'green'}
+                            className="text-[10px]"
+                          >
+                            {c.tipo === 'sandbox' ? '🧪 Simulator' : '💬 Chat Real'}
+                          </Badge>
+                          {(c.tags || []).filter((t: string) => t !== 'simulator').slice(0, 2).map((t: string) => (
+                            <Badge key={t} variant="outline" className="text-[10px]">{t}</Badge>
+                          ))}
                         </div>
                       </TableCell>
                       <TableCell className="text-xs text-slate-500">{new Date(c.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</TableCell>
@@ -89,9 +97,7 @@ export const SalvasPage: React.FC = () => {
                           <Button size="sm" variant="outline" onClick={() => abrir(c.id)}>
                             <Eye className="w-3 h-3" /> Ver
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => abrir(c.id).then(() => {
-                            api.get<any>(`/api/analisar/salvas/${c.id}`).then(d => exportarJSON(d.conversa));
-                          })}>
+                          <Button size="sm" variant="outline" onClick={() => abrir(c.id)}>
                             <Download className="w-3 h-3" />
                           </Button>
                           <Button size="sm" variant="danger-outline" onClick={() => excluir(c.id)}>

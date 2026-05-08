@@ -12,17 +12,30 @@ const router = Router();
 router.use(autenticar);
 
 // ── Salvas ─────────────────────────────────────────────────────
+// Prefixos de ID: 'r_<n>' = conversas_salvas, 's_<n>' = sandbox_cenarios
 router.get('/salvas', async (_req, res) => {
   try {
     const rows = await query<any>(`
-      SELECT cs.id, cs.conversa_id, cs.titulo, cs.motivo, cs.tags,
-             cs.criado_em,
+      SELECT 'r_' || cs.id::text AS id, cs.conversa_id, cs.titulo, cs.motivo, cs.tags,
+             cs.criado_em, 'real'::text AS tipo,
              c.canal, cli.nome AS nome_cliente, pp.nome AS nome_pet
       FROM conversas_salvas cs
       LEFT JOIN conversas c ON c.id = cs.conversa_id
       LEFT JOIN clientes cli ON cli.id = c.client_id
       LEFT JOIN perfil_pet pp ON pp.client_id = c.client_id
-      ORDER BY cs.criado_em DESC
+
+      UNION ALL
+
+      SELECT 's_' || sc.id::text AS id, NULL AS conversa_id,
+             sc.nome AS titulo, sc.descricao AS motivo,
+             ARRAY['simulator']::text[] AS tags,
+             sc.criado_em, 'sandbox'::text AS tipo,
+             sc.canal,
+             NULL AS nome_cliente,
+             sc.perfil_lead->>'nome' AS nome_pet
+      FROM sandbox_cenarios sc
+
+      ORDER BY criado_em DESC
       LIMIT 200
     `);
     res.json({ ok: true, conversas: rows });
@@ -31,15 +44,35 @@ router.get('/salvas', async (_req, res) => {
 
 router.get('/salvas/:id', async (req, res) => {
   try {
-    const rows = await query<any>(`SELECT * FROM conversas_salvas WHERE id=$1`, [req.params.id]);
-    if (!rows[0]) { res.status(404).json({ erro: 'Não encontrada' }); return; }
-    res.json({ ok: true, conversa: rows[0] });
+    const { id } = req.params;
+    if (id.startsWith('s_')) {
+      const rows = await query<any>(`SELECT * FROM sandbox_cenarios WHERE id=$1`, [id.slice(2)]);
+      if (!rows[0]) { res.status(404).json({ erro: 'Não encontrada' }); return; }
+      const sc = rows[0];
+      res.json({ ok: true, conversa: {
+        id, tipo: 'sandbox',
+        titulo: sc.nome, motivo: sc.descricao,
+        tags: ['simulator'], canal: sc.canal, criado_em: sc.criado_em,
+        snapshot_msgs: sc.mensagens, snapshot_perfil: sc.perfil_lead,
+      }});
+    } else {
+      const numId = id.startsWith('r_') ? id.slice(2) : id;
+      const rows = await query<any>(`SELECT * FROM conversas_salvas WHERE id=$1`, [numId]);
+      if (!rows[0]) { res.status(404).json({ erro: 'Não encontrada' }); return; }
+      res.json({ ok: true, conversa: { ...rows[0], tipo: 'real' } });
+    }
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
 
 router.delete('/salvas/:id', async (req, res) => {
   try {
-    await execute(`DELETE FROM conversas_salvas WHERE id=$1`, [req.params.id]);
+    const { id } = req.params;
+    if (id.startsWith('s_')) {
+      await execute(`DELETE FROM sandbox_cenarios WHERE id=$1`, [id.slice(2)]);
+    } else {
+      const numId = id.startsWith('r_') ? id.slice(2) : id;
+      await execute(`DELETE FROM conversas_salvas WHERE id=$1`, [numId]);
+    }
     res.json({ ok: true });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
