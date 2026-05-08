@@ -176,7 +176,7 @@ router.post('/:msgId/reaction', autenticar, async (req, res) => {
     if (!emoji) { res.status(400).json({ erro: 'emoji obrigatório' }); return; }
 
     const msg = await queryOne<any>(
-      `SELECT m.id, m.msg_id_externo, m.conversa_id,
+      `SELECT m.id, m.msg_id_externo, m.conversa_id, m.role,
               c.numero_externo AS phone, c.jid, c.instancia_whatsapp AS instancia
        FROM mensagens m JOIN conversas c ON c.id = m.conversa_id WHERE m.id=$1`,
       [req.params.msgId]
@@ -209,6 +209,7 @@ router.post('/:msgId/reaction', autenticar, async (req, res) => {
           instancia: msg.instancia || null,
           msgIdExterno: msg.msg_id_externo,
           emoji: emoji || '❌',
+          fromMe: msg.role === 'agent',
         }),
         signal: AbortSignal.timeout(5000),
       }).catch(e => console.warn('[MENSAGENS] Falha ao enviar reação WA:', e.message));

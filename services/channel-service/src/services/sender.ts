@@ -160,6 +160,7 @@ export async function enviarReacaoWA(
   instanciaExplicita: string | null,
   msgIdExterno: string,
   emoji: string,
+  fromMe = false,
 ): Promise<boolean> {
   let inst = instanciaExplicita;
   if (!inst) inst = getInstancia(phone);
@@ -169,7 +170,7 @@ export async function enviarReacaoWA(
   const numero = normalizarJID(phone, jid);
 
   const r = await wppPost(baseUrl, `/message/sendReaction/${inst}`, {
-    key: { id: msgIdExterno, remoteJid: numero, fromMe: false },
+    key: { id: msgIdExterno, remoteJid: numero, fromMe },
     reaction: emoji,
   }, apiKey).catch(() => ({}));
 

@@ -280,13 +280,13 @@ internalRouter.post('/send-reaction', async (req: Request, res: Response) => {
   if (req.headers['x-internal-secret'] !== INTERNAL_SECRET) {
     res.status(401).json({ erro: 'Não autorizado' }); return;
   }
-  const { phone, jid, instancia, msgIdExterno, emoji } = req.body || {};
+  const { phone, jid, instancia, msgIdExterno, emoji, fromMe } = req.body || {};
   if (!phone || !msgIdExterno || !emoji) {
     res.status(400).json({ erro: 'phone, msgIdExterno e emoji são obrigatórios' }); return;
   }
   res.json({ ok: true });
   try {
-    await enviarReacaoWA(phone, jid ?? null, instancia ?? null, msgIdExterno, emoji);
+    await enviarReacaoWA(phone, jid ?? null, instancia ?? null, msgIdExterno, emoji, fromMe === true);
   } catch (e: any) {
     console.error('[CHANNEL-SERVICE] ❌ Falha ao enviar reação:', e.message);
   }
