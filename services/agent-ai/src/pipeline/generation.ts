@@ -33,6 +33,7 @@ function parsear(texto, etapaAtual) {
         email:         d.em || d.email         || null,
         cpf:           d.cf || d.cpf           || null,
         plano_interesse: d.pi || d.plano_interesse || null,
+        valor_ofertado:  d.vo || d.valor_ofertado  || null,
       };
 
       if (resposta && typeof resposta === 'string') {

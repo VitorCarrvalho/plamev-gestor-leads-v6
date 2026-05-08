@@ -64,6 +64,8 @@ export interface PetCotacao {
   especie: '1' | '2';       // '1'=Felino, '2'=Canino
   racasId: string;          // UUID ou 'SEMRACA1'/'SEMRACA2'
   coberturasId: string;     // UUID de Coberturas
+  campanhasCoberturasId?: string;
+  campanhasCoberturaTabelasId?: string;
 }
 
 export interface CotacaoPayload {
@@ -406,6 +408,8 @@ export async function submeterCotacao(payload: CotacaoPayload): Promise<CotacaoR
       Especie: pet.especie,
       RacasId: pet.racasId,
       CoberturasId: pet.coberturasId,
+      CampanhasCoberturasId: pet.campanhasCoberturasId,
+      CampanhasCoberturaTabelasId: pet.campanhasCoberturaTabelasId,
     })),
   };
 
@@ -478,6 +482,107 @@ export async function submeterCotacao(payload: CotacaoPayload): Promise<CotacaoR
 
   console.error('[COTACAO] ❌ Falha após 3 tentativas:', lastError?.message);
   throw lastError!;
+}
+
+// ── Campanhas e Tabelas Dinâmicas ────────────────────────────────────────
+
+export interface PlanoPlamevId {
+  tipo_cobertura: number;
+  nome_cobertura: string;
+  coberturas_id: string;
+}
+
+export async function getCoveragePlanByName(planName: string): Promise<PlanoPlamevId | null> {
+  if (!planName) return null;
+  const normalizado = planName.trim().toLowerCase();
+  
+  try {
+    const { rows } = await pool.query(
+      `SELECT tipo_cobertura, nome_cobertura, coberturas_id 
+       FROM planos_plamev_ids 
+       WHERE LOWER(nome_cobertura) = $1 LIMIT 1`,
+      [normalizado]
+    );
+    if (rows.length) return rows[0];
+
+    // Tentar match parcial se exato falhar
+    const { rows: partialRows } = await pool.query(
+      `SELECT tipo_cobertura, nome_cobertura, coberturas_id 
+       FROM planos_plamev_ids 
+       WHERE LOWER(nome_cobertura) LIKE $1 LIMIT 1`,
+      [`%${normalizado}%`]
+    );
+    return partialRows[0] || null;
+  } catch (e: any) {
+    console.warn('[COTACAO] ⚠️ Erro ao buscar plano na tabela planos_plamev_ids:', e.message);
+    return null;
+  }
+}
+
+export function normalizePlanName(name: string): string {
+  return name.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+export async function getCampaignByPlanAndState(tipoCobertura: number, estadoId: string, planName: string): Promise<{ CampanhasCoberturasId: string; CampanhasCoberturasNome: string } | null> {
+  try {
+    const raw = await plamevGet(`/CampanhasCoberturas/BuscarCampanhasEv?TiposCoberturasId=${tipoCobertura}&EstadosId=${encodeURIComponent(estadoId)}`);
+    const campanhas = Object.values(raw ?? {});
+    const normalizedPlanName = normalizePlanName(planName);
+
+    for (const c of campanhas as any[]) {
+      if (c?.CampanhasCoberturasNome && normalizePlanName(c.CampanhasCoberturasNome) === normalizedPlanName) {
+        return {
+          CampanhasCoberturasId: c.CampanhasCoberturasId,
+          CampanhasCoberturasNome: c.CampanhasCoberturasNome
+        };
+      }
+    }
+    return null;
+  } catch (e: any) {
+    console.warn(`[COTACAO] ⚠️ Erro ao buscar campanhas na API:`, e.message);
+    return null;
+  }
+}
+
+export async function getCampaignPriceTable(campanhasCoberturasId: string): Promise<any[]> {
+  try {
+    const raw = await plamevGet(`/CampanhasCoberturasTabelas/consultar?CampanhasCoberturasId=${encodeURIComponent(campanhasCoberturasId)}`);
+    return Object.values(raw ?? {}).filter((t: any) => t && t.Id && t.Nome && t.Ativo);
+  } catch (e: any) {
+    console.warn(`[COTACAO] ⚠️ Erro ao buscar tabelas na API:`, e.message);
+    return [];
+  }
+}
+
+export function parsePriceFromText(value: string | number | null): number | null {
+  if (value == null) return null;
+  if (typeof value === 'number') return value;
+  
+  // Extrair o último número no formato decimal (ex: 89,98 ou 89.98)
+  const match = value.match(/(\d+[.,]\d{2})/g);
+  if (match && match.length > 0) {
+    const lastNum = match[match.length - 1];
+    return parseFloat(lastNum.replace(',', '.'));
+  }
+  return null;
+}
+
+export function findMatchingPriceTable(tables: any[], offeredPrice: number): any | null {
+  let bestMatch = null;
+  let minDiff = Infinity;
+
+  for (const table of tables) {
+    const tablePrice = parsePriceFromText(table.Nome);
+    if (tablePrice !== null) {
+      const diff = Math.abs(tablePrice - offeredPrice);
+      // Tolerância de até R$ 1,00
+      if (diff <= 1.00 && diff < minDiff) {
+        minDiff = diff;
+        bestMatch = table;
+      }
+    }
+  }
+  return bestMatch;
 }
 
 // ── Formatação para sistema prompt ─────────────────────────────────────────

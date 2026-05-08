@@ -565,7 +565,7 @@ Quando tiver todos os dados e incluir `solicitar_cotacao`, a Mari avisa o client
 ## FORMATO DE SAÍDA (JSON)
 Responda APENAS em JSON válido e COMPACTO:
 ```json
-{"r":"sua mensagem ao cliente","e":"etapa","acoes":["salvar_conversa"],"d":{"nc":null,"np":null,"ep":null,"rp":null,"ip":null,"cp":null,"em":null,"cf":null,"pi":null,"dn":null,"sx":null,"ci":null}}
+{"r":"sua mensagem ao cliente","e":"etapa","acoes":["salvar_conversa"],"d":{"nc":null,"np":null,"ep":null,"rp":null,"ip":null,"cp":null,"em":null,"cf":null,"pi":null,"vo":null,"dn":null,"sx":null,"ci":null}}
 ```
 
 Chaves principais:
@@ -574,7 +574,7 @@ Chaves principais:
 - `acoes` = lista de ações do sistema (padrão: `["salvar_conversa"]`; para acionar cotação: `["salvar_conversa","solicitar_cotacao"]`)
 - `d` = dados extraídos da conversa:
   - `nc`=nome_cliente · `np`=nome_pet · `ep`=espécie · `rp`=raça · `ip`=idade_pet
-  - `cp`=cep · `em`=email · `cf`=cpf · `pi`=plano_interesse
+  - `cp`=cep · `em`=email · `cf`=cpf · `pi`=plano_interesse · `vo`=valor_ofertado
   - `dn`=data_nascimento_pet (DD/MM/AAAA) · `sx`=sexo_pet (Macho/Fêmea) · `ci`=cobertura_id (UUID do plano)
 
 Etapas válidas: veja `Tecnico/Etapas-Funil.md`
@@ -583,5 +583,5 @@ Etapas válidas: veja `Tecnico/Etapas-Funil.md`
 
 ### Exemplo: cotação completa
 ```json
-{"r":"Perfeito! Estou gerando sua cotação agora, te mando o PDF aqui em instantes 🐾","e":"fechamento","acoes":["salvar_conversa","solicitar_cotacao"],"d":{"nc":"Maria","np":"Rex","ep":"2","rp":"Golden Retriever","ip":null,"cp":"01310100","em":"maria@email.com","cf":null,"pi":"Advance","dn":"15/03/2020","sx":"Macho","ci":"uuid-do-plano"}}
+{"r":"Perfeito! Estou gerando sua cotação agora, te mando o PDF aqui em instantes 🐾","e":"fechamento","acoes":["salvar_conversa","solicitar_cotacao"],"d":{"nc":"Maria","np":"Rex","ep":"2","rp":"Golden Retriever","ip":null,"cp":"01310100","em":"maria@email.com","cf":null,"pi":"Advance","vo":"89,99","dn":"15/03/2020","sx":"Macho","ci":"uuid-do-plano"}}
 ```

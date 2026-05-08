@@ -16,6 +16,11 @@ import {
   normalizarCidade,
   resolverCoberturaIdPorNome,
   type CotacaoPayload,
+  getCoveragePlanByName,
+  getCampaignByPlanAndState,
+  getCampaignPriceTable,
+  findMatchingPriceTable,
+  buscarEstados,
 } from '../services/cotacao';
 import { gerarCotacaoPdf } from '../services/cotacao-pdf';
 import {
@@ -126,6 +131,8 @@ async function dispararCotacao(
     const petEspecie  = (dados.pet_especie || dados.especie || dados.ep || '2') as '1' | '2';
     const petRacaNome = dados.pet_raca || dados.raca || dados.rp || conversaAtual?.raca || '';
     const coberturaId = dados.cobertura_id || dados.coberturasId || dados.ci || conversaAtual?.plano_recomendado || '';
+    const planoInteresse = dados.plano_interesse || dados.pi || conversaAtual?.plano_recomendado || '';
+    const valorOfertado = dados.valor_ofertado || dados.vo || null;
 
     if (!nomeCliente || !email || !coberturaId || !cepRaw) {
       console.warn(`${tag} ⚠️ Dados insuficientes para cotação (nome=${!!nomeCliente} email=${!!email} cobertura=${!!coberturaId} cep=${!!cepRaw})`);
@@ -140,6 +147,14 @@ async function dispararCotacao(
       return;
     }
 
+    // Resolvendo EstadosId (UUID)
+    const estados = await buscarEstados();
+    const estadoIdUuid = estados.find(e => e.uf === endereco.uf)?.id;
+    if (!estadoIdUuid) {
+      console.warn(`${tag} ⚠️ Estado de cobertura não encontrado para o CEP informado: ${cepRaw} (${endereco.uf})`);
+      return;
+    }
+
     // Raça → UUID (normaliza para lowercase)
     let racaId = (dados.racas_id || dados.racasId || '').toLowerCase();
     if (!racaId && petRacaNome) {
@@ -148,10 +163,45 @@ async function dispararCotacao(
     }
     if (!racaId) racaId = petEspecie === '2' ? 'SEMRACA2' : 'SEMRACA1';
 
-    // Cobertura → UUID: se a LLM enviou nome em vez de UUID, resolve via cache local + API
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     let coberturaIdResolvido = coberturaId;
-    if (coberturaId && !uuidPattern.test(coberturaId)) {
+    let campanhasCoberturasId: string | undefined;
+    let campanhasCoberturaTabelasId: string | undefined;
+
+    // Resolvendo Campanhas Dinâmicas com base no plano_interesse e valor_ofertado
+    const planoParaBusca = planoInteresse || coberturaId;
+    if (planoParaBusca && valorOfertado) {
+      console.log(`${tag} 🔍 Buscando campanha para plano "${planoParaBusca}" e valor R$ ${valorOfertado}`);
+      const planoPlamev = await getCoveragePlanByName(planoParaBusca);
+      if (!planoPlamev) {
+        console.warn(`${tag} ⚠️ Plano selecionado não encontrado na tabela interna de coberturas: ${planoParaBusca}`);
+      } else {
+        coberturaIdResolvido = planoPlamev.coberturas_id;
+        
+        const campanha = await getCampaignByPlanAndState(planoPlamev.tipo_cobertura, estadoIdUuid, planoParaBusca);
+        if (!campanha) {
+          console.warn(`${tag} ⚠️ Campanha de cobertura não encontrada para o plano ${planoParaBusca} e estado ${estadoIdUuid}`);
+        } else {
+          campanhasCoberturasId = campanha.CampanhasCoberturasId;
+          
+          const tables = await getCampaignPriceTable(campanha.CampanhasCoberturasId);
+          const precoNumerico = typeof valorOfertado === 'string' ? parseFloat(valorOfertado.replace(',', '.')) : parseFloat(valorOfertado);
+          
+          if (!isNaN(precoNumerico)) {
+            const tableMatch = findMatchingPriceTable(tables, precoNumerico);
+            if (!tableMatch) {
+              console.warn(`${tag} ⚠️ Tabela de preço não encontrada para o valor ofertado R$ ${precoNumerico}`);
+            } else {
+              campanhasCoberturaTabelasId = tableMatch.Id;
+              console.log(`${tag} ✅ Campanha e Tabela resolvidas dinamicamente: Campanha=${campanhasCoberturasId}, Tabela=${campanhasCoberturaTabelasId} (${tableMatch.Nome})`);
+            }
+          }
+        }
+      }
+    }
+
+    // Cobertura → UUID fallback se a resolução dinâmica falhou e ci não é UUID
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (coberturaId && !uuidPattern.test(coberturaId) && !campanhasCoberturaTabelasId) {
       console.log(`${tag} 🔍 ci="${coberturaId}" não é UUID — resolvendo via cache/API para ${endereco.uf}…`);
       const resolved = await resolverCoberturaIdPorNome(coberturaId, endereco.uf);
       if (resolved) {
@@ -191,6 +241,8 @@ async function dispararCotacao(
         especie: petEspecie,
         racasId: racaId,
         coberturasId: coberturaIdResolvido,
+        campanhasCoberturasId,
+        campanhasCoberturaTabelasId,
       }],
     };
 
