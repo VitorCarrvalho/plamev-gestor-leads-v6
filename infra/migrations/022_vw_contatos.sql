@@ -31,7 +31,7 @@ SELECT
   pp.nome                      AS pet_nome,
   pp.especie                   AS pet_especie,
   pp.raca                      AS pet_raca,
-  pp.idade                     AS pet_idade,
+  pp.idade_anos                AS pet_idade,
   pp.sexo                      AS pet_sexo,
   pp.problema_saude            AS pet_problema,
   pp.cep                       AS pet_cep
