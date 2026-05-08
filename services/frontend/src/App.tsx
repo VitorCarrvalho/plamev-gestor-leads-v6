@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Eye, EyeOff, Loader2, Menu } from 'lucide-react';
 import { isLoggedIn, login, logout, getUser } from './services/api';
+import { cn } from './lib/utils';
 import { Sidebar, Pilar } from './components/layout/Sidebar';
 import { PageHeader } from './components/layout/PageHeader';
 import { Button } from './components/ui/button';
@@ -113,10 +114,13 @@ const Placeholder: React.FC<{ titulo: string; subtitulo: string; fase: string }>
 
 // ── SHELL ─────────────────────────────────────────────────────
 const Shell: React.FC = () => {
-  const [pilar, setPilar]       = useState<Pilar>('monitorar');
-  const [subPage, setSubPage]   = useState<string>('dashboard');
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [perfilOpen, setPerfilOpen] = useState(false);
+  const [pilar, setPilar]             = useState<Pilar>('monitorar');
+  const [subPage, setSubPage]         = useState<string>('dashboard');
+  const [menuOpen, setMenuOpen]       = useState(false);
+  const [perfilOpen, setPerfilOpen]   = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => { try { return localStorage.getItem('sidebar_collapsed') === 'true'; } catch { return false; } }
+  );
 
   // Event bus leve: qualquer componente pode chamar
   //   window.dispatchEvent(new CustomEvent('dashv5-navegar', { detail: { pilar, subPage, conversaId? } }))
@@ -147,7 +151,6 @@ const Shell: React.FC = () => {
       // Atender
       case 'atender/chat':     return <ConversaPage />;
       case 'atender/contatos': return <ContactsPage />;
-      case 'atender/agentes':  return <ConfiguracaoPage />;
       case 'atender/perfil':   return <PerfilPage onAbrirConversa={() => navegar('atender', 'chat')} />;
 
       // Analisar
@@ -182,13 +185,19 @@ const Shell: React.FC = () => {
         onNavigate={navegar}
         onLogout={() => { logout(); window.location.reload(); }}
         onPerfilClick={() => setPerfilOpen(true)}
+        onCollapsedChange={setSidebarCollapsed}
         userEmail={user?.email}
         userName={user?.nome}
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
       />
       {perfilOpen && <UserProfileModal onClose={() => setPerfilOpen(false)} />}
-      <main className="flex-1 md:ml-[232px] min-h-screen flex flex-col bg-slate-50 overflow-hidden">
+      <main
+        className={cn(
+          'flex-1 min-h-screen flex flex-col bg-slate-50 overflow-hidden transition-[margin] duration-300 ease-in-out',
+          sidebarCollapsed ? 'md:ml-[60px]' : 'md:ml-[240px]',
+        )}
+      >
         {/* Barra top mobile com hambúrguer */}
         <div className="md:hidden sticky top-0 z-20 bg-white border-b border-slate-200 h-12 flex items-center gap-2 px-3 shrink-0">
           <button
