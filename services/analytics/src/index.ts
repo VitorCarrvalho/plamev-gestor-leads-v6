@@ -20,32 +20,33 @@ app.use((req, _res, next) => {
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'analytics' }));
 
-app.get('/api/stats', async (_req, res) => {
+app.get('/api/stats', async (req, res) => {
   try {
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
+    const orgId = (req.headers['x-org-id'] as string) || '00000000-0000-0000-0000-000000000000';
+    const hoje = new Date().toISOString().slice(0, 10);
+    const mes  = new Date().toISOString().slice(0, 7);
 
-    const [leadsHoje, convs30d, mensagens30d, agentes] = await Promise.all([
-      query<any>(`SELECT COUNT(*)::int AS n FROM conversas WHERE criado_em >= $1`, [hoje]),
-      query<any>(`SELECT COUNT(*)::int AS n FROM conversas WHERE criado_em >= NOW() - INTERVAL '30 days'`),
-      query<any>(`SELECT COUNT(*)::int AS n FROM mensagens WHERE timestamp >= NOW() - INTERVAL '30 days'`),
-      query<any>(`SELECT COUNT(*)::int AS n FROM agentes WHERE ativo = true`),
+    const [cl, ms, cu, cm, ca, clm, msm, fecReal, fecPago] = await Promise.all([
+      query<any>(`SELECT COUNT(DISTINCT c.client_id) AS n FROM conversas c WHERE DATE(c.criado_em) = $1 AND c.org_id = $2`, [hoje, orgId]),
+      query<any>(`SELECT COUNT(*) AS n FROM mensagens m JOIN conversas c ON c.id = m.conversa_id WHERE DATE(m.timestamp) = $1 AND c.org_id = $2`, [hoje, orgId]),
+      query<any>(`SELECT COALESCE(SUM(ci.custo_usd),0) AS n FROM custos_ia ci JOIN conversas c ON c.id = ci.conversa_id WHERE DATE(ci.timestamp) = $1 AND c.org_id = $2`, [hoje, orgId]),
+      query<any>(`SELECT COALESCE(SUM(ci.custo_usd),0) AS n FROM custos_ia ci JOIN conversas c ON c.id = ci.conversa_id WHERE TO_CHAR(ci.timestamp,'YYYY-MM') = $1 AND c.org_id = $2`, [mes, orgId]),
+      query<any>(`SELECT COUNT(*) AS n FROM conversas WHERE status = 'ativa' AND org_id = $1`, [orgId]),
+      query<any>(`SELECT COUNT(DISTINCT c.client_id) AS n FROM conversas c WHERE TO_CHAR(c.criado_em,'YYYY-MM') = $1 AND c.org_id = $2`, [mes, orgId]),
+      query<any>(`SELECT COUNT(*) AS n FROM mensagens m JOIN conversas c ON c.id = m.conversa_id WHERE TO_CHAR(m.timestamp,'YYYY-MM') = $1 AND c.org_id = $2`, [mes, orgId]),
+      query<any>(`SELECT COUNT(*) AS n FROM conversas WHERE etapa = 'venda_fechada' AND TO_CHAR(ultima_interacao,'YYYY-MM') = $1 AND org_id = $2`, [mes, orgId]).catch(() => [{ n: '0' }]),
+      query<any>(`SELECT COUNT(*) AS n FROM conversas WHERE etapa = 'pago' AND TO_CHAR(ultima_interacao,'YYYY-MM') = $1 AND org_id = $2`, [mes, orgId]).catch(() => [{ n: '0' }]),
     ]);
 
-    const fechamentos = await query<any>(
-      `SELECT COUNT(*)::int AS n FROM conversas WHERE etapa = 'fechamento' AND criado_em >= NOW() - INTERVAL '30 days'`
-    );
-    const latencia = await query<any>(
-      `SELECT ROUND(AVG(total_latency_ms))::int AS media_ms FROM ai_interaction_logs WHERE criado_em >= NOW() - INTERVAL '7 days'`
-    ).catch(() => [{ media_ms: 0 }]);
-
     res.json({
-      leads_hoje:        leadsHoje[0]?.n ?? 0,
-      conversas_30d:     convs30d[0]?.n ?? 0,
-      mensagens_30d:     mensagens30d[0]?.n ?? 0,
-      fechamentos_30d:   fechamentos[0]?.n ?? 0,
-      agentes_ativos:    agentes[0]?.n ?? 0,
-      latencia_media_ms: latencia[0]?.media_ms ?? 0,
+      clientes_hoje:    parseInt(cl[0]?.n    || '0'),
+      msgs_hoje:        parseInt(ms[0]?.n    || '0'),
+      custo_hoje:       parseFloat(cu[0]?.n  || '0').toFixed(4),
+      custo_mes:        parseFloat(cm[0]?.n  || '0').toFixed(2),
+      conversas_ativas: parseInt(ca[0]?.n    || '0'),
+      clientes_mes:     parseInt(clm[0]?.n   || '0'),
+      msgs_mes:         parseInt(msm[0]?.n   || '0'),
+      fechamentos_mes:  parseInt(fecReal[0]?.n || '0') + parseInt(fecPago[0]?.n || '0'),
     });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
