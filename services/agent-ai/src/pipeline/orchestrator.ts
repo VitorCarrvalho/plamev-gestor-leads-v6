@@ -251,7 +251,7 @@ async function dispararCotacao(
       bairro: endereco.bairro,
       estadosId: endereco.uf,
       cidadesId: normalizarCidade(endereco.cidade),
-      formaPagamento: 1,
+      formaPagamento: 2,
       cupomDesconto: '',
       pets: [{
         nome: petNome || 'Pet',

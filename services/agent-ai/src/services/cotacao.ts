@@ -80,7 +80,7 @@ export interface CotacaoPayload {
   bairro: string;
   estadosId: string;  // UF (2 letras) — NÃO o UUID
   cidadesId: string;  // nome em maiúsculas
-  formaPagamento: 1 | 2; // 1=Cartão, 2=Boleto
+  formaPagamento: 1 | 2; // 1=Boleto, 2=Cartão de Crédito
   cupomDesconto: string;
   pets: PetCotacao[];
 }

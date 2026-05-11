@@ -176,7 +176,7 @@ export async function gerarCotacaoPdf(
 
     // ── Informações de Pagamento ─────────────────────────────────
     y = sectionTitle(doc, 'PAGAMENTO', y);
-    const formaPagamento = payload.formaPagamento === 1 ? 'Cartão de Crédito' : 'Boleto Bancário';
+    const formaPagamento = payload.formaPagamento === 2 ? 'Cartão de Crédito' : 'Boleto Bancário';
     row(doc, 'Forma de pagamento', formaPagamento, y); y += 20;
 
     // ── Footer ───────────────────────────────────────────────────
