@@ -5,7 +5,7 @@ import {
   Database, ShieldCheck, FileCode2, Bot, KeyRound, Package,
   LogOut, LucideIcon, Sparkles, Columns3, X,
   ChevronLeft, ChevronRight, ChevronDown, Settings2,
-  Eye, TrendingUp, Wrench,
+  Eye, TrendingUp, Wrench, BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -70,9 +70,10 @@ export const NAV_TREE: NavGroup[] = [
     label: 'Configurações',
     icon: Settings2,
     items: [
-      { id: 'agentes',    label: 'Agentes',    icon: Bot },
-      { id: 'provedores', label: 'Provedores', icon: KeyRound },
-      { id: 'usuarios',   label: 'Usuários',   icon: Users2 },
+      { id: 'agentes',       label: 'Agentes',       icon: Bot },
+      { id: 'provedores',    label: 'Provedores',    icon: KeyRound },
+      { id: 'usuarios',      label: 'Usuários',      icon: Users2 },
+      { id: 'documentacao',  label: 'Documentação',  icon: BookOpen },
     ],
   },
 ];
