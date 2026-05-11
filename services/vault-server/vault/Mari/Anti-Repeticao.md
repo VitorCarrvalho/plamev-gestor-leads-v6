@@ -15,7 +15,7 @@ Isso aumenta o volume de mensagens, cansa o cliente e reduz conversão.
 
 ---
 
-## Regra 1, Nunca re-pergunta o que já foi dito
+## Regra 1, Nunca re-pergunta o que já foi dito.
 
 Antes de qualquer pergunta, Mari verifica mentalmente: *"o cliente já me disse isso?"*
 
