@@ -529,17 +529,55 @@ export async function getCampaignByPlanAndState(tipoCobertura: number, estadoId:
     const campanhas = Object.values(raw ?? {});
     const normalizedPlanName = normalizePlanName(planName);
 
-    for (const c of campanhas as any[]) {
-      if (c?.CampanhasCoberturasNome && normalizePlanName(c.CampanhasCoberturasNome) === normalizedPlanName) {
-        return {
-          CampanhasCoberturasId: c.CampanhasCoberturasId,
-          CampanhasCoberturasNome: c.CampanhasCoberturasNome
-        };
-      }
+    // Score-based matching: exact (100) > campanha contém plano (50) > plano contém campanha (25)
+    // Garante match mesmo quando a API retorna nomes como "Advance Plus Nacional" ou "Campanha Advance Plus 2026"
+    const scored = campanhas
+      .filter((c: any) => c?.CampanhasCoberturasId && c?.CampanhasCoberturasNome)
+      .map((c: any) => {
+        const cn = normalizePlanName(c.CampanhasCoberturasNome);
+        let score = 0;
+        if (cn === normalizedPlanName) score = 100;
+        else if (cn.includes(normalizedPlanName)) score = 50;
+        else if (normalizedPlanName.includes(cn) && cn.length >= 4) score = 25;
+        return { c, score };
+      })
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    const best = scored[0]?.c;
+    if (best) {
+      console.log(`[COTACAO] ✅ Campanha encontrada: "${best.CampanhasCoberturasNome}" (score=${scored[0].score}) → ${best.CampanhasCoberturasId}`);
+      return {
+        CampanhasCoberturasId: best.CampanhasCoberturasId,
+        CampanhasCoberturasNome: best.CampanhasCoberturasNome,
+      };
     }
+
+    const nomesDisponiveis = campanhas.map((c: any) => (c as any)?.CampanhasCoberturasNome).filter(Boolean).join(' | ');
+    console.warn(`[COTACAO] ⚠️ Campanha não encontrada para "${planName}" (tipo=${tipoCobertura}, estado=${estadoId}). Disponíveis: ${nomesDisponiveis || 'nenhuma'}`);
     return null;
   } catch (e: any) {
     console.warn(`[COTACAO] ⚠️ Erro ao buscar campanhas na API:`, e.message);
+    return null;
+  }
+}
+
+export async function getPlanNameByCoberturasId(coberturasId: string): Promise<string | null> {
+  try {
+    const { rows } = await pool.query(
+      `SELECT nome_cobertura FROM planos_plamev_ids
+       WHERE coberturas_id = $1::uuid
+       ORDER BY tipo_cobertura ASC`,
+      [coberturasId],
+    );
+    // UUID compartilhado por múltiplos planos (ex: Advance e Advance Plus) — ambíguo sem pi
+    if (rows.length > 1) {
+      console.warn(`[COTACAO] ⚠️ UUID ${coberturasId} compartilhado por ${rows.length} planos — reverse lookup ignorado`);
+      return null;
+    }
+    return rows[0]?.nome_cobertura || null;
+  } catch (e: any) {
+    console.warn('[COTACAO] ⚠️ Erro ao buscar nome do plano por UUID:', e.message);
     return null;
   }
 }

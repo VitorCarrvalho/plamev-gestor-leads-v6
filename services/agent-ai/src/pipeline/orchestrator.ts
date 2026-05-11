@@ -20,6 +20,7 @@ import {
   getCampaignByPlanAndState,
   getCampaignPriceTable,
   findMatchingPriceTable,
+  getPlanNameByCoberturasId,
   buscarEstados,
 } from '../services/cotacao';
 import { gerarCotacaoPdf } from '../services/cotacao-pdf';
@@ -167,36 +168,54 @@ async function dispararCotacao(
     let campanhasCoberturasId: string | undefined;
     let campanhasCoberturaTabelasId: string | undefined;
 
-    // Resolvendo Campanhas Dinâmicas com base no plano_interesse e valor_ofertado
-    const planoParaBusca = planoInteresse || coberturaId;
-    if (planoParaBusca && valorOfertado) {
-      console.log(`${tag} 🔍 Buscando campanha para plano "${planoParaBusca}" e valor R$ ${valorOfertado}`);
-      const planoPlamev = await getCoveragePlanByName(planoParaBusca);
+    // Resolvendo Campanhas Dinâmicas
+    // planoInteresse (pi) tem prioridade; se nulo mas ci é UUID conhecido, faz reverse lookup
+    const uuidPatternCheck = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    let planoNomeParaBusca = planoInteresse;
+    if (!planoNomeParaBusca && coberturaId && uuidPatternCheck.test(coberturaId)) {
+      planoNomeParaBusca = await getPlanNameByCoberturasId(coberturaId);
+      if (planoNomeParaBusca) console.log(`${tag} 🔍 Nome do plano resolvido via UUID: ${coberturaId} → "${planoNomeParaBusca}"`);
+    }
+
+    if (planoNomeParaBusca) {
+      console.log(`${tag} 🔍 Buscando campanha para plano "${planoNomeParaBusca}"${valorOfertado ? ` e valor R$ ${valorOfertado}` : ''}`);
+      const planoPlamev = await getCoveragePlanByName(planoNomeParaBusca);
       if (!planoPlamev) {
-        console.warn(`${tag} ⚠️ Plano selecionado não encontrado na tabela interna de coberturas: ${planoParaBusca}`);
+        console.warn(`${tag} ⚠️ Plano não encontrado na tabela planos_plamev_ids: "${planoNomeParaBusca}"`);
       } else {
         coberturaIdResolvido = planoPlamev.coberturas_id;
-        
-        const campanha = await getCampaignByPlanAndState(planoPlamev.tipo_cobertura, estadoIdUuid, planoParaBusca);
+
+        const campanha = await getCampaignByPlanAndState(planoPlamev.tipo_cobertura, estadoIdUuid, planoNomeParaBusca);
         if (!campanha) {
-          console.warn(`${tag} ⚠️ Campanha de cobertura não encontrada para o plano ${planoParaBusca} e estado ${estadoIdUuid}`);
+          console.warn(`${tag} ⚠️ Campanha não encontrada para "${planoNomeParaBusca}" no estado ${estadoIdUuid}`);
         } else {
           campanhasCoberturasId = campanha.CampanhasCoberturasId;
-          
-          const tables = await getCampaignPriceTable(campanha.CampanhasCoberturasId);
-          const precoNumerico = typeof valorOfertado === 'string' ? parseFloat(valorOfertado.replace(',', '.')) : parseFloat(valorOfertado);
-          
-          if (!isNaN(precoNumerico)) {
-            const tableMatch = findMatchingPriceTable(tables, precoNumerico);
-            if (!tableMatch) {
-              console.warn(`${tag} ⚠️ Tabela de preço não encontrada para o valor ofertado R$ ${precoNumerico}`);
-            } else {
-              campanhasCoberturaTabelasId = tableMatch.Id;
-              console.log(`${tag} ✅ Campanha e Tabela resolvidas dinamicamente: Campanha=${campanhasCoberturasId}, Tabela=${campanhasCoberturaTabelasId} (${tableMatch.Nome})`);
+
+          // Tabela de preços: só resolve se tiver valor ofertado (vo)
+          if (valorOfertado) {
+            const tables = await getCampaignPriceTable(campanha.CampanhasCoberturasId);
+            const precoNumerico = typeof valorOfertado === 'string'
+              ? parseFloat(valorOfertado.replace(',', '.'))
+              : parseFloat(String(valorOfertado));
+
+            if (!isNaN(precoNumerico)) {
+              const tableMatch = findMatchingPriceTable(tables, precoNumerico);
+              if (!tableMatch) {
+                console.warn(`${tag} ⚠️ Tabela de preço não encontrada para R$ ${precoNumerico} — usando campanha sem tabela específica`);
+                const nomesTabelas = tables.map((t: any) => t.Nome).join(' | ');
+                if (nomesTabelas) console.warn(`${tag}   Tabelas disponíveis: ${nomesTabelas}`);
+              } else {
+                campanhasCoberturaTabelasId = tableMatch.Id;
+                console.log(`${tag} ✅ Campanha=${campanhasCoberturasId} Tabela=${campanhasCoberturaTabelasId} (${tableMatch.Nome})`);
+              }
             }
+          } else {
+            console.log(`${tag} ℹ️ Campanha resolvida sem valor ofertado — tabela de preço não selecionada`);
           }
         }
       }
+    } else {
+      console.warn(`${tag} ⚠️ Plano de interesse não identificado (pi e ci ausentes) — cotação sem campanha dinâmica`);
     }
 
     // Cobertura → UUID fallback se a resolução dinâmica falhou e ci não é UUID
