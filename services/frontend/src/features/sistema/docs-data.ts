@@ -522,13 +522,13 @@ LIMIT 1;` },
       { type: 'code', lang: 'json', title: 'Resposta CampanhasCoberturasTabelas/consultar', text: `{
   "Tabelas": [
     {
-      "CampanhasCoberturaTabelasId": "B2C3D4E5-F6A7-8B9C-0D1E-2F3A4B5C6D7E",
+      "CampanhasCoberturasTabelasId": "B2C3D4E5-F6A7-8B9C-0D1E-2F3A4B5C6D7E",
       "ValorOriginal": 149.90,
       "ValorOfertado": 89.90,
       "Descricao": "Tabela Especial Parceiro"
     },
     {
-      "CampanhasCoberturaTabelasId": "C3D4E5F6-A7B8-9C0D-1E2F-3A4B5C6D7E8F",
+      "CampanhasCoberturasTabelasId": "C3D4E5F6-A7B8-9C0D-1E2F-3A4B5C6D7E8F",
       "ValorOriginal": 149.90,
       "ValorOfertado": 149.90,
       "Descricao": "Tabela Normal"
@@ -539,7 +539,7 @@ LIMIT 1;` },
       { type: 'h2', text: 'Passo 5 — SolicitaCotacaoPet' },
       { type: 'code', lang: 'json', title: 'POST /SolicitaCotacaoPet (payload completo)', text: `{
   "CampanhasCoberturasId": "A4F527FF-6B3D-4E8A-B1C2-D5E6F7A8B9C0",
-  "CampanhasCoberturaTabelasId": "B2C3D4E5-F6A7-8B9C-0D1E-2F3A4B5C6D7E",
+  "CampanhasCoberturasTabelasId": "B2C3D4E5-F6A7-8B9C-0D1E-2F3A4B5C6D7E",
   "CoberturasId": "3A0AB126-EA29-70BA-77D5-C78742EE6550",
   "TipoCobertura": 5,
   "EstadosId": 25,
@@ -556,7 +556,7 @@ LIMIT 1;` },
 }` },
       { type: 'h2', text: 'Passo 6 — Resultado e apresentação' },
       { type: 'p', text: 'A resposta de `SolicitaCotacaoPet` contém o `CotacaoId` e o preço final. O agente formata a mensagem de apresentação com o preço, coberturas incluídas e formas de pagamento disponíveis.' },
-      { type: 'alert', variant: 'tip', text: 'Se a API retornar preço cheio (ex: R$149,90) mesmo passando CampanhasCoberturaTabelasId correto, verifique se o UUID está em uppercase. A Plamev API é case-sensitive nos UUIDs.' },
+      { type: 'alert', variant: 'tip', text: 'Se a API retornar preço cheio (ex: R$149,90) mesmo passando CampanhasCoberturasTabelasId correto, verifique se o UUID está em uppercase. A Plamev API é case-sensitive nos UUIDs.' },
     ],
   },
 
@@ -853,7 +853,7 @@ pm2 logs agent-ai --lines 200 | grep "abc123"` },
       { type: 'code', lang: 'text', title: 'Exemplo de log de cotação', text: `[COTACAO] cURL equivalente:
   curl -X POST https://api.plamev.com.br/SolicitaCotacaoPet
   -H "Authorization: Bearer TOKEN***"
-  -d '{"CampanhasCoberturasId":"A4F5..","CampanhasCoberturaTabelasId":"B2C3.."}'
+  -d '{"CampanhasCoberturasId":"A4F5..","CampanhasCoberturasTabelasId":"B2C3.."}'
 
 [COTACAO] Resposta bruta: {"ValorMensal":89.90,"CotacaoId":"XYZ123"}` },
     ],
@@ -1018,7 +1018,7 @@ pnpm --filter crm-service run migrate` },
       { type: 'h2', text: 'Cotação retorna preço cheio (não o negociado)' },
       { type: 'list', items: [
         'Verifique se `valor_ofertado` está preenchido na conversa',
-        'Confirme que o `CampanhasCoberturaTabelasId` correto está sendo enviado nos logs [COTACAO]',
+        'Confirme que o `CampanhasCoberturasTabelasId` correto está sendo enviado nos logs [COTACAO]',
         'Verifique se os UUIDs estão em UPPERCASE na chamada à API Plamev',
         'Consulte o mapeamento em `planos_plamev_ids` — o `tipo_cobertura` pode estar desatualizado',
       ]},

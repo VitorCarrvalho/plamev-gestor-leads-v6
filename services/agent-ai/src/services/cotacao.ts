@@ -65,7 +65,7 @@ export interface PetCotacao {
   racasId: string;          // UUID ou 'SEMRACA1'/'SEMRACA2'
   coberturasId: string;     // UUID de Coberturas
   campanhasCoberturasId?: string;
-  campanhasCoberturaTabelasId?: string;
+  campanhasCoberturasTabelasId?: string;
 }
 
 export interface CotacaoPayload {
@@ -409,7 +409,7 @@ export async function submeterCotacao(payload: CotacaoPayload): Promise<CotacaoR
       RacasId: pet.racasId,
       CoberturasId: pet.coberturasId?.toUpperCase(),
       ...(pet.campanhasCoberturasId   ? { CampanhasCoberturasId:       pet.campanhasCoberturasId.toUpperCase()   } : {}),
-      ...(pet.campanhasCoberturaTabelasId ? { CampanhasCoberturaTabelasId: pet.campanhasCoberturaTabelasId.toUpperCase() } : {}),
+      ...(pet.campanhasCoberturasTabelasId ? { CampanhasCoberturasTabelasId: pet.campanhasCoberturasTabelasId.toUpperCase() } : {}),
     })),
   };
 
@@ -429,7 +429,7 @@ export async function submeterCotacao(payload: CotacaoPayload): Promise<CotacaoR
     console.log(
       `[COTACAO] 🐾 Pet payload: CoberturasId=${(pet as any).CoberturasId} | ` +
       `CampanhasCoberturasId=${(pet as any).CampanhasCoberturasId ?? 'AUSENTE'} | ` +
-      `CampanhasCoberturaTabelasId=${(pet as any).CampanhasCoberturaTabelasId ?? 'AUSENTE'}`,
+      `CampanhasCoberturasTabelasId=${(pet as any).CampanhasCoberturasTabelasId ?? 'AUSENTE'}`,
     );
   }
 

@@ -166,7 +166,7 @@ async function dispararCotacao(
 
     let coberturaIdResolvido = coberturaId;
     let campanhasCoberturasId: string | undefined;
-    let campanhasCoberturaTabelasId: string | undefined;
+    let campanhasCoberturasTabelasId: string | undefined;
 
     // Resolvendo Campanhas Dinâmicas
     // planoInteresse (pi) tem prioridade; se nulo mas ci é UUID conhecido, faz reverse lookup
@@ -205,8 +205,8 @@ async function dispararCotacao(
                 const nomesTabelas = tables.map((t: any) => t.Nome).join(' | ');
                 if (nomesTabelas) console.warn(`${tag}   Tabelas disponíveis: ${nomesTabelas}`);
               } else {
-                campanhasCoberturaTabelasId = tableMatch.Id;
-                console.log(`${tag} ✅ Campanha=${campanhasCoberturasId} Tabela=${campanhasCoberturaTabelasId} (${tableMatch.Nome})`);
+                campanhasCoberturasTabelasId = tableMatch.Id;
+                console.log(`${tag} ✅ Campanha=${campanhasCoberturasId} Tabela=${campanhasCoberturasTabelasId} (${tableMatch.Nome})`);
               }
             }
           } else {
@@ -220,7 +220,7 @@ async function dispararCotacao(
 
     // Cobertura → UUID fallback se a resolução dinâmica falhou e ci não é UUID
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (coberturaId && !uuidPattern.test(coberturaId) && !campanhasCoberturaTabelasId) {
+    if (coberturaId && !uuidPattern.test(coberturaId) && !campanhasCoberturasTabelasId) {
       console.log(`${tag} 🔍 ci="${coberturaId}" não é UUID — resolvendo via cache/API para ${endereco.uf}…`);
       const resolved = await resolverCoberturaIdPorNome(coberturaId, endereco.uf);
       if (resolved) {
@@ -261,7 +261,7 @@ async function dispararCotacao(
         racasId: racaId,
         coberturasId: coberturaIdResolvido,
         campanhasCoberturasId,
-        campanhasCoberturaTabelasId,
+        campanhasCoberturasTabelasId,
       }],
     };
 
