@@ -407,29 +407,54 @@ export async function submeterCotacao(payload: CotacaoPayload): Promise<CotacaoR
       Sexo: pet.sexo,
       Especie: pet.especie,
       RacasId: pet.racasId,
-      CoberturasId: pet.coberturasId,
-      CampanhasCoberturasId: pet.campanhasCoberturasId,
-      CampanhasCoberturaTabelasId: pet.campanhasCoberturaTabelasId,
+      CoberturasId: pet.coberturasId?.toUpperCase(),
+      ...(pet.campanhasCoberturasId   ? { CampanhasCoberturasId:       pet.campanhasCoberturasId.toUpperCase()   } : {}),
+      ...(pet.campanhasCoberturaTabelasId ? { CampanhasCoberturaTabelasId: pet.campanhasCoberturaTabelasId.toUpperCase() } : {}),
     })),
   };
+
+  const bodyJson = JSON.stringify(body);
+  const endpoint = `${BASE_URL}/Cotacoes/SolicitaCotacaoPet`;
+
+  // Log cURL equivalente para diagnóstico (token mascarado)
+  const tokenMascarado = token().slice(0, 8) + '…';
+  console.log(
+    `[COTACAO] 🔧 cURL:\ncurl -s -X POST '${endpoint}' \\\n` +
+    `  -H 'Authorization: ${tokenMascarado}' \\\n` +
+    `  -H 'Content-Type: application/json' \\\n` +
+    `  -d '${bodyJson}'`,
+  );
+  // Log resumido dos campos críticos de campanha por pet
+  for (const pet of body.CotacoesPets) {
+    console.log(
+      `[COTACAO] 🐾 Pet payload: CoberturasId=${(pet as any).CoberturasId} | ` +
+      `CampanhasCoberturasId=${(pet as any).CampanhasCoberturasId ?? 'AUSENTE'} | ` +
+      `CampanhasCoberturaTabelasId=${(pet as any).CampanhasCoberturaTabelasId ?? 'AUSENTE'}`,
+    );
+  }
 
   const t = Date.now();
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const res = await fetch(`${BASE_URL}/Cotacoes/SolicitaCotacaoPet`, {
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: {
           Authorization: token(),
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        body: JSON.stringify(body),
+        body: bodyJson,
         signal: AbortSignal.timeout(15000),
       });
 
-      const data: any = await res.json().catch(() => null);
+      const rawText = await res.text().catch(() => '');
+      let data: any = null;
+      try { data = JSON.parse(rawText); } catch { data = null; }
+
+      console.log(`[COTACAO] 📥 Resposta HTTP ${res.status} (tentativa ${attempt}):`);
+      console.log(`[COTACAO] 📥 ${rawText.slice(0, 2000)}`);
 
       if (!res.ok) {
         const msg = data?.Mensagem || data?.Message || `HTTP ${res.status}`;
