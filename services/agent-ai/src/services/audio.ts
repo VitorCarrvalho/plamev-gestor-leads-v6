@@ -1,26 +1,35 @@
 /**
- * audio.ts — Transcrição de áudio WhatsApp via OpenAI Whisper API
+ * audio.ts — Transcrição de áudio WhatsApp via Groq Whisper API
  *
  * Fluxo:
  *   1. Baixa áudio da Evolution API como base64
- *   2. Escreve em arquivo .ogg temporário
- *   3. Envia para OpenAI Whisper API (aceita ogg/opus nativamente)
- *   4. Retorna texto transcrito
+ *   2. Converte buffer para File (com MIME type explícito)
+ *   3. Envia para Groq Whisper (whisper-large-v3-turbo)
+ *   4. Retorna texto transcrito + base64 original para o frontend
+ *
+ * Provider: Groq — https://console.groq.com
+ * Modelo: whisper-large-v3-turbo (melhor acurácia, < 1s latência)
+ * Env: GROQ_API_KEY
  */
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import https from 'https';
 import http from 'http';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 
 const EVO_URL = process.env.EVOLUTION_URL || '';
 const EVO_KEY = process.env.EVOLUTION_KEY || '';
 
-let _openai: OpenAI | null = null;
-function getOpenAI(): OpenAI {
-  if (!_openai) _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  return _openai;
+let _groq: OpenAI | null = null;
+function getGroq(): OpenAI {
+  if (!_groq) {
+    _groq = new OpenAI({
+      apiKey: process.env.GROQ_API_KEY || '',
+      baseURL: 'https://api.groq.com/openai/v1',
+    });
+  }
+  return _groq;
 }
 
 function baixarBase64(instancia: string, messageId: string, messageType = 'audioMessage'): Promise<string> {
@@ -62,18 +71,19 @@ export interface AudioResult {
 }
 
 export async function transcreverAudio(instancia: string, messageId: string, messageType?: string): Promise<AudioResult> {
-  const tmpPath = path.join(os.tmpdir(), `mari_audio_${Date.now()}.ogg`);
   const mimeType = messageType === 'pttMessage' ? 'audio/ogg; codecs=opus' : 'audio/ogg';
   let base64 = '';
   try {
     console.log(`[AUDIO] 🎤 Baixando áudio msg:${messageId} inst:${instancia}`);
     base64 = await baixarBase64(instancia, messageId, messageType || 'audioMessage');
-    fs.writeFileSync(tmpPath, Buffer.from(base64, 'base64'));
-    console.log(`[AUDIO] Arquivo salvo: ${tmpPath} (${Math.round(fs.statSync(tmpPath).size / 1024)}KB)`);
 
-    const transcription = await getOpenAI().audio.transcriptions.create({
-      file: fs.createReadStream(tmpPath) as any,
-      model: 'whisper-1',
+    const audioBuffer = Buffer.from(base64, 'base64');
+    console.log(`[AUDIO] Áudio baixado: ${Math.round(audioBuffer.length / 1024)}KB`);
+
+    const file = await toFile(audioBuffer, 'audio.ogg', { type: 'audio/ogg' });
+    const transcription = await getGroq().audio.transcriptions.create({
+      file,
+      model: 'whisper-large-v3-turbo',
       language: 'pt',
     });
 
@@ -81,10 +91,7 @@ export async function transcreverAudio(instancia: string, messageId: string, mes
     console.log(`[AUDIO] ✅ Transcrito: "${(texto || '').slice(0, 80)}"`);
     return { texto, base64, mimeType };
   } catch (e: any) {
-    console.error('[AUDIO] ❌ Erro:', e.message);
+    console.error('[AUDIO] ❌ Erro transcrição:', e.message);
     return { texto: null, base64, mimeType };
-  } finally {
-    try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
   }
 }
-
