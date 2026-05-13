@@ -292,6 +292,26 @@ export async function enviar(
   return firstMsgId;
 }
 
+export async function baixarBase64Media(
+  instancia: string,
+  messageId: string,
+  messageType: string,
+): Promise<string | null> {
+  try {
+    const { baseUrl, apiKey } = getEvoConfig(instancia);
+    const r = await wppPost(
+      baseUrl,
+      `/chat/getBase64FromMediaMessage/${instancia}`,
+      { message: { key: { id: messageId }, messageType } },
+      apiKey,
+    );
+    return r?.base64 || null;
+  } catch (e: any) {
+    console.warn(`[SENDER] ⚠️ Falha ao baixar base64 ${messageId}:`, e.message);
+    return null;
+  }
+}
+
 export async function atualizarMensagemWA(
   phone: string,
   jid: string | null,
