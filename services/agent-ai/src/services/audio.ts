@@ -64,9 +64,10 @@ export interface AudioResult {
 export async function transcreverAudio(instancia: string, messageId: string, messageType?: string): Promise<AudioResult> {
   const tmpPath = path.join(os.tmpdir(), `mari_audio_${Date.now()}.ogg`);
   const mimeType = messageType === 'pttMessage' ? 'audio/ogg; codecs=opus' : 'audio/ogg';
+  let base64 = '';
   try {
     console.log(`[AUDIO] 🎤 Baixando áudio msg:${messageId} inst:${instancia}`);
-    const base64 = await baixarBase64(instancia, messageId, messageType || 'audioMessage');
+    base64 = await baixarBase64(instancia, messageId, messageType || 'audioMessage');
     fs.writeFileSync(tmpPath, Buffer.from(base64, 'base64'));
     console.log(`[AUDIO] Arquivo salvo: ${tmpPath} (${Math.round(fs.statSync(tmpPath).size / 1024)}KB)`);
 
@@ -81,10 +82,9 @@ export async function transcreverAudio(instancia: string, messageId: string, mes
     return { texto, base64, mimeType };
   } catch (e: any) {
     console.error('[AUDIO] ❌ Erro:', e.message);
-    return { texto: null, base64: '', mimeType };
+    return { texto: null, base64, mimeType };
   } finally {
     try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch {}
   }
 }
 
-module.exports = { transcreverAudio };
