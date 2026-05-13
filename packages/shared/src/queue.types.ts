@@ -10,7 +10,6 @@ export interface InternalMessage {
   nome: string;
   texto: string;
   audio: any | null;
-  audioBase64: string | null;
   imagem: any | null;
   documento: any | null;
   agentSlug: string;

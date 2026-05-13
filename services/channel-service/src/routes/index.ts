@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import axios from 'axios';
 import { isDuplicate, messageQueue, redisClient } from '../utils/redis';
 import { normalizeMessage } from '../utils/normalizer';
-import { enviar, enviarDocumentoWA, enviarReacaoWA, enviarMidiaWA, atualizarMensagemWA, baixarBase64Media } from '../services/sender';
+import { enviar, enviarDocumentoWA, enviarReacaoWA, enviarMidiaWA, atualizarMensagemWA } from '../services/sender';
 
 const router = Router();
 
@@ -136,18 +136,6 @@ async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
 
   if (!texto && !audio && !imagem && !documento) return;
 
-  // Baixa base64 do áudio enquanto monta a mensagem — channel-service tem acesso
-  // ao Evolution API, agent-ai não precisa mais chamar a API diretamente.
-  let audioBase64: string | null = null;
-  if (audio) {
-    audioBase64 = await baixarBase64Media(instancia, msgId, audio._type).catch(() => null);
-    if (audioBase64) {
-      console.log(`[CHANNEL-SERVICE] 🎤 Base64 áudio pré-baixado (${Math.round(audioBase64.length * 0.75 / 1024)}KB)`);
-    } else {
-      console.warn(`[CHANNEL-SERVICE] ⚠️ Falha ao pré-baixar base64 do áudio ${msgId}`);
-    }
-  }
-
   const msg = normalizeMessage({
     id: msgId,
     canal: 'whatsapp',
@@ -159,7 +147,6 @@ async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
     nome: item.pushName,
     texto,
     audio,
-    audioBase64,
     imagem,
     documento,
     agentSlug,

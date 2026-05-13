@@ -13,7 +13,6 @@ export function normalizeMessage(payload: any): InternalMessage {
     nome: payload.nome || 'Cliente',
     texto: payload.texto || '',
     audio: payload.audio || null,
-    audioBase64: payload.audioBase64 || null,
     imagem: payload.imagem || null,
     documento: payload.documento || null,
     agentSlug: payload.agentSlug || 'mari',

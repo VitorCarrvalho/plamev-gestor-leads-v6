@@ -46,7 +46,7 @@ async function buildConversationContext(msg: InternalMessage, orgId: string) {
 
 async function handleAudioMessage(msg: InternalMessage, runtimeConfig: PipelineRuntimeContext) {
   const { texto: transcricao, base64: audioBase64, mimeType: audioMimeType } =
-    await audioSvc.transcreverAudio(msg.instancia, msg.id, msg.audio?._type, msg.audioBase64);
+    await audioSvc.transcreverAudio(msg.instancia, msg.id, msg.audio?._type);
 
   if (!transcricao) {
     const fallback = 'Oi! Não consegui ouvir seu áudio, pode me enviar em texto? 😊';
