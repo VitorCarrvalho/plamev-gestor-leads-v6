@@ -1,44 +1,52 @@
 /**
- * services/imagem.js
- * Análise inteligente de imagens — integrada com o fluxo de vendas.
+ * image.ts — Análise de imagens WhatsApp via Claude Vision
  *
- * Funcionalidades:
- *   - Identifica se é foto de pet, documento ou outra coisa
- *   - Detecta espécie, raça, porte, idade aparente
- *   - Salva dados extraídos no perfil do pet (BD)
- *   - Resposta contextualizada com histórico da conversa
- *   - Usa contexto para avançar na venda
+ * Fluxo:
+ *   1. Baixa imagem da Evolution API como base64
+ *   2. Envia para Claude Haiku com contexto da conversa
+ *   3. Retorna resposta da Mari + base64 para o frontend renderizar
+ *
+ * Env: EVOLUTION_API_URL, EVOLUTION_API_KEY, ANTHROPIC_API_KEY
  */
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+import https from 'https';
+import http from 'http';
+import Anthropic from '@anthropic-ai/sdk';
 
-const https = require('https');
-const http  = require('http');
+const EVO_URL = process.env.EVOLUTION_API_URL || '';
+const EVO_KEY = process.env.EVOLUTION_API_KEY  || '';
 
-const EVO_URL = process.env.EVOLUTION_URL;
-const EVO_KEY = process.env.EVOLUTION_KEY;
-const ANT_KEY = process.env.ANTHROPIC_API_KEY;
+let _anthropic: Anthropic | null = null;
+function getAnthropic(): Anthropic {
+  if (!_anthropic) _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return _anthropic;
+}
 
-// ── Baixar imagem como base64 ─────────────────────────────────
-function baixarBase64(instancia, messageId) {
+export interface ImageResult {
+  resposta: string | null;
+  base64: string;
+  mimeType: string;
+}
+
+function baixarBase64(instancia: string, messageId: string): Promise<{ base64: string; mimetype: string }> {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
-      message: { key: { id: messageId }, messageType: 'imageMessage' }
+      message: { key: { id: messageId }, messageType: 'imageMessage' },
     });
     const url = new URL(`${EVO_URL}/chat/getBase64FromMediaMessage/${instancia}`);
-    const mod = url.protocol === 'https:' ? https : http;
-
-    const req = mod.request({
+    const lib = url.protocol === 'https:' ? https : http;
+    const req = lib.request({
       hostname: url.hostname,
-      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      port: url.port ? parseInt(url.port) : (url.protocol === 'https:' ? 443 : 80),
       path: url.pathname,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body),
         'apikey': EVO_KEY,
-      }
+      },
     }, res => {
-      let d = ''; res.on('data', c => d += c);
+      let d = '';
+      res.on('data', (c: string) => d += c);
       res.on('end', () => {
         try {
           const j = JSON.parse(d);
@@ -48,16 +56,33 @@ function baixarBase64(instancia, messageId) {
       });
     });
     req.on('error', reject);
-    req.write(body); req.end();
+    req.write(body);
+    req.end();
   });
 }
 
-// ── Análise completa com Claude Vision ───────────────────────
-function analisarImagem(base64, mimetype, contexto) {
-  const { nomePet, nomeCliente, especie, raca, etapa, historico, captionCliente } = contexto || {};
+interface Contexto {
+  phone?: string;
+  clienteId?: string;
+  conversaId?: string;
+  nomeCliente?: string;
+  nomePet?: string;
+  especie?: string;
+  raca?: string;
+  etapa?: string;
+  historico?: Array<{ role: string; conteudo: string }>;
+  captionCliente?: string;
+}
+
+interface DbAdapter {
+  atualizarPerfil: (clienteId: string, dados: Record<string, any>, conversaId?: string) => Promise<any>;
+}
+
+async function analisarImagem(base64: string, mimetype: string, contexto: Contexto): Promise<Record<string, any>> {
+  const { nomePet, nomeCliente, especie, raca, etapa, historico, captionCliente } = contexto;
 
   const hist = (historico || []).slice(-4)
-    .map(h => `${h.role === 'user' ? (nomeCliente||'Cliente') : 'Mari'}: ${h.conteudo.slice(0, 80)}`)
+    .map(h => `${h.role === 'user' ? (nomeCliente || 'Cliente') : 'Mari'}: ${h.conteudo.slice(0, 80)}`)
     .join('\n');
 
   const system = `Você é a Mariana (Mari), consultora de planos de saúde pet da Plamev.
@@ -78,7 +103,7 @@ IDENTIFICAÇÃO (retorne SEMPRE um JSON estruturado):
 
 CONTEXTO DA CONVERSA:
 Cliente: ${nomeCliente || 'desconhecido'}
-Pet cadastrado: ${nomePet ? `${nomePet} (${especie||'?'}, ${raca||'raça desconhecida'})` : 'não identificado ainda'}
+Pet cadastrado: ${nomePet ? `${nomePet} (${especie || '?'}, ${raca || 'raça desconhecida'})` : 'não identificado ainda'}
 Etapa: ${etapa || 'acolhimento'}
 ${captionCliente ? `Legenda do cliente: "${captionCliente}"` : ''}
 Histórico:
@@ -94,94 +119,60 @@ REGRAS DA RESPOSTA:
 - NUNCA mencione que é IA ou que está "analisando" a imagem
 - Tom: amiga que ama animais, NÃO consultora formal`;
 
-  const body = JSON.stringify({
-    model: 'claude-haiku-4-5',
+  const response = await getAnthropic().messages.create({
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 500,
     system,
     messages: [{
       role: 'user',
       content: [
-        { type: 'image', source: { type: 'base64', media_type: mimetype, data: base64 } },
-        { type: 'text', text: 'Analise esta imagem e retorne o JSON conforme instruído.' }
-      ]
-    }]
+        { type: 'image', source: { type: 'base64', media_type: mimetype as any, data: base64 } },
+        { type: 'text', text: 'Analise esta imagem e retorne o JSON conforme instruído.' },
+      ],
+    }],
   });
 
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      hostname: 'api.anthropic.com', path: '/v1/messages', method: 'POST',
-      headers: {
-        'x-api-key': ANT_KEY, 'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body)
-      }
-    }, res => {
-      let d = ''; res.on('data', c => d += c);
-      res.on('end', () => {
-        try {
-          const texto = JSON.parse(d).content?.[0]?.text || '';
-          const match = texto.match(/\{[\s\S]*\}/);
-          if (match) {
-            try { resolve(JSON.parse(match[0])); }
-            catch { resolve({ tipo: 'outra', resposta_mari: texto.trim().slice(0, 300) }); }
-          } else {
-            resolve({ tipo: 'outra', resposta_mari: texto.trim().slice(0, 300) });
-          }
-        } catch (e) { reject(e); }
-      });
-    });
-    req.on('error', reject);
-    req.write(body); req.end();
-  });
+  const texto = (response.content[0] as any).text || '';
+  const match = texto.match(/\{[\s\S]*\}/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch { /* fall through */ }
+  }
+  return { tipo: 'outra', resposta_mari: texto.trim().slice(0, 300) };
 }
 
-// ── Função principal — integrada com BD ──────────────────────
-async function processarImagem(instancia, messageId, contexto, db) {
+export async function processarImagem(
+  instancia: string,
+  messageId: string,
+  contexto: Contexto,
+  db?: DbAdapter,
+): Promise<ImageResult> {
+  let base64 = '';
+  let mimeType = 'image/jpeg';
   try {
     console.log(`[IMG] 📸 Imagem de ${contexto?.phone} — inst:${instancia}`);
+    const dl = await baixarBase64(instancia, messageId);
+    base64 = dl.base64;
+    mimeType = dl.mimetype;
+    console.log(`[IMG] Base64 recebido (${mimeType}), ${Math.round(base64.length * 0.75 / 1024)}KB`);
 
-    const { base64, mimetype } = await baixarBase64(instancia, messageId);
-    console.log(`[IMG] Base64 recebido (${mimetype}), ${Math.round(base64.length * 0.75 / 1024)}KB`);
+    const analise = await analisarImagem(base64, mimeType, contexto);
+    console.log(`[IMG] ✅ tipo:${analise.tipo} espécie:${analise.especie || '-'} raça:${analise.raca || '-'}`);
 
-    const analise = await analisarImagem(base64, mimetype, contexto);
-    console.log(`[IMG] ✅ tipo:${analise.tipo} espécie:${analise.especie||'-'} raça:${analise.raca||'-'} confiança:${analise.raca_confianca||'-'}`);
-
-    // Se é foto de pet e temos DB — atualizar perfil automaticamente
     if (analise.tipo === 'pet' && db && contexto?.clienteId && contexto?.conversaId) {
-      const atualizacoes = {};
-
-      if (analise.especie && !contexto.especie)
-        atualizacoes.especie = analise.especie;
-
-      if (analise.raca && analise.raca_confianca !== 'baixa' && !contexto.raca)
-        atualizacoes.raca = analise.raca;
-
-      if (analise.porte)
-        atualizacoes.porte = analise.porte;
-
-      if (Object.keys(atualizacoes).length > 0) {
-        await db.atualizarPerfil(contexto.clienteId, atualizacoes, contexto.conversaId).catch(e =>
-          console.error('[IMG] Erro ao atualizar perfil:', e.message)
-        );
-        console.log(`[IMG] 💾 Perfil atualizado:`, atualizacoes);
+      const patch: Record<string, any> = {};
+      if (analise.especie && !contexto.especie) patch.especie = analise.especie;
+      if (analise.raca && analise.raca_confianca !== 'baixa' && !contexto.raca) patch.raca = analise.raca;
+      if (analise.porte) patch.porte = analise.porte;
+      if (Object.keys(patch).length > 0) {
+        await db.atualizarPerfil(contexto.clienteId, patch, contexto.conversaId)
+          .catch(e => console.error('[IMG] Erro ao atualizar perfil:', e.message));
+        console.log('[IMG] 💾 Perfil atualizado:', patch);
       }
     }
 
-    return { resposta: analise.resposta_mari || null, base64, mimeType: mimetype };
-
-  } catch (e) {
+    return { resposta: analise.resposta_mari || null, base64, mimeType };
+  } catch (e: any) {
     console.error('[IMG] ❌ Erro:', e.message);
-    return { resposta: null, base64: '', mimeType: 'image/jpeg' };
+    return { resposta: null, base64, mimeType };
   }
 }
-
-// Manter compatibilidade com código antigo
-async function analisarImagem_legado(instancia, messageId, contextoPet) {
-  try {
-    const { base64, mimetype } = await baixarBase64(instancia, messageId);
-    const analise = await analisarImagem(base64, mimetype, { nomePet: contextoPet });
-    return analise.resposta_mari || null;
-  } catch { return null; }
-}
-
-module.exports = { processarImagem, analisarImagem: analisarImagem_legado };
-
