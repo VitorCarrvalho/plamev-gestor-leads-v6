@@ -564,23 +564,13 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
   } catch (e: any) {
     console.error('[INTERNAL] ❌ Erro ao salvar interação:', e.message);
   } finally {
-    // Notifica gateway para atualizar dashboard via WebSocket (fire-and-forget)
-    // Fica no finally para garantir execução mesmo se operações secundárias falharem
+    // pg_notify dispara o socket event no gateway via PostgreSQL LISTEN/NOTIFY.
+    // Mais confiável que HTTP: mesmo banco, zero hops de rede extra.
     if (conversaId) {
-      const GATEWAY_URL = process.env.GATEWAY_URL || 'http://gateway.railway.internal:8080';
-      const INTERNAL_SECRET_KEY = process.env.INTERNAL_SECRET || 'plamev-internal';
-      fetch(`${GATEWAY_URL}/interno/nova-msg`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET_KEY },
-        body: JSON.stringify({
-          conversa_id: conversaId,
-          phone,
-          nome: nome || '',
-          msg_cliente: texto || null,
-          msg_mari: resposta || null,
-        }),
-        signal: AbortSignal.timeout(3000),
-      }).catch(e => console.warn('[CRM/salvar-interacao] Gateway notify:', e.message));
+      execute(
+        "SELECT pg_notify('chat_nova_mensagem', $1)",
+        [JSON.stringify({ conversa_id: conversaId, phone, nome: nome || '', msg_cliente: texto || null, msg_mari: resposta || null })],
+      ).catch(e => console.warn('[CRM/salvar-interacao] pg_notify:', e.message));
     }
   }
 });

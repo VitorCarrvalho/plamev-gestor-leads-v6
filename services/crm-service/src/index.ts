@@ -201,7 +201,6 @@ app.post('/api/mensagens/enviar-midia', autenticar, async (req, res) => {
 
     const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
     const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
-    const GATEWAY_URL = process.env.GATEWAY_URL || 'http://gateway.railway.internal:8080';
 
     fetch(`${CHANNEL_SERVICE_URL}/internal/send-media`, {
       method: 'POST',
@@ -210,13 +209,11 @@ app.post('/api/mensagens/enviar-midia', autenticar, async (req, res) => {
       signal: AbortSignal.timeout(8000),
     }).catch(e => console.warn('[CRM/enviar-midia] Falha ao encaminhar ao channel-service:', e.message));
 
-    // Notifica gateway para atualizar dashboard via WebSocket (fire-and-forget)
-    fetch(`${GATEWAY_URL}/interno/nova-msg`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
-      body: JSON.stringify({ conversa_id, phone: conv.phone, nome: '', msg_cliente: null, msg_mari: caption || rotulo }),
-      signal: AbortSignal.timeout(3000),
-    }).catch(e => console.warn('[CRM/enviar-midia] Gateway notify:', e.message));
+    // pg_notify → gateway LISTEN → socket event (elimina hop HTTP)
+    execute(
+      "SELECT pg_notify('chat_nova_mensagem', $1)",
+      [JSON.stringify({ conversa_id, phone: conv.phone, nome: '', msg_cliente: null, msg_mari: caption || rotulo })],
+    ).catch(e => console.warn('[CRM/enviar-midia] pg_notify:', e.message));
 
     res.json({ ok: true });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
