@@ -528,9 +528,13 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
     };
   }, [socket, conversaId]);
 
-  // Polling de fallback: garante atualização mesmo quando socket events falham
+  // Polling de fallback: garante que mensagens apareçam mesmo se o socket event for perdido
   useEffect(() => {
-    const t = setInterval(() => silentReloadRef.current(), 5000);
+    const t = setInterval(() => {
+      api.get<any>(`/api/conversas/${conversaId}/full`)
+        .then(d => setData(d))
+        .catch(() => {});
+    }, 3000);
     return () => clearInterval(t);
   }, [conversaId]);
 
