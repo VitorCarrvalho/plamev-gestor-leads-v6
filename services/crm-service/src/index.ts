@@ -29,7 +29,7 @@ config({ path: path.join(__dirname, '../../.env') });
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '35mb' }));
 
 app.use((req, _res, next) => {
   console.log(`[CRM-SERVICE] 📥 ${req.method} ${req.url}`);
@@ -193,7 +193,10 @@ app.post('/api/mensagens/enviar-midia', autenticar, async (req, res) => {
     await execute(
       `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por, metadata)
        VALUES ($1,'agent',$2,'supervisora',$3::jsonb)`,
-      [conversa_id, caption || rotulo, JSON.stringify({ mediaType: mimeType.split('/')[0], mimeType, fileName, mediaBase64: base64 })]
+      [conversa_id, caption || rotulo, JSON.stringify({
+        mediaType: mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : 'document',
+        mimeType, fileName, mediaBase64: base64,
+      })]
     );
 
     const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';

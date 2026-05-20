@@ -688,6 +688,7 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
         onClearReply={() => setReplyTo(null)}
         onSend={handleSend}
         onAgendar={() => setModalAgendar(true)}
+        onMidiaEnviada={() => carregarConversaRef.current()}
       />
 
       {/* Modal Agendar */}

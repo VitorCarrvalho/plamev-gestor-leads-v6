@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
-import { FileText, Image as ImageIcon, FileAudio, FileVideo, Download, Play, MapPin, User, X } from 'lucide-react';
+import {
+  FileText, Image as ImageIcon, FileAudio, FileVideo, Download,
+  MapPin, User, X, FileCode, FileSpreadsheet, Presentation,
+  File, Music,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // Formata markdown básico do WhatsApp: *bold*, _italic_, ~strike~, `code`
@@ -26,6 +30,30 @@ function detectarMarker(conteudo: string): { tipo: 'pdf' | 'imagem' | 'audio'; r
   return null;
 }
 
+// Ícone e cor por tipo de arquivo
+function fileIcon(mimeType: string, fileName?: string): { Icon: React.ElementType; color: string; label: string } {
+  const mime = mimeType?.toLowerCase() || '';
+  const ext = (fileName?.split('.').pop() || '').toLowerCase();
+
+  if (mime === 'application/pdf' || ext === 'pdf')
+    return { Icon: FileText, color: 'text-red-500', label: 'PDF' };
+  if (mime.includes('word') || ext === 'doc' || ext === 'docx')
+    return { Icon: FileText, color: 'text-blue-500', label: 'Word' };
+  if (mime.includes('sheet') || mime.includes('excel') || ext === 'xls' || ext === 'xlsx' || ext === 'csv')
+    return { Icon: FileSpreadsheet, color: 'text-emerald-500', label: 'Planilha' };
+  if (mime.includes('presentation') || mime.includes('powerpoint') || ext === 'ppt' || ext === 'pptx')
+    return { Icon: Presentation, color: 'text-orange-500', label: 'Apresentação' };
+  if (mime.startsWith('text/') || ext === 'txt' || ext === 'md' || ext === 'csv' || ext === 'json' || ext === 'xml')
+    return { Icon: FileCode, color: 'text-slate-500', label: ext.toUpperCase() || 'Texto' };
+  if (mime.startsWith('audio/') || ext === 'mp3' || ext === 'wav' || ext === 'm4a' || ext === 'ogg')
+    return { Icon: Music, color: 'text-purple-500', label: 'Áudio' };
+  if (mime.startsWith('video/') || ext === 'mp4' || ext === 'mov' || ext === 'avi' || ext === 'mkv')
+    return { Icon: FileVideo, color: 'text-pink-500', label: 'Vídeo' };
+  if (mime.startsWith('image/'))
+    return { Icon: ImageIcon, color: 'text-teal-500', label: 'Imagem' };
+  return { Icon: File, color: 'text-slate-400', label: 'Arquivo' };
+}
+
 interface MediaRendererProps {
   conteudo: string;
   metadata?: any;
@@ -39,14 +67,14 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({ conteudo, metadata
     ? { bg: 'bg-indigo-500/20 border-indigo-300/40', icon: 'bg-white/20', text: 'text-white', sub: 'text-indigo-100' }
     : { bg: 'bg-slate-50 border-slate-200', icon: 'bg-indigo-100 text-indigo-600', text: 'text-slate-800', sub: 'text-slate-500' };
 
-  // ── 1. Imagem em base64 (cliente enviou foto) ──────────────────
+  // ── 1. Imagem em base64 ────────────────────────────────────────
   if (metadata?.mediaType === 'image' && metadata?.mediaBase64) {
     const src = `data:${metadata.mimeType || 'image/jpeg'};base64,${metadata.mediaBase64}`;
     return (
       <>
         <div className="rounded-lg overflow-hidden max-w-[240px] cursor-pointer" onClick={() => setLightbox(src)}>
           <img src={src} alt="imagem" className="w-full object-cover" />
-          {conteudo && conteudo !== '[imagem]' && (
+          {conteudo && !conteudo.startsWith('[') && (
             <div className={cn('text-sm px-2 py-1', ehCliente ? 'text-white' : 'text-slate-700')}>{conteudo}</div>
           )}
         </div>
@@ -60,13 +88,13 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({ conteudo, metadata
     );
   }
 
-  // ── 2. Áudio em base64 (cliente enviou ptt/audio) ─────────────
+  // ── 2. Áudio em base64 ─────────────────────────────────────────
   if ((metadata?.mediaType === 'audio' || metadata?.mediaType === 'ptt') && metadata?.mediaBase64) {
     const src = `data:${metadata.mimeType || 'audio/ogg'};base64,${metadata.mediaBase64}`;
     return (
       <div className={cn('flex items-center gap-2 px-3 py-2 rounded-lg border', bubble.bg)}>
         <FileAudio className={cn('w-5 h-5 flex-shrink-0', ehCliente ? 'text-indigo-200' : 'text-indigo-500')} />
-        <audio controls src={src} className="h-8 flex-1 min-w-[160px]" style={{ filter: 'invert(0)' }} />
+        <audio controls src={src} className="h-8 flex-1 min-w-[160px]" />
       </div>
     );
   }
@@ -75,31 +103,33 @@ export const MediaRenderer: React.FC<MediaRendererProps> = ({ conteudo, metadata
   if (metadata?.mediaType === 'video' && metadata?.mediaBase64) {
     const src = `data:${metadata.mimeType || 'video/mp4'};base64,${metadata.mediaBase64}`;
     return (
-      <div className="rounded-lg overflow-hidden max-w-[240px]">
+      <div className="rounded-lg overflow-hidden max-w-[280px]">
         <video controls src={src} className="w-full" />
-        {conteudo && conteudo !== '[video]' && (
+        {conteudo && !conteudo.startsWith('[') && (
           <div className={cn('text-sm px-2 py-1', ehCliente ? 'text-white' : 'text-slate-700')}>{conteudo}</div>
         )}
       </div>
     );
   }
 
-  // ── 4. Documento com metadados ─────────────────────────────────
+  // ── 4. Documento / arquivo (qualquer tipo não-mídia) ───────────
   if (metadata?.mediaType === 'document' && metadata?.fileName) {
+    const { Icon, color, label } = fileIcon(metadata.mimeType || '', metadata.fileName);
     return (
-      <div className={cn('flex items-center gap-2 px-3 py-2 rounded-lg border', bubble.bg)}>
+      <div className={cn('flex items-center gap-2 px-3 py-2 rounded-lg border max-w-[280px]', bubble.bg)}>
         <div className={cn('flex items-center justify-center w-9 h-9 rounded-md flex-shrink-0', bubble.icon)}>
-          <FileText className="w-4.5 h-4.5" />
+          <Icon className={cn('w-5 h-5', color)} />
         </div>
         <div className="flex-1 min-w-0">
           <div className={cn('text-xs font-medium truncate', bubble.text)}>{metadata.fileName}</div>
-          <div className={cn('text-[10px]', bubble.sub)}>{metadata.mimeType || 'Documento'}</div>
+          <div className={cn('text-[10px]', bubble.sub)}>{label}</div>
         </div>
         {metadata.mediaBase64 && (
           <a
             href={`data:${metadata.mimeType || 'application/octet-stream'};base64,${metadata.mediaBase64}`}
             download={metadata.fileName}
-            className={cn('shrink-0', ehCliente ? 'text-indigo-100 hover:text-white' : 'text-slate-400 hover:text-slate-700')}
+            className={cn('shrink-0 p-1 rounded hover:bg-black/10 transition-colors', ehCliente ? 'text-indigo-100 hover:text-white' : 'text-slate-400 hover:text-slate-700')}
+            title="Baixar arquivo"
           >
             <Download className="w-4 h-4" />
           </a>

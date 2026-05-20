@@ -396,15 +396,17 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
         const mediaFileName: string | null  = req.body?.media_file_name || null;
         const MAX_BASE64 = 5 * 1024 * 1024;
         const base64ToStore = (mediaBase64Raw && mediaBase64Raw.length <= MAX_BASE64) ? mediaBase64Raw : null;
+        const normMediaType = (mt: string | null) =>
+          mt?.startsWith('image/') ? 'image' : mt?.startsWith('video/') ? 'video' : mt?.startsWith('audio/') ? 'audio' : 'document';
         const metadata = base64ToStore
           ? JSON.stringify({
-              mediaType: mediaMimeType?.split('/')[0] || 'audio',
+              mediaType: normMediaType(mediaMimeType),
               mimeType: mediaMimeType,
               fileName: mediaFileName,
               mediaBase64: base64ToStore,
             })
           : (mediaMimeType
-              ? JSON.stringify({ mediaType: mediaMimeType.split('/')[0], mimeType: mediaMimeType, fileName: mediaFileName })
+              ? JSON.stringify({ mediaType: normMediaType(mediaMimeType), mimeType: mediaMimeType, fileName: mediaFileName })
               : null);
 
         if (metadata) {
