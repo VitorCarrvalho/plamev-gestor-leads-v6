@@ -528,6 +528,12 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
     };
   }, [socket, conversaId]);
 
+  // Polling de fallback: garante atualização mesmo quando socket events falham
+  useEffect(() => {
+    const t = setInterval(() => silentReloadRef.current(), 5000);
+    return () => clearInterval(t);
+  }, [conversaId]);
+
   // Scroll para o final quando novas mensagens chegam (só do container)
   useEffect(() => {
     const el = msgsRef.current;

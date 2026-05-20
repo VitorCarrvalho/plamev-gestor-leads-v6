@@ -321,17 +321,20 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
     return;
   }
   res.json({ ok: true }); // responde antes de salvar para não bloquear
-  try {
-    const phone    = String(message.phone);
-    const canal    = message.canal;
-    const agentSlug = message.agentSlug || 'mari';
-    const nome     = message.nome || null;
-    const texto    = (req.body?.input_text_override || message.texto || '').toString();
-    const instancia = message.instancia || null;
-    const senderChip = message.senderChip || null;
-    const jid      = message.jid || null;
-    const msgIdExterno = message.id || null;
 
+  // Extraídos antes do try para ficarem acessíveis no finally
+  const phone    = String(message.phone);
+  const canal    = message.canal;
+  const agentSlug = message.agentSlug || 'mari';
+  const nome     = message.nome || null;
+  const texto    = (req.body?.input_text_override || message.texto || '').toString();
+  const instancia = message.instancia || null;
+  const senderChip = message.senderChip || null;
+  const jid      = message.jid || null;
+  const msgIdExterno = message.id || null;
+  let conversaId: string | null = null;
+
+  try {
     // 1. Resolve agent_id
     const agente = await queryOne<any>('SELECT id, org_id FROM agentes WHERE slug=$1 LIMIT 1', [agentSlug]);
     const agentId = agente?.id;
@@ -373,7 +376,6 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
       `SELECT id, etapa FROM conversas WHERE client_id=$1 AND agent_id=$2 AND canal=$3 AND org_id=$4 AND status='ativa' ORDER BY criado_em DESC LIMIT 1`,
       [clientId, agentId, canal, orgId]
     );
-    let conversaId: string;
     if (conversa) {
       conversaId = conversa.id;
     } else {
@@ -559,24 +561,27 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
 
     console.log(`[INTERNAL] ✅ Interação salva — conversa=${conversaId} etapa=${novaEtapa || '(sem mudança)'} msgs=${texto ? 1 : 0}+${resposta ? 1 : 0} custo=${custo ? `${custo.input_tokens}+${custo.output_tokens}tk` : 'n/a'}`);
 
-    // Notifica gateway para atualizar dashboard via WebSocket (fire-and-forget)
-    const GATEWAY_URL = process.env.GATEWAY_URL || 'http://gateway.railway.internal:8080';
-    const INTERNAL_SECRET_KEY = process.env.INTERNAL_SECRET || 'plamev-internal';
-    fetch(`${GATEWAY_URL}/interno/nova-msg`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET_KEY },
-      body: JSON.stringify({
-        conversa_id: conversaId,
-        phone,
-        nome: nome || '',
-        msg_cliente: texto || null,
-        msg_mari: resposta || null,
-      }),
-      signal: AbortSignal.timeout(3000),
-    }).catch(e => console.warn('[CRM/salvar-interacao] Gateway notify:', e.message));
-
   } catch (e: any) {
     console.error('[INTERNAL] ❌ Erro ao salvar interação:', e.message);
+  } finally {
+    // Notifica gateway para atualizar dashboard via WebSocket (fire-and-forget)
+    // Fica no finally para garantir execução mesmo se operações secundárias falharem
+    if (conversaId) {
+      const GATEWAY_URL = process.env.GATEWAY_URL || 'http://gateway.railway.internal:8080';
+      const INTERNAL_SECRET_KEY = process.env.INTERNAL_SECRET || 'plamev-internal';
+      fetch(`${GATEWAY_URL}/interno/nova-msg`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET_KEY },
+        body: JSON.stringify({
+          conversa_id: conversaId,
+          phone,
+          nome: nome || '',
+          msg_cliente: texto || null,
+          msg_mari: resposta || null,
+        }),
+        signal: AbortSignal.timeout(3000),
+      }).catch(e => console.warn('[CRM/salvar-interacao] Gateway notify:', e.message));
+    }
   }
 });
 
