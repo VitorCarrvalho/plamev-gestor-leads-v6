@@ -79,12 +79,22 @@ async function handleDocumentMessage(msg: InternalMessage, orgId: string) {
     ? `Pet: ${perfil.nome}${perfil.especie ? ` (${perfil.especie})` : ''}`
     : null;
 
-  const { resposta, mimeType: docMimeType, fileName: docFileName } =
+  const docFileName = msg.documento?.fileName || 'documento';
+  const docMimetypeOriginal: string | undefined = msg.documento?.mimetype || undefined;
+
+  // Save the user's document immediately so it appears in the chat even if processing fails
+  await persistInteraction(msg, '', {
+    inputTextOverride: `[📄 ${docFileName}]`,
+    mediaMimeType: docMimetypeOriginal,
+    mediaFileName: docFileName,
+  }).catch(() => {});
+
+  const { resposta, mimeType: docMimeType, fileName: resolvedFileName } =
     await documentSvc.processarDocumento(
       msg.instancia,
       msg.id,
       msg.documento?._type,
-      msg.documento?.fileName || 'documento',
+      docFileName,
       ctxPet,
       historico,
     );
@@ -92,10 +102,10 @@ async function handleDocumentMessage(msg: InternalMessage, orgId: string) {
   if (!resposta) return;
 
   const sendDocResult = await sendResponse(msg, resposta);
+  // User message already saved above; dedup will skip it, only agent response is saved
   await persistInteraction(msg, resposta, {
-    inputTextOverride: `[📄 ${docFileName || msg.documento?.fileName || 'documento enviado'}]`,
-    mediaMimeType: docMimeType || undefined,
-    mediaFileName: docFileName || msg.documento?.fileName || undefined,
+    mediaMimeType: docMimeType || docMimetypeOriginal,
+    mediaFileName: resolvedFileName || docFileName,
     msgIdExternoResp: sendDocResult?.msg_id_externo ?? null,
   }).catch(() => {});
 }

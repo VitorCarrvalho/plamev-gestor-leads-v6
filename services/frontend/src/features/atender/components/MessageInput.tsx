@@ -6,6 +6,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { BASE_URL } from '@/services/api';
 
 type Modo = 'mari' | 'direto' | 'nota';
 
@@ -102,11 +103,11 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     setUploadStatus('uploading');
     setUploadMsg(`Enviando ${fileName}…`);
     try {
-      const res = await fetch('/api/mensagens/enviar-midia', {
+      const res = await fetch(`${BASE_URL}/api/mensagens/enviar-midia`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('dashv5_token')}`,
+          Authorization: `Bearer ${localStorage.getItem('dash_v5_token')}`,
         },
         body: JSON.stringify({ conversa_id: conversaId, base64: b64, mimeType, fileName }),
       });

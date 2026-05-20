@@ -23,8 +23,8 @@ const fs     = require('fs');
 const path   = require('path');
 const os     = require('os');
 
-const EVO_URL = process.env.EVOLUTION_URL;
-const EVO_KEY = process.env.EVOLUTION_KEY;
+const EVO_URL = process.env.EVOLUTION_API_URL || process.env.EVOLUTION_URL;
+const EVO_KEY = process.env.EVOLUTION_API_KEY || process.env.EVOLUTION_KEY;
 const ANT_KEY = process.env.ANTHROPIC_API_KEY;
 
 // ── Baixar documento via Evolution ───────────────────────────
