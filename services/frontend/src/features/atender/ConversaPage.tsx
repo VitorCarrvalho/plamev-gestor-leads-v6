@@ -490,30 +490,35 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
       .catch(() => {});
   }, [conversaId]);
 
-  const carregarConversa = async () => {
-    setLoading(true);
+  // silent=true → não mostra spinner (usado por atualizações em tempo real)
+  const carregarConversa = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const d = await api.get<any>(`/api/conversas/${conversaId}/full`);
       setData(d);
     } catch (e: any) {
       console.error('[ChatWindow] Erro ao carregar conversa:', e.message);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
-  // Mantém a ref sempre apontando para a versão mais recente
-  useEffect(() => { carregarConversaRef.current = carregarConversa; });
+  // Refs separadas: uma para reload completo (ações do supervisor), outra silenciosa (socket)
+  const silentReloadRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    carregarConversaRef.current = () => carregarConversa(false);
+    silentReloadRef.current    = () => carregarConversa(true);
+  });
 
-  // Carregar via REST
+  // Carregar via REST na primeira vez
   useEffect(() => { carregarConversa(); }, [conversaId]);
 
-  // Auto-refresh: recarrega mensagens quando nova mensagem chega nesta conversa
+  // Auto-refresh silencioso: recarrega mensagens quando nova mensagem chega nesta conversa
   useEffect(() => {
     const onNovaMsg = (d: any) => {
-      if (d.conversa_id === conversaId) carregarConversaRef.current();
+      if (d.conversa_id === conversaId) silentReloadRef.current();
     };
     const onConversaAtualizada = (d: any) => {
-      if (d.conversa_id === conversaId) carregarConversaRef.current();
+      if (d.conversa_id === conversaId) silentReloadRef.current();
     };
     socket.on('nova_msg', onNovaMsg);
     socket.on('conversa_atualizada', onConversaAtualizada);
@@ -727,7 +732,7 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
         onClearReply={() => setReplyTo(null)}
         onSend={handleSend}
         onAgendar={() => setModalAgendar(true)}
-        onMidiaEnviada={() => carregarConversaRef.current()}
+        onMidiaEnviada={() => silentReloadRef.current()}
       />
 
       {/* Modal Agendar */}

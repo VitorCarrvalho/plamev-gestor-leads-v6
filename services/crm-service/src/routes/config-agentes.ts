@@ -558,6 +558,23 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
     }
 
     console.log(`[INTERNAL] ✅ Interação salva — conversa=${conversaId} etapa=${novaEtapa || '(sem mudança)'} msgs=${texto ? 1 : 0}+${resposta ? 1 : 0} custo=${custo ? `${custo.input_tokens}+${custo.output_tokens}tk` : 'n/a'}`);
+
+    // Notifica gateway para atualizar dashboard via WebSocket (fire-and-forget)
+    const GATEWAY_URL = process.env.GATEWAY_URL || 'http://gateway.railway.internal:8080';
+    const INTERNAL_SECRET_KEY = process.env.INTERNAL_SECRET || 'plamev-internal';
+    fetch(`${GATEWAY_URL}/interno/nova-msg`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET_KEY },
+      body: JSON.stringify({
+        conversa_id: conversaId,
+        phone,
+        nome: nome || '',
+        msg_cliente: texto || null,
+        msg_mari: resposta || null,
+      }),
+      signal: AbortSignal.timeout(3000),
+    }).catch(e => console.warn('[CRM/salvar-interacao] Gateway notify:', e.message));
+
   } catch (e: any) {
     console.error('[INTERNAL] ❌ Erro ao salvar interação:', e.message);
   }
