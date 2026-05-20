@@ -29,7 +29,7 @@ config({ path: path.join(__dirname, '../../.env') });
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 app.use((req, _res, next) => {
   console.log(`[CRM-SERVICE] 📥 ${req.method} ${req.url}`);
@@ -227,6 +227,15 @@ app.post('/api/internal/migrate', async (req, res) => {
     res.json({ ok: true, applied: rows });
   } catch (e: any) {
     res.status(500).json({ erro: e.message, stack: e.stack });
+  }
+});
+
+// ── Global error handler (deve ser o último middleware) ─────────
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const status = err.status || err.statusCode || 500;
+  console.error(`[CRM-SERVICE] ❌ Erro HTTP ${status}:`, err.message);
+  if (!res.headersSent) {
+    res.status(status).json({ erro: err.message || 'Erro interno' });
   }
 });
 
