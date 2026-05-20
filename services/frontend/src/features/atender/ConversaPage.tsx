@@ -168,28 +168,51 @@ export const ConversaPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const refresh = () => api.get<any[]>('/api/conversas').then(setConversas);
-    socket.on('nova_msg', refresh);
-    socket.on('conversa_atualizada', refresh);
-    socket.on('ia_status', refresh);
-    document.addEventListener('forcar_refresh_conversas', refresh);
-    return () => { 
-      socket.off('nova_msg', refresh); 
-      socket.off('conversa_atualizada', refresh); 
-      socket.off('ia_status', refresh); 
-      document.removeEventListener('forcar_refresh_conversas', refresh);
+    const fullReload = () => api.get<any[]>('/api/conversas').then(setConversas);
+
+    const onNovaMsg = (d: any) => {
+      // Atualização otimista: move a conversa pro topo imediatamente
+      setConversas(prev => {
+        const idx = prev.findIndex(c => c.conversa_id === d.conversa_id);
+        if (idx < 0) { fullReload(); return prev; }
+        const updated = {
+          ...prev[idx],
+          ultima_msg_ts: d.timestamp || new Date().toISOString(),
+          ultima_msg_conteudo: d.msg_cliente || d.msg_mari || prev[idx].ultima_msg_conteudo,
+        };
+        return [updated, ...prev.filter((_, i) => i !== idx)];
+      });
+      // Sincronização completa em background
+      fullReload();
+    };
+
+    socket.on('nova_msg', onNovaMsg);
+    socket.on('conversa_atualizada', fullReload);
+    socket.on('ia_status', fullReload);
+    document.addEventListener('forcar_refresh_conversas', fullReload);
+    return () => {
+      socket.off('nova_msg', onNovaMsg);
+      socket.off('conversa_atualizada', fullReload);
+      socket.off('ia_status', fullReload);
+      document.removeEventListener('forcar_refresh_conversas', fullReload);
     };
   }, [socket]);
 
-  const filtradas = conversas.filter(c => {
-    if (filtroEtapa !== 'todas' && c.etapa !== filtroEtapa) return false;
-    if (filtroTemp  !== 'todas' && (c.temperatura_lead || 'morno') !== filtroTemp) return false;
-    if (!busca.trim()) return true;
-    const q = busca.toLowerCase();
-    return (c.nome_cliente || '').toLowerCase().includes(q)
-      || (c.nome_pet || '').toLowerCase().includes(q)
-      || (c.phone || '').includes(q);
-  });
+  const filtradas = conversas
+    .filter(c => {
+      if (filtroEtapa !== 'todas' && c.etapa !== filtroEtapa) return false;
+      if (filtroTemp  !== 'todas' && (c.temperatura_lead || 'morno') !== filtroTemp) return false;
+      if (!busca.trim()) return true;
+      const q = busca.toLowerCase();
+      return (c.nome_cliente || '').toLowerCase().includes(q)
+        || (c.nome_pet || '').toLowerCase().includes(q)
+        || (c.phone || '').includes(q);
+    })
+    .sort((a, b) => {
+      const ta = a.ultima_msg_ts ? new Date(a.ultima_msg_ts).getTime() : 0;
+      const tb = b.ultima_msg_ts ? new Date(b.ultima_msg_ts).getTime() : 0;
+      return tb - ta;
+    });
 
   // Contagem por etapa pra popular as pills
   const contEtapa: Record<string, number> = {};
@@ -483,6 +506,22 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
 
   // Carregar via REST
   useEffect(() => { carregarConversa(); }, [conversaId]);
+
+  // Auto-refresh: recarrega mensagens quando nova mensagem chega nesta conversa
+  useEffect(() => {
+    const onNovaMsg = (d: any) => {
+      if (d.conversa_id === conversaId) carregarConversaRef.current();
+    };
+    const onConversaAtualizada = (d: any) => {
+      if (d.conversa_id === conversaId) carregarConversaRef.current();
+    };
+    socket.on('nova_msg', onNovaMsg);
+    socket.on('conversa_atualizada', onConversaAtualizada);
+    return () => {
+      socket.off('nova_msg', onNovaMsg);
+      socket.off('conversa_atualizada', onConversaAtualizada);
+    };
+  }, [socket, conversaId]);
 
   // Scroll para o final quando novas mensagens chegam (só do container)
   useEffect(() => {
