@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Bookmark, Download, Trash2, RefreshCw, Eye, Sparkles, FlaskConical, Loader2 } from 'lucide-react';
 import { api } from '@/services/api';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -21,10 +21,12 @@ export const SalvasPage: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selecionada, setSelecionada] = useState<any | null>(null);
+  const [erroAnalise, setErroAnalise] = useState<string | null>(null);
 
   // Estado de análise IA
   const [analiseLoading, setAnaliseLoading] = useState<Set<string>>(new Set());
   const [analiseAberta, setAnaliseAberta] = useState<{ id: string; titulo: string; tipoResultado: string; analise: AnaliseConversa } | null>(null);
+  const pollingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const carregar = async () => {
     setLoading(true);
@@ -33,7 +35,14 @@ export const SalvasPage: React.FC = () => {
     setLoading(false);
   };
 
-  useEffect(() => { carregar(); }, []);
+  useEffect(() => {
+    carregar();
+    return () => {
+      // cancela todos os pollings ao desmontar o componente
+      pollingTimers.current.forEach(t => clearTimeout(t));
+      pollingTimers.current.clear();
+    };
+  }, []);
 
   const abrir = async (id: string) => {
     const d = await api.get<any>(`/api/analisar/salvas/${id}`);
@@ -56,33 +65,37 @@ export const SalvasPage: React.FC = () => {
     carregar();
   };
 
-  const pollAnalise = async (item: any, tentativas = 0): Promise<void> => {
+  const stopPolling = (id: string) => {
+    const t = pollingTimers.current.get(id);
+    if (t) { clearTimeout(t); pollingTimers.current.delete(id); }
+    setAnaliseLoading(prev => { const s = new Set(prev); s.delete(id); return s; });
+  };
+
+  const pollAnalise = (item: any, tentativas = 0): void => {
     if (tentativas > 40) {
-      setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
-      alert('Tempo limite excedido. Tente novamente em instantes.');
+      stopPolling(item.id);
+      setErroAnalise('Análise demorou demais. Verifique os logs e tente novamente.');
       return;
     }
-    try {
-      const r = await api.get<any>(`/api/analisar/salvas/${item.id}/status-analise`);
-      if (r.status === 'concluida' && r.analise) {
-        setItems(prev => prev.map(i => i.id === item.id ? { ...i, tem_analise: true } : i));
-        setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
-        setAnaliseAberta({
-          id: item.id,
-          titulo: item.titulo || '—',
-          tipoResultado: item.tipo_resultado || 'analise',
-          analise: r.analise,
-        });
-      } else if (r.status === 'erro') {
-        setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
-        alert('Erro ao processar análise. Verifique os logs do servidor.');
-      } else {
-        setTimeout(() => pollAnalise(item, tentativas + 1), 3000);
+    const timer = setTimeout(async () => {
+      try {
+        const r = await api.get<any>(`/api/analisar/salvas/${item.id}/status-analise`);
+        if (r.status === 'concluida' && r.analise) {
+          stopPolling(item.id);
+          setItems(prev => prev.map(i => i.id === item.id ? { ...i, tem_analise: true } : i));
+          setAnaliseAberta({ id: item.id, titulo: item.titulo || '—', tipoResultado: item.tipo_resultado || 'analise', analise: r.analise });
+        } else if (r.status === 'erro') {
+          stopPolling(item.id);
+          setErroAnalise('A análise falhou no servidor. Consulte os logs do Railway.');
+        } else {
+          pollAnalise(item, tentativas + 1);
+        }
+      } catch (e: any) {
+        stopPolling(item.id);
+        setErroAnalise(`Erro ao verificar análise: ${e.message}`);
       }
-    } catch (e: any) {
-      setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
-      alert(`Erro ao verificar análise: ${e.message}`);
-    }
+    }, 3000);
+    pollingTimers.current.set(item.id, timer);
   };
 
   const analisar = async (item: any) => {
@@ -99,8 +112,8 @@ export const SalvasPage: React.FC = () => {
         pollAnalise(item, 0);
       }
     } catch (e: any) {
-      setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
-      alert(`Erro ao analisar: ${e.message}`);
+      stopPolling(item.id);
+      setErroAnalise(`Erro ao analisar: ${e.message}`);
     }
   };
 
@@ -109,14 +122,14 @@ export const SalvasPage: React.FC = () => {
     try {
       const r = await api.post<any>(`/api/analisar/salvas/${item.id}/analisar`, {});
       if (r.status === 'concluida' && r.analise) {
-        setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
+        stopPolling(item.id);
         setAnaliseAberta({ id: item.id, titulo: item.titulo || '—', tipoResultado: item.tipo_resultado || 'analise', analise: r.analise });
       } else {
         pollAnalise(item, 0);
       }
     } catch (e: any) {
-      setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
-      alert(`Erro ao carregar análise: ${e.message}`);
+      stopPolling(item.id);
+      setErroAnalise(`Erro ao carregar análise: ${e.message}`);
     }
   };
 
@@ -127,6 +140,13 @@ export const SalvasPage: React.FC = () => {
           <RefreshCw className="w-3.5 h-3.5" /> Atualizar
         </Button>
       </PageHeader>
+
+      {erroAnalise && (
+        <div className="mx-6 mt-4 flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-950/30 px-4 py-3 text-sm text-red-700 dark:text-red-400">
+          <span className="flex-1">{erroAnalise}</span>
+          <button className="shrink-0 font-medium hover:underline" onClick={() => setErroAnalise(null)}>Fechar</button>
+        </div>
+      )}
 
       <div className="p-6 flex-1 min-h-0 overflow-y-auto">
         {loading ? <LoadingSpinner />

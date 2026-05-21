@@ -253,6 +253,15 @@ ${transcricao || '(sem mensagens)'}
 Analise esta conversa e chame a função registrar_analise com o resultado completo.`;
 }
 
+// ── Marcar status no banco (best-effort, nunca deixa em 'processando') ──────
+async function setStatus(salvaId: number, status: 'processando' | 'concluida' | 'erro') {
+  try {
+    await execute(`UPDATE conversas_salvas SET analise_status = $1 WHERE id = $2`, [status, salvaId]);
+  } catch (e: any) {
+    console.error(`[ANALISE-IA] setStatus(${status}) falhou:`, e.message);
+  }
+}
+
 // ── Função principal ────────────────────────────────────────────
 export async function runAnalise(salvaId: number): Promise<AnaliseConversa> {
   const rows = await query<any>(
@@ -263,18 +272,17 @@ export async function runAnalise(salvaId: number): Promise<AnaliseConversa> {
 
   const conversa = rows[0];
 
-  const systemPrompt = await buildSystemPrompt();
-  const userPrompt = buildUserPrompt(conversa);
+  await setStatus(salvaId, 'processando');
 
-  await execute(
-    `UPDATE conversas_salvas SET analise_status = 'processando' WHERE id = $1`, [salvaId]
-  );
-
-  let analise: AnaliseConversa;
   try {
+    console.log(`[ANALISE-IA] iniciando análise da conversa salva ${salvaId}`);
+    const systemPrompt = await buildSystemPrompt();
+    const userPrompt = buildUserPrompt(conversa);
+
+    console.log(`[ANALISE-IA] chamando Claude Sonnet 4.6 (conversa ${salvaId})`);
     const response = await getAnthropic().messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 8192,
       temperature: 0,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
@@ -283,10 +291,10 @@ export async function runAnalise(salvaId: number): Promise<AnaliseConversa> {
     });
 
     const toolUse = response.content.find(b => b.type === 'tool_use') as Anthropic.ToolUseBlock | undefined;
-    if (!toolUse) throw new Error('Claude não retornou tool_use');
+    if (!toolUse) throw new Error('Claude não retornou tool_use no response');
 
     const input = toolUse.input as Omit<AnaliseConversa, 'modelo_usado' | 'tokens_usados'>;
-    analise = {
+    const analise: AnaliseConversa = {
       ...input,
       modelo_usado: 'claude-sonnet-4-6',
       tokens_usados: {
@@ -294,17 +302,18 @@ export async function runAnalise(salvaId: number): Promise<AnaliseConversa> {
         output: response.usage.output_tokens,
       },
     };
-  } catch (err) {
-    await execute(`UPDATE conversas_salvas SET analise_status = 'erro' WHERE id = $1`, [salvaId]);
+
+    console.log(`[ANALISE-IA] análise concluída (${response.usage.output_tokens} tokens out)`);
+
+    await execute(
+      `UPDATE conversas_salvas SET analise_resultado = $1, analise_status = 'concluida' WHERE id = $2`,
+      [JSON.stringify(analise), salvaId]
+    );
+
+    return analise;
+  } catch (err: any) {
+    console.error(`[ANALISE-IA] erro na conversa ${salvaId}:`, err.message);
+    await setStatus(salvaId, 'erro');
     throw err;
   }
-
-  await execute(
-    `UPDATE conversas_salvas
-     SET analise_resultado = $1, analise_status = 'concluida'
-     WHERE id = $2`,
-    [JSON.stringify(analise), salvaId]
-  );
-
-  return analise;
 }
