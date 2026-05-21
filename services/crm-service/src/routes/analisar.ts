@@ -136,7 +136,7 @@ router.post('/enviar-intel-v1/:conversaId', async (req, res) => {
     if (!conv[0]) { res.status(404).json({ erro: 'Conversa não encontrada' }); return; }
 
     const mensagens = await query<any>(
-      `SELECT role, enviado_por, conteudo, timestamp, obsidian_arquivos
+      `SELECT role, enviado_por, conteudo, timestamp
        FROM mensagens WHERE conversa_id = $1 ORDER BY timestamp ASC`, [conversaId]
     );
     const perfil = await query<any>(
