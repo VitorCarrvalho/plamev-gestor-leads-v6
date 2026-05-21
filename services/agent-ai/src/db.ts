@@ -47,6 +47,19 @@ export async function buscarOuCriarCliente(orgId: string, identificador: string,
   return cliente;
 }
 
+// ── Verificação rápida de IA silenciada ───────────────────────
+// Consultada ANTES de qualquer processamento de mensagem (texto, áudio,
+// documento ou imagem) para garantir que IA OFF seja respeitado.
+export async function verificarIaSilenciada(phone: string, canal: string): Promise<boolean> {
+  const row = await one<{ ia_silenciada: boolean }>(
+    `SELECT ia_silenciada FROM conversas
+     WHERE numero_externo=$1 AND canal=$2 AND status='ativa'
+     ORDER BY criado_em DESC LIMIT 1`,
+    [phone, canal],
+  );
+  return row?.ia_silenciada === true;
+}
+
 // ── Conversas ─────────────────────────────────────────────────
 export async function buscarOuCriarConversa(orgId: string, clientId: string, agentId: string, canal: string, numeroExterno: string, jid: string | null = null, instancia: string | null = null) {
   const existente = await one(

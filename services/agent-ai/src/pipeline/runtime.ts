@@ -151,6 +151,20 @@ async function handleImageMessage(msg: InternalMessage, orgId: string) {
 }
 
 export async function processIncomingMessage(msg: InternalMessage) {
+  // ── Verificar IA silenciada ANTES de qualquer processamento ──
+  // Cobre todos os tipos: texto, áudio, documento e imagem.
+  // Sem esse check aqui, mídia bypassa a verificação do orchestrator.
+  const silenciada = await db.verificarIaSilenciada(msg.phone, msg.canal);
+  if (silenciada) {
+    console.log(`[RUNTIME] 🔇 IA silenciada para ${msg.phone}/${msg.canal} — mensagem recebida mas agente não responde`);
+    const inputText = msg.documento ? `[📄 ${msg.documento?.fileName || 'documento'}]`
+      : msg.imagem   ? '[📸 imagem enviada]'
+      : msg.audio    ? '[🎤 áudio recebido]'
+      : msg.texto    || '';
+    await persistInteraction(msg, '', { inputTextOverride: inputText || undefined }).catch(() => {});
+    return;
+  }
+
   const runtimeConfig = await resolveRuntimeConfig(msg);
   const { orgId } = runtimeConfig;
 
