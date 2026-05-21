@@ -8,6 +8,7 @@ import {
   Eye, TrendingUp, Wrench, BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 
 export type Pilar = 'monitorar' | 'atender' | 'analisar' | 'sistema' | 'configuracoes';
 
@@ -327,8 +328,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* ── Footer: perfil + logout ──────────────────────────────── */}
+        {/* ── Footer: tema + perfil + logout ──────────────────────── */}
         <div className={cn('border-t border-white/[0.06] p-2 flex-shrink-0', collapsed && 'flex flex-col items-center gap-1')}>
+          <ThemeToggle collapsed={collapsed} />
           {/* Perfil */}
           <button
             onClick={onPerfilClick}

@@ -40,6 +40,7 @@ import { ConfigPage } from './features/sistema/ConfigPage';
 
 import { useNotifications } from './hooks/useNotifications';
 import { UserProfileModal } from './components/UserProfileModal';
+import { ThemeProvider } from './contexts/ThemeContext';
 
 // ── LOGIN ─────────────────────────────────────────────────────
 const Login: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
@@ -57,23 +58,22 @@ const Login: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4"
-      style={{ background: 'radial-gradient(circle at 20% 80%, rgba(99,102,241,0.08) 0%, transparent 60%), radial-gradient(circle at 80% 20%, rgba(139,92,246,0.06) 0%, transparent 60%), #f8fafc' }}>
-      <div className="w-full max-w-[380px] bg-white rounded-2xl border border-slate-200 shadow-xl p-8">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-bg">
+      <div className="w-full max-w-[380px] bg-surface rounded-2xl border border-border shadow-xl p-8">
         <div className="flex items-center justify-center mb-6">
           <img src="/plamev-logo.png" alt="Plamev" className="h-14 object-contain" />
         </div>
-        <p className="text-sm text-slate-500 mb-5">Supervisão de atendimento em tempo real.</p>
+        <p className="text-sm text-text-muted mb-5">Supervisão de atendimento em tempo real.</p>
 
-        <label className="text-xs font-medium text-slate-600 mb-1 block">Email</label>
+        <label className="text-xs font-medium text-text-muted mb-1 block">Email</label>
         <Input type="email" value={email} onChange={e => setEmail(e.target.value)} className="mb-3" />
 
-        <label className="text-xs font-medium text-slate-600 mb-1 block">Senha</label>
+        <label className="text-xs font-medium text-text-muted mb-1 block">Senha</label>
         <div className="relative mb-4">
           <Input type={show ? 'text' : 'password'} value={senha} onChange={e => setSenha(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleLogin()} className="pr-10" />
           <button type="button" onClick={() => setShow(!show)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1">
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-text-faint hover:text-text-muted p-1">
             {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
@@ -84,7 +84,7 @@ const Login: React.FC<{ onLogin: () => void }> = ({ onLogin }) => {
 
         {erro && <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 text-center">{erro}</div>}
 
-        <div className="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-400 text-center">
+        <div className="mt-6 pt-4 border-t border-border-subtle text-xs text-text-faint text-center">
           Plamev · dashv5.plamevbrasil.com.br
         </div>
       </div>
@@ -101,8 +101,8 @@ const Placeholder: React.FC<{ titulo: string; subtitulo: string; fase: string }>
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium mb-3">
           ⏳ Aguardando {fase}
         </div>
-        <h2 className="text-slate-700 text-base font-semibold">Esta página será implementada em {fase}</h2>
-        <p className="text-sm text-slate-500 mt-2">Scaffold da V5 em andamento. Layout, navegação e autenticação prontos.</p>
+        <h2 className="text-text text-base font-semibold">Esta página será implementada em {fase}</h2>
+        <p className="text-sm text-text-muted mt-2">Scaffold da V5 em andamento. Layout, navegação e autenticação prontos.</p>
       </div>
     </div>
   </>
@@ -171,12 +171,12 @@ const Shell: React.FC = () => {
       case 'sistema/agenda': return <AgendaPage />;
       case 'sistema/config': return <ConfigPage />;
 
-      default: return <div className="p-6 text-slate-500">Página não encontrada</div>;
+      default: return <div className="p-6 text-text-muted">Página não encontrada</div>;
     }
   };
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-bg">
       <Sidebar
         pilar={pilar}
         subPage={subPage}
@@ -192,22 +192,22 @@ const Shell: React.FC = () => {
       {perfilOpen && <UserProfileModal onClose={() => setPerfilOpen(false)} />}
       <main
         className={cn(
-          'flex-1 min-h-screen flex flex-col bg-slate-50 overflow-hidden transition-[margin] duration-300 ease-in-out',
+          'flex-1 min-h-screen flex flex-col bg-bg overflow-hidden transition-[margin] duration-300 ease-in-out',
           sidebarCollapsed ? 'md:ml-[60px]' : 'md:ml-[240px]',
         )}
       >
         {/* Barra top mobile com hambúrguer */}
-        <div className="md:hidden sticky top-0 z-20 bg-white border-b border-slate-200 h-12 flex items-center gap-2 px-3 shrink-0">
+        <div className="md:hidden sticky top-0 z-20 bg-surface border-b border-border h-12 flex items-center gap-2 px-3 shrink-0">
           <button
             onClick={() => setMenuOpen(true)}
-            className="p-1.5 -ml-1 rounded-md text-slate-600 hover:bg-slate-100"
+            className="p-1.5 -ml-1 rounded-md text-text-muted hover:bg-surface-2"
             aria-label="Abrir menu"
           >
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
             <img src="/p-logo.png" alt="P" className="w-6 h-6 object-contain" />
-            <span className="text-sm font-semibold text-slate-900">Plamev</span>
+            <span className="text-sm font-semibold text-text">Plamev</span>
           </div>
         </div>
         {renderPagina()}
@@ -218,5 +218,9 @@ const Shell: React.FC = () => {
 
 export default function App() {
   const [auth, setAuth] = useState(isLoggedIn());
-  return auth ? <Shell /> : <Login onLogin={() => setAuth(true)} />;
+  return (
+    <ThemeProvider>
+      {auth ? <Shell /> : <Login onLogin={() => setAuth(true)} />}
+    </ThemeProvider>
+  );
 }
