@@ -85,7 +85,8 @@ router.delete('/salvas/:id', async (req, res) => {
 
 // ── Análise IA ──────────────────────────────────────────────────
 // POST /api/analisar/salvas/r_123/analisar
-// Se já existe análise, retorna do cache (usa ?forcar=true para re-rodar)
+// Dispara análise em background (evita timeout do proxy Railway ~30s).
+// Retorna imediatamente com status='processando' ou resultado cached.
 router.post('/salvas/:id/analisar', async (req, res) => {
   try {
     const { id } = req.params;
@@ -98,23 +99,53 @@ router.post('/salvas/:id/analisar', async (req, res) => {
 
     const numId = parseInt(id.slice(2), 10);
 
-    // Verificar se já existe análise
-    if (!forcar) {
-      const rows = await query<any>(
-        `SELECT analise_resultado FROM conversas_salvas WHERE id = $1`, [numId]
-      );
-      if (rows[0]?.analise_resultado) {
-        res.json({ ok: true, analise: rows[0].analise_resultado, cached: true });
-        return;
-      }
+    const rows = await query<any>(
+      `SELECT analise_resultado, analise_status FROM conversas_salvas WHERE id = $1`, [numId]
+    );
+    if (!rows[0]) { res.status(404).json({ erro: 'Conversa não encontrada' }); return; }
+
+    // Retorna resultado cached (sem forçar re-análise)
+    if (!forcar && rows[0].analise_resultado) {
+      res.json({ ok: true, status: 'concluida', analise: rows[0].analise_resultado, cached: true });
+      return;
     }
 
-    const analise = await runAnalise(numId);
-    res.json({ ok: true, analise, cached: false });
+    // Já está processando → não dispara duplicata
+    if (rows[0].analise_status === 'processando') {
+      res.json({ ok: true, status: 'processando' });
+      return;
+    }
+
+    // Dispara análise em background sem bloquear a resposta
+    runAnalise(numId).catch(err => console.error('[ANALISE-IA] background error:', err.message));
+
+    res.json({ ok: true, status: 'processando' });
   } catch (e: any) {
     console.error('[ANALISE-IA]', e.message);
     res.status(500).json({ erro: e.message });
   }
+});
+
+// GET /api/analisar/salvas/r_123/status-analise — polling endpoint
+router.get('/salvas/:id/status-analise', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id.startsWith('r_')) {
+      res.status(400).json({ erro: 'Apenas conversas reais (prefixo r_)' });
+      return;
+    }
+    const numId = parseInt(id.slice(2), 10);
+    const rows = await query<any>(
+      `SELECT analise_status, analise_resultado FROM conversas_salvas WHERE id = $1`, [numId]
+    );
+    if (!rows[0]) { res.status(404).json({ erro: 'Não encontrada' }); return; }
+    const { analise_status, analise_resultado } = rows[0];
+    res.json({
+      ok: true,
+      status: analise_status || 'pendente',
+      analise: analise_resultado || null,
+    });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
 
 // ── Enviar conversa para análise no Intelligence V1 ────────────────────────

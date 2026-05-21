@@ -56,24 +56,51 @@ export const SalvasPage: React.FC = () => {
     carregar();
   };
 
-  const analisar = async (item: any) => {
-    setAnaliseLoading(prev => new Set(prev).add(item.id));
+  const pollAnalise = async (item: any, tentativas = 0): Promise<void> => {
+    if (tentativas > 40) {
+      setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
+      alert('Tempo limite excedido. Tente novamente em instantes.');
+      return;
+    }
     try {
-      const r = await api.post<any>(`/api/analisar/salvas/${item.id}/analisar`, {});
-      if (r.ok && r.analise) {
-        // Atualiza item local para mostrar botão "Ver Análise"
+      const r = await api.get<any>(`/api/analisar/salvas/${item.id}/status-analise`);
+      if (r.status === 'concluida' && r.analise) {
         setItems(prev => prev.map(i => i.id === item.id ? { ...i, tem_analise: true } : i));
+        setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
         setAnaliseAberta({
           id: item.id,
           titulo: item.titulo || '—',
           tipoResultado: item.tipo_resultado || 'analise',
           analise: r.analise,
         });
+      } else if (r.status === 'erro') {
+        setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
+        alert('Erro ao processar análise. Verifique os logs do servidor.');
+      } else {
+        setTimeout(() => pollAnalise(item, tentativas + 1), 3000);
       }
     } catch (e: any) {
-      alert(`Erro ao analisar: ${e.message}`);
-    } finally {
       setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
+      alert(`Erro ao verificar análise: ${e.message}`);
+    }
+  };
+
+  const analisar = async (item: any) => {
+    setAnaliseLoading(prev => new Set(prev).add(item.id));
+    try {
+      const r = await api.post<any>(`/api/analisar/salvas/${item.id}/analisar`, {});
+      if (r.status === 'concluida' && r.analise) {
+        // Resultado cached — exibe direto
+        setItems(prev => prev.map(i => i.id === item.id ? { ...i, tem_analise: true } : i));
+        setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
+        setAnaliseAberta({ id: item.id, titulo: item.titulo || '—', tipoResultado: item.tipo_resultado || 'analise', analise: r.analise });
+      } else {
+        // Processando em background → inicia polling
+        pollAnalise(item, 0);
+      }
+    } catch (e: any) {
+      setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
+      alert(`Erro ao analisar: ${e.message}`);
     }
   };
 
@@ -81,18 +108,15 @@ export const SalvasPage: React.FC = () => {
     setAnaliseLoading(prev => new Set(prev).add(item.id));
     try {
       const r = await api.post<any>(`/api/analisar/salvas/${item.id}/analisar`, {});
-      if (r.ok && r.analise) {
-        setAnaliseAberta({
-          id: item.id,
-          titulo: item.titulo || '—',
-          tipoResultado: item.tipo_resultado || 'analise',
-          analise: r.analise,
-        });
+      if (r.status === 'concluida' && r.analise) {
+        setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
+        setAnaliseAberta({ id: item.id, titulo: item.titulo || '—', tipoResultado: item.tipo_resultado || 'analise', analise: r.analise });
+      } else {
+        pollAnalise(item, 0);
       }
     } catch (e: any) {
-      alert(`Erro ao carregar análise: ${e.message}`);
-    } finally {
       setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
+      alert(`Erro ao carregar análise: ${e.message}`);
     }
   };
 
