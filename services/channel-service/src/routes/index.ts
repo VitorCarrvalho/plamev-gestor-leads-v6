@@ -69,11 +69,43 @@ function isResetCommand(text: string) {
   return RESET_COMMAND_REGEX.test(normalized);
 }
 
+// Quando fromMe=true e ia_silenciada=true, salva a mensagem do humano via CRM
+async function tryPersistHumanAgentMsg(item: any, body: any, agentSlug: string) {
+  const jidRaw = item.key?.remoteJid || '';
+  if (!jidRaw || jidRaw.includes('@g.us') || jidRaw.includes('@broadcast')) return;
+
+  const msgObj = item.message || {};
+  const texto = msgObj.conversation || msgObj.extendedTextMessage?.text || '';
+  if (!texto) return;
+
+  const msgId = item.key?.id || '';
+  if (!msgId) return;
+
+  // Ignora mensagens históricas (> 5 min)
+  const msgTimestamp = item.messageTimestamp || 0;
+  const agora = Math.floor(Date.now() / 1000);
+  if (msgTimestamp && (agora - msgTimestamp) > 300) return;
+
+  const phone = jidRaw.replace(/@s\.whatsapp\.net$|@lid$|@c\.us$/g, '');
+  if (!phone) return;
+
+  await axios.post(
+    `${CRM_URL}/api/internal/salvar-msg-agente-humano`,
+    { phone, canal: 'whatsapp', agentSlug, texto, msgIdExterno: msgId },
+    { headers: { 'x-internal-secret': INTERNAL_SECRET }, timeout: 5000 },
+  );
+}
+
 async function processWhatsAppItem(item: any, body: any, agentSlug: string) {
   const logPrefix = `[WH] event=${body.event || '?'} instance=${body.instance || body.instanceName || '?'}`;
 
   if (item.key?.fromMe === true) {
-    console.log(`${logPrefix} → ignorado (fromMe=true)`);
+    // Mensagem enviada pelo próprio número de negócio.
+    // Se a IA está silenciada, é o humano respondendo via WhatsApp — precisamos salvar.
+    // Se não está silenciada, é a IA enviando (já salva pelo pipeline) — ignora para evitar duplicata.
+    tryPersistHumanAgentMsg(item, body, agentSlug).catch(e =>
+      console.warn(`[WH] fromMe persist error: ${e.message}`)
+    );
     return;
   }
 

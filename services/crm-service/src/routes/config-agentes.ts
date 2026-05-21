@@ -575,6 +575,55 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
   }
 });
 
+// Salva mensagem enviada pelo humano (fromMe=true) quando a IA está silenciada.
+// Só persiste se a conversa tiver ia_silenciada=true — evita duplicar mensagens da IA.
+internalRouter.post('/salvar-msg-agente-humano', async (req, res) => {
+  if (!checkInternalSecret(req, res)) return;
+  const { phone, canal, agentSlug, texto, msgIdExterno } = req.body || {};
+  if (!phone || !canal || !texto) {
+    res.status(400).json({ erro: 'phone, canal e texto são obrigatórios' });
+    return;
+  }
+  res.json({ ok: true });
+
+  try {
+    const agente = await queryOne<any>('SELECT id FROM agentes WHERE slug=$1 LIMIT 1', [agentSlug || 'mari']);
+    if (!agente) { console.warn(`[INTERNAL/humano] agente não encontrado: ${agentSlug}`); return; }
+
+    const conversa = await queryOne<any>(
+      `SELECT id, ia_silenciada FROM conversas
+       WHERE numero_externo=$1 AND canal=$2 AND agent_id=$3 AND status='ativa'
+       ORDER BY criado_em DESC LIMIT 1`,
+      [phone, canal, agente.id]
+    );
+    if (!conversa) { console.log(`[INTERNAL/humano] nenhuma conversa ativa para ${phone}/${canal}`); return; }
+    if (!conversa.ia_silenciada) return; // IA ativa: mensagem já salva pelo pipeline
+
+    const conversaId: string = conversa.id;
+
+    if (msgIdExterno) {
+      const jaExiste = await queryOne<any>('SELECT id FROM mensagens WHERE msg_id_externo=$1', [msgIdExterno]);
+      if (jaExiste) { console.log(`[INTERNAL/humano] duplicado: ${msgIdExterno}`); return; }
+    }
+
+    await execute(
+      `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por, msg_id_externo)
+       VALUES ($1,'agent',$2,'humano',$3)`,
+      [conversaId, texto, msgIdExterno || null]
+    );
+    await execute(`UPDATE conversas SET ultima_interacao=NOW() WHERE id=$1`, [conversaId]);
+
+    console.log(`[INTERNAL/humano] ✅ Msg do humano salva — conversa=${conversaId}`);
+
+    execute(
+      "SELECT pg_notify('chat_nova_mensagem', $1)",
+      [JSON.stringify({ conversa_id: conversaId, phone, nome: '', msg_cliente: null, msg_mari: texto })],
+    ).catch(e => console.warn('[CRM/salvar-msg-agente-humano] pg_notify:', e.message));
+  } catch (e: any) {
+    console.error('[INTERNAL/humano] ❌ Erro:', e.message);
+  }
+});
+
 internalRouter.post('/reset-contato', async (req, res) => {
   if (!checkInternalSecret(req, res)) return;
 
