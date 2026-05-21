@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Bookmark, Download, Trash2, RefreshCw, Eye } from 'lucide-react';
+import { Bookmark, Download, Trash2, RefreshCw, Eye, Sparkles, FlaskConical, Loader2 } from 'lucide-react';
 import { api } from '@/services/api';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -8,11 +8,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { AnaliseModal, type AnaliseConversa } from './components/AnaliseModal';
+
+// ── Badge de tipo de resultado ────────────────────────────────────
+function TipoResultadoBadge({ tipo }: { tipo: string }) {
+  if (tipo === 'sucesso') return <Badge variant="green" className="text-[10px]">🏆 Venda</Badge>;
+  if (tipo === 'falha') return <Badge variant="red" className="text-[10px]">❌ Falha</Badge>;
+  return <Badge variant="secondary" className="text-[10px]">📋 Análise</Badge>;
+}
 
 export const SalvasPage: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selecionada, setSelecionada] = useState<any | null>(null);
+
+  // Estado de análise IA
+  const [analiseLoading, setAnaliseLoading] = useState<Set<string>>(new Set());
+  const [analiseAberta, setAnaliseAberta] = useState<{ id: string; titulo: string; tipoResultado: string; analise: AnaliseConversa } | null>(null);
 
   const carregar = async () => {
     setLoading(true);
@@ -44,6 +56,46 @@ export const SalvasPage: React.FC = () => {
     carregar();
   };
 
+  const analisar = async (item: any) => {
+    setAnaliseLoading(prev => new Set(prev).add(item.id));
+    try {
+      const r = await api.post<any>(`/api/analisar/salvas/${item.id}/analisar`, {});
+      if (r.ok && r.analise) {
+        // Atualiza item local para mostrar botão "Ver Análise"
+        setItems(prev => prev.map(i => i.id === item.id ? { ...i, tem_analise: true } : i));
+        setAnaliseAberta({
+          id: item.id,
+          titulo: item.titulo || '—',
+          tipoResultado: item.tipo_resultado || 'analise',
+          analise: r.analise,
+        });
+      }
+    } catch (e: any) {
+      alert(`Erro ao analisar: ${e.message}`);
+    } finally {
+      setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
+    }
+  };
+
+  const verAnalise = async (item: any) => {
+    setAnaliseLoading(prev => new Set(prev).add(item.id));
+    try {
+      const r = await api.post<any>(`/api/analisar/salvas/${item.id}/analisar`, {});
+      if (r.ok && r.analise) {
+        setAnaliseAberta({
+          id: item.id,
+          titulo: item.titulo || '—',
+          tipoResultado: item.tipo_resultado || 'analise',
+          analise: r.analise,
+        });
+      }
+    } catch (e: any) {
+      alert(`Erro ao carregar análise: ${e.message}`);
+    } finally {
+      setAnaliseLoading(prev => { const s = new Set(prev); s.delete(item.id); return s; });
+    }
+  };
+
   return (
     <>
       <PageHeader title="Conversas Salvas" subtitle="Histórico de conversas arquivadas para análise">
@@ -56,7 +108,7 @@ export const SalvasPage: React.FC = () => {
         {loading ? <LoadingSpinner />
           : items.length === 0 ? <EmptyState icon={Bookmark} title="Nenhuma conversa salva" description="Conversas salvas em 'Atender' aparecem aqui." />
           : (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-surface rounded-xl border border-border shadow-sm overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -68,51 +120,75 @@ export const SalvasPage: React.FC = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map(c => (
-                    <TableRow key={c.id}>
-                      <TableCell>
-                        <div className="font-medium text-slate-900 text-sm">{c.titulo || '—'}</div>
-                        {c.motivo && <div className="text-xs text-slate-500 mt-0.5">{c.motivo.slice(0, 80)}</div>}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <div>{c.nome_cliente || '—'}</div>
-                        {c.nome_pet && <div className="text-slate-500">🐾 {c.nome_pet}</div>}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          <Badge
-                            variant={c.tipo === 'sandbox' ? 'blue' : 'green'}
-                            className="text-[10px]"
-                          >
-                            {c.tipo === 'sandbox' ? '🧪 Simulator' : '💬 Chat Real'}
-                          </Badge>
-                          {(c.tags || []).filter((t: string) => t !== 'simulator').slice(0, 2).map((t: string) => (
-                            <Badge key={t} variant="outline" className="text-[10px]">{t}</Badge>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-slate-500">{new Date(c.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="inline-flex gap-1">
-                          <Button size="sm" variant="outline" onClick={() => abrir(c.id)}>
-                            <Eye className="w-3 h-3" /> Ver
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => abrir(c.id)}>
-                            <Download className="w-3 h-3" />
-                          </Button>
-                          <Button size="sm" variant="danger-outline" onClick={() => excluir(c.id)}>
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {items.map(c => {
+                    const isLoading = analiseLoading.has(c.id);
+                    return (
+                      <TableRow key={c.id}>
+                        <TableCell>
+                          <div className="font-medium text-text text-sm">{c.titulo || '—'}</div>
+                          {c.motivo && <div className="text-xs text-text-muted mt-0.5">{c.motivo.slice(0, 80)}</div>}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="text-text">{c.nome_cliente || '—'}</div>
+                          {c.nome_pet && <div className="text-text-muted">🐾 {c.nome_pet}</div>}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            <Badge
+                              variant={c.tipo === 'sandbox' ? 'blue' : 'green'}
+                              className="text-[10px]"
+                            >
+                              {c.tipo === 'sandbox' ? '🧪 Simulator' : '💬 Chat Real'}
+                            </Badge>
+                            {c.tipo === 'real' && (
+                              <TipoResultadoBadge tipo={c.tipo_resultado || 'analise'} />
+                            )}
+                            {(c.tags || []).filter((t: string) => t !== 'simulator').slice(0, 2).map((t: string) => (
+                              <Badge key={t} variant="outline" className="text-[10px]">{t}</Badge>
+                            ))}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs text-text-faint">{new Date(c.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="inline-flex gap-1 flex-wrap justify-end">
+                            {/* Botão de análise IA (apenas conversas reais) */}
+                            {c.tipo === 'real' && (
+                              c.tem_analise ? (
+                                <Button size="sm" variant="outline" onClick={() => verAnalise(c)} disabled={isLoading}>
+                                  {isLoading
+                                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                                    : <FlaskConical className="w-3 h-3" />}
+                                  Ver Análise
+                                </Button>
+                              ) : (
+                                <Button size="sm" variant="outline" onClick={() => analisar(c)} disabled={isLoading}>
+                                  {isLoading
+                                    ? <><Loader2 className="w-3 h-3 animate-spin" /> Analisando…</>
+                                    : <><Sparkles className="w-3 h-3" /> Analisar</>}
+                                </Button>
+                              )
+                            )}
+                            <Button size="sm" variant="outline" onClick={() => abrir(c.id)}>
+                              <Eye className="w-3 h-3" /> Ver
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => abrir(c.id).then(() => selecionada && exportarJSON(selecionada))}>
+                              <Download className="w-3 h-3" />
+                            </Button>
+                            <Button size="sm" variant="danger-outline" onClick={() => excluir(c.id)}>
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
           )}
       </div>
 
+      {/* Modal: ver conversa (existente) */}
       <Dialog open={!!selecionada} onOpenChange={v => !v && setSelecionada(null)}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
@@ -122,20 +198,20 @@ export const SalvasPage: React.FC = () => {
             <div className="space-y-4 max-h-[60vh] overflow-y-auto">
               {selecionada.motivo && (
                 <div>
-                  <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Motivo</div>
-                  <div className="text-sm text-slate-700">{selecionada.motivo}</div>
+                  <div className="text-xs font-semibold text-text-muted uppercase mb-1">Motivo</div>
+                  <div className="text-sm text-text">{selecionada.motivo}</div>
                 </div>
               )}
               {selecionada.snapshot_msgs && (
                 <div>
-                  <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Mensagens</div>
-                  <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono max-h-64 overflow-y-auto">{JSON.stringify(selecionada.snapshot_msgs, null, 2).slice(0, 5000)}</pre>
+                  <div className="text-xs font-semibold text-text-muted uppercase mb-1">Mensagens</div>
+                  <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs font-mono max-h-64 overflow-y-auto">{JSON.stringify(selecionada.snapshot_msgs, null, 2).slice(0, 5000)}</pre>
                 </div>
               )}
               {selecionada.snapshot_perfil && (
                 <div>
-                  <div className="text-xs font-semibold text-slate-500 uppercase mb-1">Perfil</div>
-                  <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs font-mono">{JSON.stringify(selecionada.snapshot_perfil, null, 2)}</pre>
+                  <div className="text-xs font-semibold text-text-muted uppercase mb-1">Perfil</div>
+                  <pre className="bg-surface-2 border border-border rounded-lg p-3 text-xs font-mono">{JSON.stringify(selecionada.snapshot_perfil, null, 2)}</pre>
                 </div>
               )}
             </div>
@@ -148,6 +224,17 @@ export const SalvasPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal: análise IA */}
+      {analiseAberta && (
+        <AnaliseModal
+          open={!!analiseAberta}
+          onClose={() => setAnaliseAberta(null)}
+          titulo={analiseAberta.titulo}
+          tipoResultado={analiseAberta.tipoResultado}
+          analise={analiseAberta.analise}
+        />
+      )}
     </>
   );
 };

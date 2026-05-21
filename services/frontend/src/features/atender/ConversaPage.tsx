@@ -620,6 +620,7 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
 
   const [modalIntelV1, setModalIntelV1] = useState(false);
   const [motivoIntelV1, setMotivoIntelV1] = useState('');
+  const [tipoResultadoIntelV1, setTipoResultadoIntelV1] = useState<'sucesso' | 'falha' | 'analise'>('analise');
   const [enviandoIntelV1, setEnviandoIntelV1] = useState(false);
 
   const enviarParaIntelV1 = async () => {
@@ -627,10 +628,10 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
     try {
       const r = await api.post<{ ok: boolean; id: number; titulo: string }>(
         `/api/analisar/enviar-intel-v1/${conversaId}`,
-        { motivo: motivoIntelV1 }
+        { motivo: motivoIntelV1, tipo_resultado: tipoResultadoIntelV1 }
       );
       setFeedback({ ok: true, text: `✓ Conversa salva (#${r.id})` });
-      setModalIntelV1(false); setMotivoIntelV1('');
+      setModalIntelV1(false); setMotivoIntelV1(''); setTipoResultadoIntelV1('analise');
       setTimeout(() => setFeedback(null), 3000);
     } catch (e: any) {
       setFeedback({ ok: false, text: e?.message || 'Erro ao salvar' });
@@ -672,19 +673,44 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
           <DialogHeader>
             <DialogTitle>Salvar conversa</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-slate-600">
-              Um snapshot das mensagens e do perfil atual será salvo em <span className="font-medium">Analisar &gt; Conversas Salvas</span>.
+          <div className="space-y-4">
+            <p className="text-sm text-text-muted">
+              Um snapshot das mensagens e do perfil atual será salvo em <span className="font-medium text-text">Analisar › Conversas Salvas</span>.
             </p>
-            <label className="text-xs font-medium text-slate-600 block">
-              Observação (opcional)
-            </label>
-            <Textarea
-              value={motivoIntelV1}
-              onChange={e => setMotivoIntelV1(e.target.value)}
-              placeholder="Ex: conversa interessante de objeção de preço, ver resposta da Mari na etapa negociacao."
-              rows={3}
-            />
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-2">Como foi essa conversa?</label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: 'sucesso', label: '🏆 Fechou venda', desc: 'A Mari aprende o que fazer' },
+                  { value: 'falha',   label: '❌ Não converteu', desc: 'A Mari aprende o que evitar' },
+                  { value: 'analise', label: '📋 Só análise', desc: 'Análise neutra' },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setTipoResultadoIntelV1(opt.value)}
+                    className={cn(
+                      'flex flex-col items-center gap-1 p-3 rounded-xl border text-xs transition-all',
+                      tipoResultadoIntelV1 === opt.value
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300'
+                        : 'border-border bg-surface-2 text-text-muted hover:border-border hover:bg-surface',
+                    )}
+                  >
+                    <span className="font-medium">{opt.label}</span>
+                    <span className="text-[10px] opacity-70">{opt.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Observação (opcional)</label>
+              <Textarea
+                value={motivoIntelV1}
+                onChange={e => setMotivoIntelV1(e.target.value)}
+                placeholder="Ex: conversa interessante de objeção de preço, ver resposta da Mari na etapa negociacao."
+                rows={3}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalIntelV1(false)}>Cancelar</Button>
