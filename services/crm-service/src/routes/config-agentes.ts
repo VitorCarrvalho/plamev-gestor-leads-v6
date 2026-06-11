@@ -499,6 +499,20 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
           [d.pi, conversaId]
         ).catch(() => {});
       }
+      // Valor negociado (vo): persiste o valor combinado com o cliente para que
+      // dispararCotacao() consiga selecionar a CampanhasCoberturasTabelasId correta (Req 4).
+      const voRaw = d.vo ?? d.valor_ofertado;
+      if (voRaw != null && voRaw !== '') {
+        const voNum = typeof voRaw === 'number'
+          ? voRaw
+          : parseFloat(String(voRaw).replace(',', '.'));
+        if (!isNaN(voNum) && voNum > 0) {
+          execute(
+            `UPDATE conversas SET valor_ofertado=$1 WHERE id=$2`,
+            [voNum, conversaId]
+          ).catch(e => console.warn('[INTERNAL] ⚠️ update conversas.valor_ofertado:', e.message));
+        }
+      }
 
       if (Object.keys(perfilSet).length > 0) {
         const cols = Object.keys(perfilSet);

@@ -18,8 +18,8 @@ const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 pool.on('error', (err) => console.error('[DB] Erro no pool:', err.message));
 
 // ── Primitivos ──────────────────────────────────────────────
-export const query = (sql: string, params?: any[]) => pool.query(sql, params).then(r => r.rows);
-export const one   = (sql: string, params?: any[]) => pool.query(sql, params).then(r => r.rows[0] || null);
+export const query = <T = any>(sql: string, params?: any[]) => pool.query(sql, params).then(r => r.rows as T[]);
+export const one   = <T = any>(sql: string, params?: any[]) => pool.query(sql, params).then(r => (r.rows[0] || null) as T | null);
 export const run   = (sql: string, params?: any[]) => pool.query(sql, params).then(r => r);
 
 // ── Clientes ─────────────────────────────────────────────────
@@ -324,6 +324,7 @@ export async function buscarContextoConversaAtiva(orgId: string, phone: string, 
        c.status,
        c.ia_silenciada,
        c.plano_recomendado,
+       c.valor_ofertado,
        cl.nome AS tutor_nome,
        pp.nome AS nome_pet,
        pp.especie,
