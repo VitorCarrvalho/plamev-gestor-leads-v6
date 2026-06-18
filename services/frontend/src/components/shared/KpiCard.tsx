@@ -13,13 +13,13 @@ interface KpiCardProps {
 }
 
 export const KpiCard: React.FC<KpiCardProps> = ({
-  label, value, icon: Icon, iconColor = 'text-indigo-600', iconBg = 'bg-indigo-100', hint, trend,
+  label, value, icon: Icon, iconColor = 'text-indigo-600', iconBg = 'bg-indigo-100 dark:bg-indigo-900/30', hint, trend,
 }) => (
-  <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 hover:shadow-md transition-shadow">
+  <div className="bg-surface rounded-xl border border-border shadow-sm p-5 hover:shadow-md transition-shadow">
     <div className="flex items-start justify-between gap-3">
       <div className="flex flex-col min-w-0 flex-1">
-        <span className="text-xs text-slate-500 uppercase tracking-wide font-medium">{label}</span>
-        <span className="text-2xl font-bold text-slate-900 tracking-tight mt-1">{value}</span>
+        <span className="text-xs text-text-muted uppercase tracking-wide font-medium">{label}</span>
+        <span className="text-2xl font-bold text-text tracking-tight mt-1">{value}</span>
         {(hint || trend) && (
           <div className="mt-1.5 flex items-center gap-2">
             {trend && (
@@ -27,7 +27,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
                 {trend.positive ? '↑' : '↓'} {Math.abs(trend.value)}%
               </span>
             )}
-            {hint && <span className="text-xs text-slate-400">{hint}</span>}
+            {hint && <span className="text-xs text-text-faint">{hint}</span>}
           </div>
         )}
       </div>

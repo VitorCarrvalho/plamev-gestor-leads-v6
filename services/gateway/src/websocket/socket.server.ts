@@ -457,6 +457,24 @@ export function iniciarSocket(server: HttpServer): SocketServer {
     });
   });
 
+  // ── DB Poller: verifica mensagens novas a cada 2s e emite via socket ──
+  // Igual ao WhatsApp Web: o servidor WebSocket consulta o banco e empurra
+  // direto para os clientes conectados. Sem cadeia HTTP entre serviços.
+  let lastPoll = new Date();
+  setInterval(async () => {
+    const since = lastPoll;
+    lastPoll = new Date();
+    try {
+      const changed = await query<{ conversa_id: string }>(
+        `SELECT DISTINCT conversa_id FROM mensagens WHERE timestamp > $1`,
+        [since],
+      );
+      for (const { conversa_id } of changed) {
+        io.emit('nova_msg', { conversa_id, timestamp: new Date().toISOString() });
+      }
+    } catch { /* ignora falhas de DB no poller */ }
+  }, 2000);
+
   return io;
 }
 

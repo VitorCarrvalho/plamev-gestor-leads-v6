@@ -29,7 +29,7 @@ config({ path: path.join(__dirname, '../../.env') });
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '35mb' }));
 
 app.use((req, _res, next) => {
   console.log(`[CRM-SERVICE] 📥 ${req.method} ${req.url}`);
@@ -193,17 +193,27 @@ app.post('/api/mensagens/enviar-midia', autenticar, async (req, res) => {
     await execute(
       `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por, metadata)
        VALUES ($1,'agent',$2,'supervisora',$3::jsonb)`,
-      [conversa_id, caption || rotulo, JSON.stringify({ mediaType: mimeType.split('/')[0], mimeType, fileName, mediaBase64: base64 })]
+      [conversa_id, caption || rotulo, JSON.stringify({
+        mediaType: mimeType.startsWith('image/') ? 'image' : mimeType.startsWith('video/') ? 'video' : mimeType.startsWith('audio/') ? 'audio' : 'document',
+        mimeType, fileName, mediaBase64: base64,
+      })]
     );
 
     const CHANNEL_SERVICE_URL = process.env.CHANNEL_SERVICE_URL || 'http://channel-service.railway.internal:8080';
     const INTERNAL_SECRET = process.env.INTERNAL_SECRET || 'plamev-internal';
+
     fetch(`${CHANNEL_SERVICE_URL}/internal/send-media`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-internal-secret': INTERNAL_SECRET },
       body: JSON.stringify({ phone: conv.phone, jid: conv.jid, instancia: conv.instancia, base64, mimeType, fileName, caption }),
       signal: AbortSignal.timeout(8000),
     }).catch(e => console.warn('[CRM/enviar-midia] Falha ao encaminhar ao channel-service:', e.message));
+
+    // pg_notify → gateway LISTEN → socket event (elimina hop HTTP)
+    execute(
+      "SELECT pg_notify('chat_nova_mensagem', $1)",
+      [JSON.stringify({ conversa_id, phone: conv.phone, nome: '', msg_cliente: null, msg_mari: caption || rotulo })],
+    ).catch(e => console.warn('[CRM/enviar-midia] pg_notify:', e.message));
 
     res.json({ ok: true });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
@@ -227,6 +237,15 @@ app.post('/api/internal/migrate', async (req, res) => {
     res.json({ ok: true, applied: rows });
   } catch (e: any) {
     res.status(500).json({ erro: e.message, stack: e.stack });
+  }
+});
+
+// ── Global error handler (deve ser o último middleware) ─────────
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const status = err.status || err.statusCode || 500;
+  console.error(`[CRM-SERVICE] ❌ Erro HTTP ${status}:`, err.message);
+  if (!res.headersSent) {
+    res.status(status).json({ erro: err.message || 'Erro interno' });
   }
 });
 

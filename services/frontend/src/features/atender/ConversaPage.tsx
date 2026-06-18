@@ -168,28 +168,51 @@ export const ConversaPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const refresh = () => api.get<any[]>('/api/conversas').then(setConversas);
-    socket.on('nova_msg', refresh);
-    socket.on('conversa_atualizada', refresh);
-    socket.on('ia_status', refresh);
-    document.addEventListener('forcar_refresh_conversas', refresh);
-    return () => { 
-      socket.off('nova_msg', refresh); 
-      socket.off('conversa_atualizada', refresh); 
-      socket.off('ia_status', refresh); 
-      document.removeEventListener('forcar_refresh_conversas', refresh);
+    const fullReload = () => api.get<any[]>('/api/conversas').then(setConversas);
+
+    const onNovaMsg = (d: any) => {
+      // Atualização otimista: move a conversa pro topo imediatamente
+      setConversas(prev => {
+        const idx = prev.findIndex(c => c.conversa_id === d.conversa_id);
+        if (idx < 0) { fullReload(); return prev; }
+        const updated = {
+          ...prev[idx],
+          ultima_msg_ts: d.timestamp || new Date().toISOString(),
+          ultima_msg_conteudo: d.msg_cliente || d.msg_mari || prev[idx].ultima_msg_conteudo,
+        };
+        return [updated, ...prev.filter((_, i) => i !== idx)];
+      });
+      // Sincronização completa em background
+      fullReload();
+    };
+
+    socket.on('nova_msg', onNovaMsg);
+    socket.on('conversa_atualizada', fullReload);
+    socket.on('ia_status', fullReload);
+    document.addEventListener('forcar_refresh_conversas', fullReload);
+    return () => {
+      socket.off('nova_msg', onNovaMsg);
+      socket.off('conversa_atualizada', fullReload);
+      socket.off('ia_status', fullReload);
+      document.removeEventListener('forcar_refresh_conversas', fullReload);
     };
   }, [socket]);
 
-  const filtradas = conversas.filter(c => {
-    if (filtroEtapa !== 'todas' && c.etapa !== filtroEtapa) return false;
-    if (filtroTemp  !== 'todas' && (c.temperatura_lead || 'morno') !== filtroTemp) return false;
-    if (!busca.trim()) return true;
-    const q = busca.toLowerCase();
-    return (c.nome_cliente || '').toLowerCase().includes(q)
-      || (c.nome_pet || '').toLowerCase().includes(q)
-      || (c.phone || '').includes(q);
-  });
+  const filtradas = conversas
+    .filter(c => {
+      if (filtroEtapa !== 'todas' && c.etapa !== filtroEtapa) return false;
+      if (filtroTemp  !== 'todas' && (c.temperatura_lead || 'morno') !== filtroTemp) return false;
+      if (!busca.trim()) return true;
+      const q = busca.toLowerCase();
+      return (c.nome_cliente || '').toLowerCase().includes(q)
+        || (c.nome_pet || '').toLowerCase().includes(q)
+        || (c.phone || '').includes(q);
+    })
+    .sort((a, b) => {
+      const ta = a.ultima_msg_ts ? new Date(a.ultima_msg_ts).getTime() : 0;
+      const tb = b.ultima_msg_ts ? new Date(b.ultima_msg_ts).getTime() : 0;
+      return tb - ta;
+    });
 
   // Contagem por etapa pra popular as pills
   const contEtapa: Record<string, number> = {};
@@ -467,22 +490,53 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
       .catch(() => {});
   }, [conversaId]);
 
-  const carregarConversa = async () => {
-    setLoading(true);
+  // silent=true → não mostra spinner (usado por atualizações em tempo real)
+  const carregarConversa = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const d = await api.get<any>(`/api/conversas/${conversaId}/full`);
       setData(d);
     } catch (e: any) {
       console.error('[ChatWindow] Erro ao carregar conversa:', e.message);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
-  // Mantém a ref sempre apontando para a versão mais recente
-  useEffect(() => { carregarConversaRef.current = carregarConversa; });
+  // Refs separadas: uma para reload completo (ações do supervisor), outra silenciosa (socket)
+  const silentReloadRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    carregarConversaRef.current = () => carregarConversa(false);
+    silentReloadRef.current    = () => carregarConversa(true);
+  });
 
-  // Carregar via REST
+  // Carregar via REST na primeira vez
   useEffect(() => { carregarConversa(); }, [conversaId]);
+
+  // Auto-refresh silencioso: recarrega mensagens quando nova mensagem chega nesta conversa
+  useEffect(() => {
+    const onNovaMsg = (d: any) => {
+      if (d.conversa_id === conversaId) silentReloadRef.current();
+    };
+    const onConversaAtualizada = (d: any) => {
+      if (d.conversa_id === conversaId) silentReloadRef.current();
+    };
+    socket.on('nova_msg', onNovaMsg);
+    socket.on('conversa_atualizada', onConversaAtualizada);
+    return () => {
+      socket.off('nova_msg', onNovaMsg);
+      socket.off('conversa_atualizada', onConversaAtualizada);
+    };
+  }, [socket, conversaId]);
+
+  // Polling de fallback: garante que mensagens apareçam mesmo se o socket event for perdido
+  useEffect(() => {
+    const t = setInterval(() => {
+      api.get<any>(`/api/conversas/${conversaId}/full`)
+        .then(d => setData(d))
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(t);
+  }, [conversaId]);
 
   // Scroll para o final quando novas mensagens chegam (só do container)
   useEffect(() => {
@@ -566,6 +620,7 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
 
   const [modalIntelV1, setModalIntelV1] = useState(false);
   const [motivoIntelV1, setMotivoIntelV1] = useState('');
+  const [tipoResultadoIntelV1, setTipoResultadoIntelV1] = useState<'sucesso' | 'falha' | 'analise'>('analise');
   const [enviandoIntelV1, setEnviandoIntelV1] = useState(false);
 
   const enviarParaIntelV1 = async () => {
@@ -573,10 +628,10 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
     try {
       const r = await api.post<{ ok: boolean; id: number; titulo: string }>(
         `/api/analisar/enviar-intel-v1/${conversaId}`,
-        { motivo: motivoIntelV1 }
+        { motivo: motivoIntelV1, tipo_resultado: tipoResultadoIntelV1 }
       );
       setFeedback({ ok: true, text: `✓ Conversa salva (#${r.id})` });
-      setModalIntelV1(false); setMotivoIntelV1('');
+      setModalIntelV1(false); setMotivoIntelV1(''); setTipoResultadoIntelV1('analise');
       setTimeout(() => setFeedback(null), 3000);
     } catch (e: any) {
       setFeedback({ ok: false, text: e?.message || 'Erro ao salvar' });
@@ -618,19 +673,44 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
           <DialogHeader>
             <DialogTitle>Salvar conversa</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-sm text-slate-600">
-              Um snapshot das mensagens e do perfil atual será salvo em <span className="font-medium">Analisar &gt; Conversas Salvas</span>.
+          <div className="space-y-4">
+            <p className="text-sm text-text-muted">
+              Um snapshot das mensagens e do perfil atual será salvo em <span className="font-medium text-text">Analisar › Conversas Salvas</span>.
             </p>
-            <label className="text-xs font-medium text-slate-600 block">
-              Observação (opcional)
-            </label>
-            <Textarea
-              value={motivoIntelV1}
-              onChange={e => setMotivoIntelV1(e.target.value)}
-              placeholder="Ex: conversa interessante de objeção de preço, ver resposta da Mari na etapa negociacao."
-              rows={3}
-            />
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-2">Como foi essa conversa?</label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: 'sucesso', label: '🏆 Fechou venda', desc: 'A Mari aprende o que fazer' },
+                  { value: 'falha',   label: '❌ Não converteu', desc: 'A Mari aprende o que evitar' },
+                  { value: 'analise', label: '📋 Só análise', desc: 'Análise neutra' },
+                ] as const).map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setTipoResultadoIntelV1(opt.value)}
+                    className={cn(
+                      'flex flex-col items-center gap-1 p-3 rounded-xl border text-xs transition-all',
+                      tipoResultadoIntelV1 === opt.value
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300'
+                        : 'border-border bg-surface-2 text-text-muted hover:border-border hover:bg-surface',
+                    )}
+                  >
+                    <span className="font-medium">{opt.label}</span>
+                    <span className="text-[10px] opacity-70">{opt.desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-text-muted block mb-1">Observação (opcional)</label>
+              <Textarea
+                value={motivoIntelV1}
+                onChange={e => setMotivoIntelV1(e.target.value)}
+                placeholder="Ex: conversa interessante de objeção de preço, ver resposta da Mari na etapa negociacao."
+                rows={3}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModalIntelV1(false)}>Cancelar</Button>
@@ -688,6 +768,7 @@ const ChatWindow: React.FC<{ conversaId: string }> = ({ conversaId }) => {
         onClearReply={() => setReplyTo(null)}
         onSend={handleSend}
         onAgendar={() => setModalAgendar(true)}
+        onMidiaEnviada={() => silentReloadRef.current()}
       />
 
       {/* Modal Agendar */}

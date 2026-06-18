@@ -4,6 +4,7 @@ import cors from 'cors';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { config } from 'dotenv';
 import path from 'path';
+import { Client } from 'pg';
 import { iniciarSocket, notificarDashboard } from './websocket/socket.server';
 
 config({ path: path.join(__dirname, '../../.env') });
@@ -141,8 +142,53 @@ app.post(['/interno/nova-msg', '/internal/nova-msg'], (req, res) => {
 // ── WebSocket Server ─────────────────────────────────────────
 iniciarSocket(server);
 
+// ── PostgreSQL LISTEN para notificações em tempo real ────────
+// Mecanismo: CRM chama pg_notify('chat_nova_mensagem', payload) ao salvar
+// mensagem → esta conexão dedicada recebe instantaneamente → emite socket.
+// Elimina o hop HTTP CRM→gateway que era a causa de falhas silenciosas.
+async function initPgListen(): Promise<void> {
+  const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://geta@localhost:5432/mariv3';
+  const client = new Client({ connectionString: DATABASE_URL });
+
+  client.on('error', (err: Error) => {
+    console.error('[GATEWAY] PG LISTEN error:', err.message);
+  });
+
+  try {
+    await client.connect();
+    await client.query("LISTEN chat_nova_mensagem");
+    console.log('[GATEWAY] 🎧 PG LISTEN ativo em chat_nova_mensagem');
+
+    client.on('notification', (msg: any) => {
+      try {
+        const p = JSON.parse(msg.payload || '{}');
+        notificarDashboard(
+          String(p.conversa_id || ''),
+          String(p.phone || ''),
+          String(p.nome || ''),
+          p.msg_cliente ? String(p.msg_cliente) : null,
+          p.msg_mari   ? String(p.msg_mari)    : null,
+        );
+      } catch (e: any) {
+        console.warn('[GATEWAY] PG notify parse error:', e.message);
+      }
+    });
+
+    client.on('end', () => {
+      console.warn('[GATEWAY] PG LISTEN desconectado — reconectando em 5s');
+      setTimeout(initPgListen, 5000);
+    });
+
+  } catch (e: any) {
+    console.error('[GATEWAY] PG LISTEN falha ao conectar:', e.message);
+    await client.end().catch(() => {});
+    setTimeout(initPgListen, 5000);
+  }
+}
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[GATEWAY] 🚀 Rodando na porta ${PORT}`);
   console.log(`[GATEWAY] 🔗 CRM -> ${CRM_SERVICE_URL}`);
   console.log(`[GATEWAY] 🔗 Channels -> ${CHANNEL_SERVICE_URL}`);
+  initPgListen().catch(e => console.error('[GATEWAY] PG LISTEN init:', e.message));
 });

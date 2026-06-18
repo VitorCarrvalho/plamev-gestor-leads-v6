@@ -1,12 +1,13 @@
 /**
  * routes/analisar.ts — Pilar Analisar
- * - Salvas (conversas_salvas)
+ * - Salvas (conversas_salvas) + análise IA
  * - Funil (funil_conversao agregado)
  * - Performance (por agente)
  */
 import { Router } from 'express';
 import { autenticar } from '../middleware/auth';
 import { query, execute } from '../config/db';
+import { runAnalise } from '../services/analise-ia';
 
 const router = Router();
 router.use(autenticar);
@@ -18,7 +19,9 @@ router.get('/salvas', async (_req, res) => {
     const rows = await query<any>(`
       SELECT 'r_' || cs.id::text AS id, cs.conversa_id, cs.titulo, cs.motivo, cs.tags,
              cs.criado_em, 'real'::text AS tipo,
-             c.canal, cli.nome AS nome_cliente, pp.nome AS nome_pet
+             c.canal, cli.nome AS nome_cliente, pp.nome AS nome_pet,
+             cs.tipo_resultado,
+             (cs.analise_resultado IS NOT NULL) AS tem_analise
       FROM conversas_salvas cs
       LEFT JOIN conversas c ON c.id = cs.conversa_id
       LEFT JOIN clientes cli ON cli.id = c.client_id
@@ -32,7 +35,9 @@ router.get('/salvas', async (_req, res) => {
              sc.criado_em, 'sandbox'::text AS tipo,
              sc.canal,
              NULL AS nome_cliente,
-             sc.perfil_lead->>'nome' AS nome_pet
+             sc.perfil_lead->>'nome' AS nome_pet,
+             'analise'::text AS tipo_resultado,
+             false AS tem_analise
       FROM sandbox_cenarios sc
 
       ORDER BY criado_em DESC
@@ -54,6 +59,7 @@ router.get('/salvas/:id', async (req, res) => {
         titulo: sc.nome, motivo: sc.descricao,
         tags: ['simulator'], canal: sc.canal, criado_em: sc.criado_em,
         snapshot_msgs: sc.mensagens, snapshot_perfil: sc.perfil_lead,
+        tipo_resultado: 'analise', tem_analise: false,
       }});
     } else {
       const numId = id.startsWith('r_') ? id.slice(2) : id;
@@ -77,13 +83,79 @@ router.delete('/salvas/:id', async (req, res) => {
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
 });
 
+// ── Análise IA ──────────────────────────────────────────────────
+// POST /api/analisar/salvas/r_123/analisar
+// Dispara análise em background (evita timeout do proxy Railway ~30s).
+// Retorna imediatamente com status='processando' ou resultado cached.
+router.post('/salvas/:id/analisar', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const forcar = req.query.forcar === 'true';
+
+    if (!id.startsWith('r_')) {
+      res.status(400).json({ erro: 'Análise disponível apenas para conversas reais (prefixo r_)' });
+      return;
+    }
+
+    const numId = parseInt(id.slice(2), 10);
+
+    const rows = await query<any>(
+      `SELECT analise_resultado, analise_status FROM conversas_salvas WHERE id = $1`, [numId]
+    );
+    if (!rows[0]) { res.status(404).json({ erro: 'Conversa não encontrada' }); return; }
+
+    // Retorna resultado cached (sem forçar re-análise)
+    if (!forcar && rows[0].analise_resultado) {
+      res.json({ ok: true, status: 'concluida', analise: rows[0].analise_resultado, cached: true });
+      return;
+    }
+
+    // Já está processando → não dispara duplicata
+    if (rows[0].analise_status === 'processando') {
+      res.json({ ok: true, status: 'processando' });
+      return;
+    }
+
+    // Dispara análise em background sem bloquear a resposta
+    runAnalise(numId).catch(err => console.error('[ANALISE-IA] background error:', err.message));
+
+    res.json({ ok: true, status: 'processando' });
+  } catch (e: any) {
+    console.error('[ANALISE-IA]', e.message);
+    res.status(500).json({ erro: e.message });
+  }
+});
+
+// GET /api/analisar/salvas/r_123/status-analise — polling endpoint
+router.get('/salvas/:id/status-analise', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id.startsWith('r_')) {
+      res.status(400).json({ erro: 'Apenas conversas reais (prefixo r_)' });
+      return;
+    }
+    const numId = parseInt(id.slice(2), 10);
+    const rows = await query<any>(
+      `SELECT analise_status, analise_resultado FROM conversas_salvas WHERE id = $1`, [numId]
+    );
+    if (!rows[0]) { res.status(404).json({ erro: 'Não encontrada' }); return; }
+    const { analise_status, analise_resultado } = rows[0];
+    res.json({
+      ok: true,
+      status: analise_status || 'pendente',
+      analise: analise_resultado || null,
+    });
+  } catch (e: any) { res.status(500).json({ erro: e.message }); }
+});
+
 // ── Enviar conversa para análise no Intelligence V1 ────────────────────────
-// Faz snapshot das mensagens + perfil no momento e tagueia com 'intel_v1_analise'.
-// O Intelligence V1 lê essa tabela via pool mariv3 e exibe na aba Sandbox > Análise.
 router.post('/enviar-intel-v1/:conversaId', async (req, res) => {
   try {
     const { conversaId } = req.params;
     const motivo: string = (req.body?.motivo || '').toString().slice(0, 2000);
+    const tipoResultado = ['sucesso', 'falha', 'analise'].includes(req.body?.tipo_resultado)
+      ? req.body.tipo_resultado
+      : 'analise';
 
     const conv = await query<any>(
       `SELECT c.id, c.canal, c.etapa, c.score, c.plano_recomendado, c.objecao_principal,
@@ -95,7 +167,7 @@ router.post('/enviar-intel-v1/:conversaId', async (req, res) => {
     if (!conv[0]) { res.status(404).json({ erro: 'Conversa não encontrada' }); return; }
 
     const mensagens = await query<any>(
-      `SELECT role, enviado_por, conteudo, timestamp, obsidian_arquivos
+      `SELECT role, enviado_por, conteudo, timestamp
        FROM mensagens WHERE conversa_id = $1 ORDER BY timestamp ASC`, [conversaId]
     );
     const perfil = await query<any>(
@@ -108,11 +180,11 @@ router.post('/enviar-intel-v1/:conversaId', async (req, res) => {
 
     const r = await query<any>(
       `INSERT INTO conversas_salvas
-         (conversa_id, titulo, motivo, tags, snapshot_msgs, snapshot_perfil, analise_status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'pendente')
+         (conversa_id, titulo, motivo, tags, snapshot_msgs, snapshot_perfil, analise_status, tipo_resultado)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pendente', $7)
        RETURNING id`,
       [conversaId, titulo, motivo || null, ['intel_v1_analise'],
-       JSON.stringify(mensagens), JSON.stringify(perfil[0] || {})]
+       JSON.stringify(mensagens), JSON.stringify(perfil[0] || {}), tipoResultado]
     );
     res.json({ ok: true, id: r[0].id, titulo });
   } catch (e: any) { res.status(500).json({ erro: e.message }); }
@@ -121,7 +193,6 @@ router.post('/enviar-intel-v1/:conversaId', async (req, res) => {
 // ── Funil de conversão ─────────────────────────────────────────
 router.get('/funil', async (_req, res) => {
   try {
-    // Etapas canônicas ordenadas
     const ETAPAS_ORDEM = ['acolhimento', 'qualificacao', 'apresentacao_planos', 'negociacao', 'objecao', 'pre_fechamento', 'fechamento'];
     const rows = await query<any>(`
       SELECT etapa, COUNT(*)::int AS n

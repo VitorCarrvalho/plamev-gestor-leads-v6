@@ -127,7 +127,7 @@ Se não tiver cobertura na cidade: não inventar. Verificar com supervisor antes
 
 ## "Vacina tem que tomar várias vezes, cobre tudo?"
 
-*"Para os planos normais cobre a dose anual de cada vacina 😊 Se seu pet é filhote e ainda tá na fase de reforços, tenho planos específicos Baby que cobrem as doses iniciais completas! Qual a idade do seu pet?"*
+*"Para os planos normais cobre a dose anual de cada vacina 😊 Se seu pet é filhote e ainda tá na fase de reforços, já cobre as doses iniciais completas! Qual a idade do seu pet?"*
 
 ---
 

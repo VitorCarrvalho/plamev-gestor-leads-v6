@@ -15,8 +15,8 @@ import {
   formatarDataNascimento,
   normalizarCidade,
   resolverCoberturaIdPorNome,
+  resolverCoberturaPorNomeViaApi,
   type CotacaoPayload,
-  getCoveragePlanByName,
   getCampaignByPlanAndState,
   getCampaignPriceTable,
   findMatchingPriceTable,
@@ -133,7 +133,8 @@ async function dispararCotacao(
     const petRacaNome = dados.pet_raca || dados.raca || dados.rp || conversaAtual?.raca || '';
     const coberturaId = dados.cobertura_id || dados.coberturasId || dados.ci || conversaAtual?.plano_recomendado || '';
     const planoInteresse = dados.plano_interesse || dados.pi || conversaAtual?.plano_recomendado || '';
-    const valorOfertado = dados.valor_ofertado || dados.vo || null;
+    // Valor negociado: prioriza dados_extraidos (mais fresco), depois o persistido na conversa
+    const valorOfertado = dados.valor_ofertado || dados.vo || conversaAtual?.valor_ofertado || null;
 
     if (!nomeCliente || !email || !coberturaId || !cepRaw) {
       console.warn(`${tag} ⚠️ Dados insuficientes para cotação (nome=${!!nomeCliente} email=${!!email} cobertura=${!!coberturaId} cep=${!!cepRaw})`);
@@ -168,68 +169,77 @@ async function dispararCotacao(
     let campanhasCoberturasId: string | undefined;
     let campanhasCoberturasTabelasId: string | undefined;
 
-    // Resolvendo Campanhas Dinâmicas
-    // planoInteresse (pi) tem prioridade; se nulo mas ci é UUID conhecido, faz reverse lookup
+    // ── Resolver nome do plano negociado ──────────────────────
+    // planoInteresse (pi) tem prioridade; se nulo mas ci é UUID conhecido, faz reverse lookup.
     const uuidPatternCheck = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     let planoNomeParaBusca = planoInteresse;
     if (!planoNomeParaBusca && coberturaId && uuidPatternCheck.test(coberturaId)) {
       planoNomeParaBusca = await getPlanNameByCoberturasId(coberturaId);
       if (planoNomeParaBusca) console.log(`${tag} 🔍 Nome do plano resolvido via UUID: ${coberturaId} → "${planoNomeParaBusca}"`);
     }
+    // Se ci foi enviado como string textual ("Advance"), usa-o como nome também.
+    if (!planoNomeParaBusca && coberturaId && !uuidPatternCheck.test(coberturaId)) {
+      planoNomeParaBusca = coberturaId;
+    }
 
     if (planoNomeParaBusca) {
-      console.log(`${tag} 🔍 Buscando campanha para plano "${planoNomeParaBusca}"${valorOfertado ? ` e valor R$ ${valorOfertado}` : ''}`);
-      const planoPlamev = await getCoveragePlanByName(planoNomeParaBusca);
-      if (!planoPlamev) {
-        console.warn(`${tag} ⚠️ Plano não encontrado na tabela planos_plamev_ids: "${planoNomeParaBusca}"`);
-      } else {
-        coberturaIdResolvido = planoPlamev.coberturas_id;
+      console.log(`${tag} 🔍 Resolvendo plano "${planoNomeParaBusca}" via API Plamev${valorOfertado ? ` (valor negociado R$ ${valorOfertado})` : ''}`);
 
-        const campanha = await getCampaignByPlanAndState(planoPlamev.tipo_cobertura, estadoIdUuid, planoNomeParaBusca);
-        if (!campanha) {
-          console.warn(`${tag} ⚠️ Campanha não encontrada para "${planoNomeParaBusca}" no estado ${estadoIdUuid}`);
+      // ── REQ 2: /Coberturas/BuscarCoberturasComPreco ─────────────
+      // Fonte canônica de CoberturasId E TiposCoberturasId (não usar tabela local stale)
+      const cobApi = await resolverCoberturaPorNomeViaApi(planoNomeParaBusca, endereco.uf);
+      if (!cobApi) {
+        console.warn(`${tag} ⚠️ Plano "${planoNomeParaBusca}" não encontrado na API Plamev para UF=${endereco.uf}`);
+        // Fallback: tenta resolver via cache local antigo
+        const fallback = await resolverCoberturaIdPorNome(planoNomeParaBusca, endereco.uf);
+        if (fallback) {
+          coberturaIdResolvido = fallback;
+          console.log(`${tag} ⚠️ Usando fallback local para CoberturasId — sem campanha`);
         } else {
-          campanhasCoberturasId = campanha.CampanhasCoberturasId;
+          await sendResponse(msg, 'Tive um problema ao identificar o plano escolhido. Pode me confirmar qual plano você quer? 😊');
+          return;
+        }
+      } else {
+        coberturaIdResolvido = cobApi.coberturasId;
+        console.log(`${tag} ✅ Req 2: CoberturasId=${cobApi.coberturasId} TiposCoberturasId=${cobApi.tiposCoberturasId} ("${cobApi.nomeApi}")`);
 
-          // Tabela de preços: só resolve se tiver valor ofertado (vo)
-          if (valorOfertado) {
-            const tables = await getCampaignPriceTable(campanha.CampanhasCoberturasId);
-            const precoNumerico = typeof valorOfertado === 'string'
-              ? parseFloat(valorOfertado.replace(',', '.'))
-              : parseFloat(String(valorOfertado));
-
-            if (!isNaN(precoNumerico)) {
-              const tableMatch = findMatchingPriceTable(tables, precoNumerico);
-              if (!tableMatch) {
-                console.warn(`${tag} ⚠️ Tabela de preço não encontrada para R$ ${precoNumerico} — usando campanha sem tabela específica`);
-                const nomesTabelas = tables.map((t: any) => t.Nome).join(' | ');
-                if (nomesTabelas) console.warn(`${tag}   Tabelas disponíveis: ${nomesTabelas}`);
-              } else {
-                campanhasCoberturasTabelasId = tableMatch.Id;
-                console.log(`${tag} ✅ Campanha=${campanhasCoberturasId} Tabela=${campanhasCoberturasTabelasId} (${tableMatch.Nome})`);
-              }
-            }
+        // ── REQ 3: /CampanhasCoberturas/BuscarCampanhasEv ─────────────
+        // Match EXATO do nome (sem incluir variantes promocionais como "ADVANCE 50%")
+        if (cobApi.tiposCoberturasId > 0) {
+          const campanha = await getCampaignByPlanAndState(cobApi.tiposCoberturasId, estadoIdUuid, planoNomeParaBusca);
+          if (!campanha) {
+            console.warn(`${tag} ⚠️ Req 3: campanha não encontrada para "${planoNomeParaBusca}" no estado ${estadoIdUuid}`);
           } else {
-            console.log(`${tag} ℹ️ Campanha resolvida sem valor ofertado — tabela de preço não selecionada`);
+            campanhasCoberturasId = campanha.CampanhasCoberturasId;
+            console.log(`${tag} ✅ Req 3: CampanhasCoberturasId=${campanhasCoberturasId}`);
+
+            // ── REQ 4: /CampanhasCoberturasTabelas/consultar ─────────
+            // Match por valor negociado com tolerância de ±R$1,00
+            if (valorOfertado) {
+              const tables = await getCampaignPriceTable(campanha.CampanhasCoberturasId);
+              const precoNumerico = typeof valorOfertado === 'string'
+                ? parseFloat(valorOfertado.replace(',', '.'))
+                : parseFloat(String(valorOfertado));
+
+              if (!isNaN(precoNumerico)) {
+                const tableMatch = findMatchingPriceTable(tables, precoNumerico);
+                if (!tableMatch) {
+                  console.warn(`${tag} ⚠️ Req 4: tabela não encontrada para R$ ${precoNumerico} — usando campanha sem tabela`);
+                  const nomesTabelas = tables.map((t: any) => t.Nome).join(' | ');
+                  if (nomesTabelas) console.warn(`${tag}   Tabelas disponíveis: ${nomesTabelas}`);
+                } else {
+                  campanhasCoberturasTabelasId = tableMatch.Id;
+                  console.log(`${tag} ✅ Req 4: CampanhasCoberturasTabelasId=${campanhasCoberturasTabelasId} ("${tableMatch.Nome}")`);
+                }
+              }
+            } else {
+              console.log(`${tag} ℹ️ Sem valor negociado — Req 4 (tabela) ignorada`);
+            }
           }
         }
       }
     } else {
-      console.warn(`${tag} ⚠️ Plano de interesse não identificado (pi e ci ausentes) — cotação sem campanha dinâmica`);
-    }
-
-    // Cobertura → UUID fallback se a resolução dinâmica falhou e ci não é UUID
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (coberturaId && !uuidPattern.test(coberturaId) && !campanhasCoberturasTabelasId) {
-      console.log(`${tag} 🔍 ci="${coberturaId}" não é UUID — resolvendo via cache/API para ${endereco.uf}…`);
-      const resolved = await resolverCoberturaIdPorNome(coberturaId, endereco.uf);
-      if (resolved) {
-        coberturaIdResolvido = resolved;
-      } else {
-        console.warn(`${tag} ⚠️ Plano "${coberturaId}" não encontrado — cotação abortada`);
-        await sendResponse(msg, 'Tive um problema ao identificar o plano escolhido. Pode me confirmar qual plano você quer? 😊');
-        return;
-      }
+      console.warn(`${tag} ⚠️ Plano de interesse não identificado (pi e ci ausentes) — cotação sem campanha`);
     }
 
     // DDD + número — strip código de país 55 se presente

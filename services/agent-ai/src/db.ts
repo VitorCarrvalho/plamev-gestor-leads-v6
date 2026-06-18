@@ -18,8 +18,8 @@ const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 pool.on('error', (err) => console.error('[DB] Erro no pool:', err.message));
 
 // ── Primitivos ──────────────────────────────────────────────
-export const query = (sql: string, params?: any[]) => pool.query(sql, params).then(r => r.rows);
-export const one   = (sql: string, params?: any[]) => pool.query(sql, params).then(r => r.rows[0] || null);
+export const query = <T = any>(sql: string, params?: any[]) => pool.query(sql, params).then(r => r.rows as T[]);
+export const one   = <T = any>(sql: string, params?: any[]) => pool.query(sql, params).then(r => (r.rows[0] || null) as T | null);
 export const run   = (sql: string, params?: any[]) => pool.query(sql, params).then(r => r);
 
 // ── Clientes ─────────────────────────────────────────────────
@@ -45,6 +45,19 @@ export async function buscarOuCriarCliente(orgId: string, identificador: string,
     [cliente.id, tipo, identificador]
   );
   return cliente;
+}
+
+// ── Verificação rápida de IA silenciada ───────────────────────
+// Consultada ANTES de qualquer processamento de mensagem (texto, áudio,
+// documento ou imagem) para garantir que IA OFF seja respeitado.
+export async function verificarIaSilenciada(phone: string, canal: string): Promise<boolean> {
+  const row = await one<{ ia_silenciada: boolean }>(
+    `SELECT ia_silenciada FROM conversas
+     WHERE numero_externo=$1 AND canal=$2 AND status='ativa'
+     ORDER BY criado_em DESC LIMIT 1`,
+    [phone, canal],
+  );
+  return row?.ia_silenciada === true;
 }
 
 // ── Conversas ─────────────────────────────────────────────────
@@ -311,6 +324,7 @@ export async function buscarContextoConversaAtiva(orgId: string, phone: string, 
        c.status,
        c.ia_silenciada,
        c.plano_recomendado,
+       c.valor_ofertado,
        cl.nome AS tutor_nome,
        pp.nome AS nome_pet,
        pp.especie,

@@ -43,10 +43,28 @@ describe('normalizarEstados', () => {
 
 describe('normalizarCoberturas', () => {
   it('extrai do wrapper Coberturas', () => {
-    const raw = { Coberturas: [{ Id: 'c1', Nome: 'Slim', Valor: 89.9, Ordem: 1 }] };
+    const raw = { Coberturas: [{ Id: 'c1', Nome: 'Slim', Valor: 89.9, Ordem: 1, TiposCoberturasId: '1' }] };
     const r = normalizarCoberturas(raw);
     expect(r).toHaveLength(1);
-    expect(r[0]).toEqual({ id: 'c1', nome: 'Slim', valor: 89.9, ordem: 1 });
+    expect(r[0]).toEqual({ id: 'c1', nome: 'Slim', valor: 89.9, ordem: 1, tiposCoberturasId: 1 });
+  });
+
+  it('extrai TiposCoberturasId como número (vindo string da API)', () => {
+    const raw = { Coberturas: [{ Id: 'c1', Nome: 'Advance', Valor: 129, Ordem: 2, TiposCoberturasId: '4' }] };
+    const r = normalizarCoberturas(raw);
+    expect(r[0].tiposCoberturasId).toBe(4);
+  });
+
+  it('usa primeiro Valores[].PlanosValor quando Valor não está presente', () => {
+    const raw = { Coberturas: [{
+      Id: 'c1',
+      Nome: 'ADVANCE (PADRÃO)',
+      Ordem: 1,
+      TiposCoberturasId: '4',
+      Valores: [{ PlanosValor: '149.90' }],
+    }]};
+    const r = normalizarCoberturas(raw);
+    expect(r[0].valor).toBeCloseTo(149.90);
   });
 
   it('usa TiposCoberturasNome como fallback de nome', () => {
@@ -69,6 +87,11 @@ describe('normalizarCoberturas', () => {
     const raw = [{ Id: 'c1', Nome: 'Slim', Valor: 89.9, Ordem: 1 }];
     const r = normalizarCoberturas(raw);
     expect(r).toHaveLength(1);
+  });
+
+  it('tiposCoberturasId vira null quando ausente', () => {
+    const raw = [{ Id: 'c1', Nome: 'Slim', Valor: 89.9, Ordem: 1 }];
+    expect(normalizarCoberturas(raw)[0].tiposCoberturasId).toBeNull();
   });
 
   it('retorna array vazio para payload vazio', () => {
@@ -239,8 +262,8 @@ describe('validarPayload', () => {
 
 describe('formatarCoberturasParaPrompt', () => {
   const coberturas: Cobertura[] = [
-    { id: 'uuid1', nome: 'Slim', valor: 89.9, ordem: 1 },
-    { id: 'uuid2', nome: 'Advance', valor: 129.9, ordem: 2 },
+    { id: 'uuid1', nome: 'Slim', valor: 89.9, ordem: 1, tiposCoberturasId: 1 },
+    { id: 'uuid2', nome: 'Advance', valor: 129.9, ordem: 2, tiposCoberturasId: 4 },
   ];
 
   it('inclui nome do plano e valor', () => {

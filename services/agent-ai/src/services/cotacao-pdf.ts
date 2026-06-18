@@ -136,32 +136,66 @@ export async function gerarCotacaoPdf(
 
     y += 4;
 
-    // ── Resumo Financeiro ────────────────────────────────────────
-    y = sectionTitle(doc, 'RESUMO FINANCEIRO', y);
+    // ── Composição da Mensalidade ────────────────────────────────
+    // Detalha cada linha da ComposicaoMensalidade vinda da API:
+    //   - Tipo 1 (cobrança base)         em preto
+    //   - Tipo 2 (descontos recorrentes) em azul, sinal negativo
+    //   - Linhas sem tipo (descontos extras) também em azul se valor < 0
+    y = sectionTitle(doc, 'COMPOSIÇÃO DA MENSALIDADE', y);
 
-    if (resultado.valorMensalidade > 0 && resultado.valorMensalidade !== resultado.valorTotalMensalidade) {
-      row(doc, 'Mensalidade (tabela)', brl(resultado.valorMensalidade), y, GRAY, '#1A1A2E'); y += 16;
-    }
-    if (resultado.valorDescontosMensalidades > 0) {
-      row(doc, 'Descontos', `- ${brl(resultado.valorDescontosMensalidades)}`, y, GRAY, BLUE); y += 16;
-    }
-
-    // Composição por pet (caso haja múltiplos)
-    if (resultado.composicaoMensalidade.length > 1) {
-      for (const item of resultado.composicaoMensalidade) {
-        row(doc, `  ${item.nome}`, brl(item.valor), y, GRAY, '#1A1A2E'); y += 14;
-      }
+    for (const item of resultado.composicaoMensalidade) {
+      const isDesconto = item.valor < 0 || item.tipo === '2' || (item.tipo as any) === 2;
+      const valorTxt = isDesconto
+        ? `- ${brl(Math.abs(item.valor))}`
+        : brl(item.valor);
+      const label = item.porcentagemDesconto != null
+        ? `${item.nome} (${item.porcentagemDesconto.toString().replace('.', ',')}%)`
+        : item.nome;
+      row(doc, label, valorTxt, y, GRAY, isDesconto ? BLUE : '#1A1A2E', isDesconto);
+      y += 16;
     }
 
     // Linha de destaque: mensalidade total
     drawRect(doc, margin, y + 2, W - margin * 2, 22, BLUE_DARK);
     doc.fontSize(10).fillColor(WHITE).font('Helvetica-Bold')
-      .text('MENSALIDADE TOTAL', margin + 8, y + 7, { width: 240 });
+      .text('MENSALIDADE FINAL', margin + 8, y + 7, { width: 240 });
     doc.fontSize(10).fillColor(WHITE).font('Helvetica-Bold')
       .text(brl(resultado.valorTotalMensalidade) + '/mês', margin + 8, y + 7, { width: W - margin * 2 - 16, align: 'right' });
-    y += 30;
+    y += 32;
 
-    if (resultado.valorAdesao > 0) {
+    // ── Composição da Adesão (1ª parcela) ──────────────────────
+    // Inclui mensalidade base, descontos recorrentes e desconto de campanha
+    // (este último frequentemente traz PorcentagemDesconto).
+    if (resultado.composicaoAdesao.length > 0) {
+      y = sectionTitle(doc, 'COMPOSIÇÃO DA ADESÃO (1ª PARCELA)', y);
+
+      for (const item of resultado.composicaoAdesao) {
+        const isDesconto = item.valor < 0 || item.tipo === '2' || (item.tipo as any) === 2;
+        const valorTxt = isDesconto
+          ? `- ${brl(Math.abs(item.valor))}`
+          : brl(item.valor);
+        let label = item.nome;
+        if (item.porcentagemDesconto != null) {
+          const pct = item.porcentagemDesconto.toString().replace('.', ',');
+          label = `${label} (${pct}%)`;
+        }
+        if (item.totalParcelas != null && item.totalParcelas > 1) {
+          label = `${label} — ${item.totalParcelas}x`;
+        }
+        row(doc, label, valorTxt, y, GRAY, isDesconto ? BLUE : '#1A1A2E', isDesconto);
+        y += 16;
+      }
+
+      // Total adesão (= ValorAdesao retornado pela API, já com descontos aplicados)
+      if (resultado.valorAdesao > 0) {
+        drawRect(doc, margin, y + 2, W - margin * 2, 22, BLUE);
+        doc.fontSize(10).fillColor(WHITE).font('Helvetica-Bold')
+          .text('TOTAL DA ADESÃO', margin + 8, y + 7, { width: 240 });
+        doc.fontSize(10).fillColor(WHITE).font('Helvetica-Bold')
+          .text(brl(resultado.valorAdesao), margin + 8, y + 7, { width: W - margin * 2 - 16, align: 'right' });
+        y += 32;
+      }
+    } else if (resultado.valorAdesao > 0) {
       row(doc, 'Taxa de adesão (1x)', brl(resultado.valorAdesao), y, GRAY, '#1A1A2E'); y += 16;
     }
 
@@ -172,7 +206,7 @@ export async function gerarCotacaoPdf(
       y += 14;
     }
 
-    y += 12;
+    y += 8;
 
     // ── Informações de Pagamento ─────────────────────────────────
     y = sectionTitle(doc, 'PAGAMENTO', y);

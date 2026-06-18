@@ -1,13 +1,14 @@
 /**
  * cotacao.ts — Skill de cotação Plamev
  *
- * Fluxo:
- *   1. buscarEstados()                          → UF disponíveis
- *   2. buscarCoberturas(estadoUUID)             → planos + preços + IDs
- *   3. buscarRacas(especie)                     → raças por espécie (cache pesado)
- *   4. buscarEnderecoPorCep(cep)               → ViaCEP (sem auth)
- *   5. submeterCotacao(payload)                → POST final
+ * Fluxo de 5 requisições sequenciais à API Plamev:
+ *   1. /Estados/Consultar                       → UF → EstadosId (UUID), cacheado em plamev_estados
+ *   2. /Coberturas/BuscarCoberturasComPreco     → CoberturasId + TiposCoberturasId do plano
+ *   3. /CampanhasCoberturas/BuscarCampanhasEv   → CampanhasCoberturasId (match EXATO do plano)
+ *   4. /CampanhasCoberturasTabelas/consultar    → CampanhasCoberturasTabelasId (match por valor)
+ *   5. /Cotacoes/SolicitaCotacaoPet             → POST final com todos os IDs
  */
+import { pool } from '../db';
 
 const BASE_URL = 'https://service.plamev.com.br';
 const VIACEP_URL = 'https://viacep.com.br/ws';
@@ -37,10 +38,11 @@ export interface Estado {
 }
 
 export interface Cobertura {
-  id: string;   // UUID → CoberturasId no POST
-  nome: string;
+  id: string;             // UUID → CoberturasId no POST (Req 2)
+  nome: string;           // ex: "ADVANCE (PADRÃO)"
   valor: number;
   ordem: number;
+  tiposCoberturasId: number | null; // → TiposCoberturasId para Req 3
 }
 
 export interface Raca {
@@ -89,6 +91,8 @@ export interface CotacaoResultItem {
   nome: string;
   valor: number;
   tipo?: string;
+  porcentagemDesconto?: number; // ex: 35.72 — para descontos de campanha
+  totalParcelas?: number;
 }
 
 export interface PetPlano {
@@ -124,6 +128,9 @@ export interface ValidationError {
 }
 
 // ── Caches ────────────────────────────────────────────────────────────────
+// Estados: persistidos em plamev_estados (UUIDs não mudam). Mantemos cache
+// em memória de curtíssima duração apenas para evitar SELECTs repetidos no
+// mesmo request. Coberturas e raças continuam em memória (TTL 30 min).
 
 let _estadosCache: { at: number; data: Estado[] } | null = null;
 const _coberturasCache = new Map<string, { at: number; data: Cobertura[] }>();
@@ -145,12 +152,23 @@ export function normalizarCoberturas(raw: any): Cobertura[] {
   const arr = Array.isArray(lista) ? lista : Object.values(lista ?? {});
   return arr
     .filter((c: any) => c?.Id)
-    .map((c: any) => ({
-      id: c.Id,
-      nome: c.Nome ?? c.TiposCoberturasNome ?? c.CoberturasNome ?? 'Plano',
-      valor: parseFloat(c.Valor ?? c.ValorMensalidade ?? 0),
-      ordem: parseInt(c.Ordem ?? '99', 10),
-    }))
+    .map((c: any) => {
+      // Valor base: tenta campos diretos primeiro; caso ausentes, usa o primeiro item de Valores[]
+      let valor = parseFloat(c.Valor ?? c.ValorMensalidade ?? 0);
+      if ((isNaN(valor) || valor === 0) && Array.isArray(c.Valores) && c.Valores.length > 0) {
+        valor = parseFloat(c.Valores[0]?.PlanosValor ?? 0);
+      }
+      const tcRaw = c.TiposCoberturasId ?? null;
+      const tiposCoberturasId =
+        tcRaw == null ? null : (typeof tcRaw === 'string' ? parseInt(tcRaw, 10) : Number(tcRaw));
+      return {
+        id: c.Id,
+        nome: c.Nome ?? c.TiposCoberturasNome ?? c.CoberturasNome ?? 'Plano',
+        valor: isNaN(valor) ? 0 : valor,
+        ordem: parseInt(c.Ordem ?? '99', 10),
+        tiposCoberturasId: tiposCoberturasId != null && !isNaN(tiposCoberturasId) ? tiposCoberturasId : null,
+      };
+    })
     .sort((a, b) => a.ordem - b.ordem);
 }
 
@@ -187,10 +205,44 @@ export function formatarDataNascimento(input: string): string | null {
 
 export async function buscarEstados(): Promise<Estado[]> {
   if (_estadosCache && isFresh(_estadosCache.at)) return _estadosCache.data;
+
+  // 1. Tenta carregar da tabela persistente (IDs não mudam — Req 1 só deve
+  //    rodar na primeira vez ou quando a tabela é truncada).
+  try {
+    const { rows } = await pool.query(
+      `SELECT estado_id AS id, nome, uf FROM plamev_estados ORDER BY uf`,
+    );
+    if (rows.length > 0) {
+      const data = rows.map(r => ({ id: r.id, nome: r.nome || r.uf, uf: r.uf })) as Estado[];
+      _estadosCache = { at: Date.now(), data };
+      console.log(`[COTACAO] 🗃️ Estados carregados do DB: ${data.length}`);
+      return data;
+    }
+  } catch (e: any) {
+    console.warn(`[COTACAO] ⚠️ Falha ao ler plamev_estados: ${e.message}`);
+  }
+
+  // 2. Tabela vazia → consulta a API e persiste
   const raw = await plamevGet('/Estados/Consultar');
   const data = normalizarEstados(raw);
+
+  try {
+    for (const e of data) {
+      await pool.query(
+        `INSERT INTO plamev_estados (uf, estado_id, nome, sincronizado_em)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (uf) DO UPDATE
+         SET estado_id = EXCLUDED.estado_id, nome = EXCLUDED.nome, sincronizado_em = NOW()`,
+        [e.uf, e.id, e.nome],
+      );
+    }
+    console.log(`[COTACAO] 💾 plamev_estados populada: ${data.length} estados`);
+  } catch (e: any) {
+    console.warn(`[COTACAO] ⚠️ Falha ao persistir plamev_estados: ${e.message}`);
+  }
+
   _estadosCache = { at: Date.now(), data };
-  console.log(`[COTACAO] ✅ Estados carregados: ${data.length}`);
+  console.log(`[COTACAO] ✅ Estados carregados via API: ${data.length}`);
   return data;
 }
 
@@ -232,7 +284,6 @@ export async function encontrarRacaPorNome(nome: string, especie: '1' | '2'): Pr
 
 // ── Resolução de cobertura por nome com cache local ───────────────────────
 // Busca em planos_coberturas_api primeiro; se ausente, chama API e auto-salva.
-import { pool } from '../db';
 
 export async function resolverCoberturaIdPorNome(nome: string, uf: string): Promise<string | null> {
   const slug = nome.trim();
@@ -392,7 +443,7 @@ export async function submeterCotacao(payload: CotacaoPayload): Promise<CotacaoR
     Ddd: payload.ddd,
     Telefone: payload.telefone,
     Site: 1,
-    CotacoesOrigensId: 1,
+    CotacoesOrigensId: 2,
     FormaPagamento: payload.formaPagamento,
     Cep: payload.cep,
     Logradouro: payload.logradouro,
@@ -476,10 +527,15 @@ export async function submeterCotacao(payload: CotacaoPayload): Promise<CotacaoR
           nome: i.Nome ?? '',
           valor: Number(i.Valor ?? 0),
           tipo: i.Tipo ?? undefined,
+          porcentagemDesconto: i.PorcentagemDesconto != null ? Number(i.PorcentagemDesconto) : undefined,
+          totalParcelas: i.TotalParcelas != null ? Number(i.TotalParcelas) : undefined,
         })),
         composicaoAdesao: (data.ComposicaoAdesao ?? []).map((i: any) => ({
           nome: i.Nome ?? '',
           valor: Number(i.Valor ?? 0),
+          tipo: i.Tipo ?? undefined,
+          porcentagemDesconto: i.PorcentagemDesconto != null ? Number(i.PorcentagemDesconto) : undefined,
+          totalParcelas: i.TotalParcelas != null ? Number(i.TotalParcelas) : undefined,
         })),
         descontos: (data.Descontos ?? []).map((i: any) => ({
           nome: i.Nome ?? '',
@@ -507,6 +563,62 @@ export async function submeterCotacao(payload: CotacaoPayload): Promise<CotacaoR
 
   console.error('[COTACAO] ❌ Falha após 3 tentativas:', lastError?.message);
   throw lastError!;
+}
+
+// ── Match de plano na resposta da Req 2 (BuscarCoberturasComPreco) ───────
+// Esta é a fonte canônica para CoberturasId E TiposCoberturasId.
+// Match: 1º exato (case-insensitive), depois ignora sufixos comuns como "(PADRÃO)".
+
+export interface CoberturaResolvida {
+  coberturasId: string;
+  tiposCoberturasId: number;
+  nomeApi: string;       // nome original retornado pela API (ex: "ADVANCE (PADRÃO)")
+  valor: number;
+}
+
+function planoBaseName(nome: string): string {
+  // Remove sufixos como "(PADRÃO)", "(NACIONAL)" etc — comparação só do nome base
+  return nome.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+export async function resolverCoberturaPorNomeViaApi(
+  planName: string,
+  uf: string,
+): Promise<CoberturaResolvida | null> {
+  if (!planName) return null;
+  const alvo = planoBaseName(planName);
+  if (!alvo) return null;
+
+  const coberturas = await buscarCoberturasParaUF(uf);
+  // Coberturas vem do normalizarCoberturas — preserva tiposCoberturasId
+
+  // 1. exato
+  let match = coberturas.find(c => planoBaseName(c.nome) === alvo);
+
+  // 2. prefixo (alvo é o início do nome da API; ex.: "advance" matches "advance" mas NÃO "advance plus")
+  if (!match) {
+    match = coberturas.find(c => {
+      const base = planoBaseName(c.nome);
+      return base === alvo || base.startsWith(alvo + ' ');
+    });
+  }
+
+  if (!match) {
+    const disponiveis = coberturas.map(c => c.nome).join(' | ');
+    console.warn(`[COTACAO] ⚠️ Plano "${planName}" não encontrado na Req 2 (UF=${uf}). Disponíveis: ${disponiveis}`);
+    return null;
+  }
+
+  if (match.tiposCoberturasId == null) {
+    console.warn(`[COTACAO] ⚠️ Cobertura "${match.nome}" sem TiposCoberturasId — Req 3 pode falhar`);
+  }
+
+  return {
+    coberturasId: match.id,
+    tiposCoberturasId: match.tiposCoberturasId ?? 0,
+    nomeApi: match.nome,
+    valor: match.valor,
+  };
 }
 
 // ── Campanhas e Tabelas Dinâmicas ────────────────────────────────────────
@@ -552,26 +664,19 @@ export async function getCampaignByPlanAndState(tipoCobertura: number, estadoId:
   try {
     const raw = await plamevGet(`/CampanhasCoberturas/BuscarCampanhasEv?TiposCoberturasId=${tipoCobertura}&EstadosId=${encodeURIComponent(estadoId)}`);
     const campanhas = Object.values(raw ?? {});
-    const normalizedPlanName = normalizePlanName(planName);
+    const alvo = normalizePlanName(planName);
 
-    // Score-based matching: exact (100) > campanha contém plano (50) > plano contém campanha (25)
-    // Garante match mesmo quando a API retorna nomes como "Advance Plus Nacional" ou "Campanha Advance Plus 2026"
-    const scored = campanhas
+    // Match EXATO case-insensitive — não usar `includes`:
+    // - "ADVANCE" deve casar apenas com "ADVANCE", nunca com "ADVANCE 50%" ou "Advance Plus"
+    // - Variantes promocionais ("ADVANCE 50%") são campanhas alternativas e devem ser
+    //   ignoradas quando o cliente está negociando o plano-base.
+    const match = campanhas
       .filter((c: any) => c?.CampanhasCoberturasId && c?.CampanhasCoberturasNome)
-      .map((c: any) => {
-        const cn = normalizePlanName(c.CampanhasCoberturasNome);
-        let score = 0;
-        if (cn === normalizedPlanName) score = 100;
-        else if (cn.includes(normalizedPlanName)) score = 50;
-        else if (normalizedPlanName.includes(cn) && cn.length >= 4) score = 25;
-        return { c, score };
-      })
-      .filter(x => x.score > 0)
-      .sort((a, b) => b.score - a.score);
+      .find((c: any) => normalizePlanName(c.CampanhasCoberturasNome) === alvo);
 
-    const best = scored[0]?.c;
-    if (best) {
-      console.log(`[COTACAO] ✅ Campanha encontrada: "${best.CampanhasCoberturasNome}" (score=${scored[0].score}) → ${best.CampanhasCoberturasId}`);
+    if (match) {
+      const best = match as any;
+      console.log(`[COTACAO] ✅ Campanha encontrada (match exato): "${best.CampanhasCoberturasNome}" → ${best.CampanhasCoberturasId}`);
       return {
         CampanhasCoberturasId: best.CampanhasCoberturasId,
         CampanhasCoberturasNome: best.CampanhasCoberturasNome,
@@ -579,7 +684,7 @@ export async function getCampaignByPlanAndState(tipoCobertura: number, estadoId:
     }
 
     const nomesDisponiveis = campanhas.map((c: any) => (c as any)?.CampanhasCoberturasNome).filter(Boolean).join(' | ');
-    console.warn(`[COTACAO] ⚠️ Campanha não encontrada para "${planName}" (tipo=${tipoCobertura}, estado=${estadoId}). Disponíveis: ${nomesDisponiveis || 'nenhuma'}`);
+    console.warn(`[COTACAO] ⚠️ Campanha não encontrada (match exato) para "${planName}" (tipo=${tipoCobertura}, estado=${estadoId}). Disponíveis: ${nomesDisponiveis || 'nenhuma'}`);
     return null;
   } catch (e: any) {
     console.warn(`[COTACAO] ⚠️ Erro ao buscar campanhas na API:`, e.message);

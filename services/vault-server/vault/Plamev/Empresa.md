@@ -113,18 +113,6 @@ Os procedimentos utilizados se renovam a cada 12 meses da data de utilização.
 
 ---
 
-## Planos Baby (filhotes)
-
-Para pets em fase de vacinação inicial. Coberturas específicas para filhotes:
-- Advance Baby, Platinum Baby, Diamond Baby
-- Inclui vacinas de reforço (exceção à regra geral de dose única anual)
-- Consultas pediátricas inclusas
-- Carências reduzidas para vacinas essenciais
-
-> Indicar Baby quando o cliente mencionar que o pet é filhote.
-
----
-
 ## Planos SOS Pet
 
 Modalidade de assistência, não plano completo:

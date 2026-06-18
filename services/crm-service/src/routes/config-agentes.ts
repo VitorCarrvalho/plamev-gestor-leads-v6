@@ -321,17 +321,20 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
     return;
   }
   res.json({ ok: true }); // responde antes de salvar para não bloquear
-  try {
-    const phone    = String(message.phone);
-    const canal    = message.canal;
-    const agentSlug = message.agentSlug || 'mari';
-    const nome     = message.nome || null;
-    const texto    = (req.body?.input_text_override || message.texto || '').toString();
-    const instancia = message.instancia || null;
-    const senderChip = message.senderChip || null;
-    const jid      = message.jid || null;
-    const msgIdExterno = message.id || null;
 
+  // Extraídos antes do try para ficarem acessíveis no finally
+  const phone    = String(message.phone);
+  const canal    = message.canal;
+  const agentSlug = message.agentSlug || 'mari';
+  const nome     = message.nome || null;
+  const texto    = (req.body?.input_text_override || message.texto || '').toString();
+  const instancia = message.instancia || null;
+  const senderChip = message.senderChip || null;
+  const jid      = message.jid || null;
+  const msgIdExterno = message.id || null;
+  let conversaId: string | null = null;
+
+  try {
     // 1. Resolve agent_id
     const agente = await queryOne<any>('SELECT id, org_id FROM agentes WHERE slug=$1 LIMIT 1', [agentSlug]);
     const agentId = agente?.id;
@@ -373,7 +376,6 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
       `SELECT id, etapa FROM conversas WHERE client_id=$1 AND agent_id=$2 AND canal=$3 AND org_id=$4 AND status='ativa' ORDER BY criado_em DESC LIMIT 1`,
       [clientId, agentId, canal, orgId]
     );
-    let conversaId: string;
     if (conversa) {
       conversaId = conversa.id;
     } else {
@@ -396,15 +398,17 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
         const mediaFileName: string | null  = req.body?.media_file_name || null;
         const MAX_BASE64 = 5 * 1024 * 1024;
         const base64ToStore = (mediaBase64Raw && mediaBase64Raw.length <= MAX_BASE64) ? mediaBase64Raw : null;
+        const normMediaType = (mt: string | null) =>
+          mt?.startsWith('image/') ? 'image' : mt?.startsWith('video/') ? 'video' : mt?.startsWith('audio/') ? 'audio' : 'document';
         const metadata = base64ToStore
           ? JSON.stringify({
-              mediaType: mediaMimeType?.split('/')[0] || 'audio',
+              mediaType: normMediaType(mediaMimeType),
               mimeType: mediaMimeType,
               fileName: mediaFileName,
               mediaBase64: base64ToStore,
             })
           : (mediaMimeType
-              ? JSON.stringify({ mediaType: mediaMimeType.split('/')[0], mimeType: mediaMimeType, fileName: mediaFileName })
+              ? JSON.stringify({ mediaType: normMediaType(mediaMimeType), mimeType: mediaMimeType, fileName: mediaFileName })
               : null);
 
         if (metadata) {
@@ -495,6 +499,20 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
           [d.pi, conversaId]
         ).catch(() => {});
       }
+      // Valor negociado (vo): persiste o valor combinado com o cliente para que
+      // dispararCotacao() consiga selecionar a CampanhasCoberturasTabelasId correta (Req 4).
+      const voRaw = d.vo ?? d.valor_ofertado;
+      if (voRaw != null && voRaw !== '') {
+        const voNum = typeof voRaw === 'number'
+          ? voRaw
+          : parseFloat(String(voRaw).replace(',', '.'));
+        if (!isNaN(voNum) && voNum > 0) {
+          execute(
+            `UPDATE conversas SET valor_ofertado=$1 WHERE id=$2`,
+            [voNum, conversaId]
+          ).catch(e => console.warn('[INTERNAL] ⚠️ update conversas.valor_ofertado:', e.message));
+        }
+      }
 
       if (Object.keys(perfilSet).length > 0) {
         const cols = Object.keys(perfilSet);
@@ -556,8 +574,67 @@ internalRouter.post('/salvar-interacao', async (req, res) => {
     }
 
     console.log(`[INTERNAL] ✅ Interação salva — conversa=${conversaId} etapa=${novaEtapa || '(sem mudança)'} msgs=${texto ? 1 : 0}+${resposta ? 1 : 0} custo=${custo ? `${custo.input_tokens}+${custo.output_tokens}tk` : 'n/a'}`);
+
   } catch (e: any) {
     console.error('[INTERNAL] ❌ Erro ao salvar interação:', e.message);
+  } finally {
+    // pg_notify dispara o socket event no gateway via PostgreSQL LISTEN/NOTIFY.
+    // Mais confiável que HTTP: mesmo banco, zero hops de rede extra.
+    if (conversaId) {
+      execute(
+        "SELECT pg_notify('chat_nova_mensagem', $1)",
+        [JSON.stringify({ conversa_id: conversaId, phone, nome: nome || '', msg_cliente: texto || null, msg_mari: resposta || null })],
+      ).catch(e => console.warn('[CRM/salvar-interacao] pg_notify:', e.message));
+    }
+  }
+});
+
+// Salva mensagem enviada pelo humano (fromMe=true) quando a IA está silenciada.
+// Só persiste se a conversa tiver ia_silenciada=true — evita duplicar mensagens da IA.
+internalRouter.post('/salvar-msg-agente-humano', async (req, res) => {
+  if (!checkInternalSecret(req, res)) return;
+  const { phone, canal, agentSlug, texto, msgIdExterno } = req.body || {};
+  if (!phone || !canal || !texto) {
+    res.status(400).json({ erro: 'phone, canal e texto são obrigatórios' });
+    return;
+  }
+  res.json({ ok: true });
+
+  try {
+    const agente = await queryOne<any>('SELECT id FROM agentes WHERE slug=$1 LIMIT 1', [agentSlug || 'mari']);
+    if (!agente) { console.warn(`[INTERNAL/humano] agente não encontrado: ${agentSlug}`); return; }
+
+    const conversa = await queryOne<any>(
+      `SELECT id, ia_silenciada FROM conversas
+       WHERE numero_externo=$1 AND canal=$2 AND agent_id=$3 AND status='ativa'
+       ORDER BY criado_em DESC LIMIT 1`,
+      [phone, canal, agente.id]
+    );
+    if (!conversa) { console.log(`[INTERNAL/humano] nenhuma conversa ativa para ${phone}/${canal}`); return; }
+    if (!conversa.ia_silenciada) return; // IA ativa: mensagem já salva pelo pipeline
+
+    const conversaId: string = conversa.id;
+
+    if (msgIdExterno) {
+      const jaExiste = await queryOne<any>('SELECT id FROM mensagens WHERE msg_id_externo=$1', [msgIdExterno]);
+      if (jaExiste) { console.log(`[INTERNAL/humano] duplicado: ${msgIdExterno}`); return; }
+    }
+
+    await execute(
+      `INSERT INTO mensagens (conversa_id, role, conteudo, enviado_por, msg_id_externo)
+       VALUES ($1,'agent',$2,'humano',$3)`,
+      [conversaId, texto, msgIdExterno || null]
+    );
+    await execute(`UPDATE conversas SET ultima_interacao=NOW() WHERE id=$1`, [conversaId]);
+
+    console.log(`[INTERNAL/humano] ✅ Msg do humano salva — conversa=${conversaId}`);
+
+    execute(
+      "SELECT pg_notify('chat_nova_mensagem', $1)",
+      [JSON.stringify({ conversa_id: conversaId, phone, nome: '', msg_cliente: null, msg_mari: texto })],
+    ).catch(e => console.warn('[CRM/salvar-msg-agente-humano] pg_notify:', e.message));
+  } catch (e: any) {
+    console.error('[INTERNAL/humano] ❌ Erro:', e.message);
   }
 });
 
