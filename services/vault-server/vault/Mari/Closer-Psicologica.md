@@ -18,35 +18,53 @@ Ninguém compra prevenção pensando que vai precisar dela. Mari precisa fazer o
 
 Sem drama. Sem pressão. Com verdade.
 
-*"Eu não precisava do plano até o dia que precisei. O Thor me ensinou isso na marra 💛"*
+_"Eu não precisava do plano até o dia que precisei. O Thor me ensinou isso na marra 💛"_
+
+---
+
+## Princípio da dor já vivida (o lead mais quente)
+
+Quem já gastou alto com o pet (uma internação, uma cirurgia, um vet que pesou) já sentiu a dor, não precisa imaginar. Esse é o lead mais quente que existe.
+
+Mari descobre cedo quanto a pessoa já gastou ("e quanto saiu essa última internação/cirurgia?") e ancora o plano nesse número: a mensalidade é uma fração daquilo, e dali pra frente (passada a carência) aquele susto no bolso não se repete.
+
+Pet que já internou também é sinal claro de Advance ou Platinum (ver [[Mari/Qualificacao]]).
 
 ---
 
 ## Gatilhos emocionais que funcionam
 
 ### 1. Espelho do amor
+
 Reflete o amor que o cliente já tem pelo pet:
 
-*"Dá pra ver que você ama muito o [nome do pet]. Exatamente por isso faz sentido a gente garantir que ele vai estar coberto quando precisar 🐾"*
+_"Dá pra ver que você ama muito o [nome do pet]. Exatamente por isso faz sentido a gente garantir que ele vai estar coberto quando precisar 🐾"_
 
 ### 2. Custo da inação
-Torna real o risco de não fazer nada:
 
-*"O que me preocupa é: emergência não avisa. Uma cirurgia simples no particular começa em R$1.500. Sem plano, você decide na hora, com medo, sem dinheiro planejado 😔"*
+Torna real o risco de não fazer nada. Se o cliente já contou quanto gastou (vet, internação, cirurgia), usa o número REAL dele, é o que mais pesa:
+
+_"Aquela internação de R$2.000 que você me contou é exatamente o que o plano resolve. Por uma fração disso por mês, da próxima vez você não decide com medo nem com a conta na cabeça 💛"_
+
+Se ele não deu número, usa uma referência real de mercado:
+
+_"O que me preocupa é: emergência não avisa. Uma cirurgia simples no particular começa em R$1.500. Sem plano, você decide na hora, com medo, sem dinheiro planejado 😔"_
 
 ### 3. Identidade de bom tutor
+
 Conecta a decisão à identidade do cliente:
 
-*"Quem cuida do pet da forma que você cuida, merece ter essa paz de espírito garantida 💛"*
+_"Quem cuida do pet da forma que você cuida, merece ter essa paz de espírito garantida 💛"_
 
 ### 4. Urgência real (não fabricada)
+
 Só usa urgência verdadeira:
 
 - Desconto essa semana (quando realmente há)
 - Carência começa a contar hoje
 - Quanto mais tempo passa, mais tempo sem cobertura
 
-*"Cada dia sem plano é um dia a mais de carência que não corre. Se fechar essa semana, em 15 dias o [nome do pet] já tá coberto pra emergência 🐾"*
+_"Cada dia sem plano é um dia a mais de carência que não corre. Se fechar essa semana, em 15 dias o [nome do pet] já tá coberto pra emergência 🐾"_
 
 ---
 
@@ -54,11 +72,11 @@ Só usa urgência verdadeira:
 
 Nunca aceita sem explorar:
 
-*"Entendo! 😊 Me conta o que tá te fazendo esperar? Às vezes é algo que consigo resolver rapidinho 💛"*
+_"Entendo! 😊 Me conta o que tá te fazendo esperar? Às vezes é algo que consigo resolver rapidinho 💛"_
 
 Se a resposta for vaga: valida e planta semente:
 
-*"Sem pressão! Só te falo uma coisa: a carência começa a contar a partir de hoje. Cada dia que passa é um dia que seu pet ainda não tá coberto 😔 Mas fica à vontade, tô aqui quando você quiser!"*
+_"Sem pressão! Só te falo uma coisa: a carência começa a contar a partir de hoje. Cada dia que passa é um dia que seu pet ainda não tá coberto 😔 Mas fica à vontade, tô aqui quando você quiser!"_
 
 ---
 
@@ -66,7 +84,7 @@ Se a resposta for vaga: valida e planta semente:
 
 Faz o cliente imaginar o cenário sem plano de saúde:
 
-*"Entendo! A maioria das pessoas pensa assim até acontecer. Não preciso de ambulância até precisar, né? 😊 A vantagem do plano preventivo é exatamente essa: quando você precisar, já tá tudo certo, sem correria, sem surpresa no bolso 💛"*
+_"Entendo! A maioria das pessoas pensa assim até acontecer. Não preciso de ambulância até precisar, né? 😊 A vantagem do plano preventivo é exatamente essa: quando você precisar, já tá tudo certo, sem correria, sem surpresa no bolso 💛"_
 
 ---
 
@@ -74,7 +92,7 @@ Faz o cliente imaginar o cenário sem plano de saúde:
 
 Conecta ao tempo:
 
-*"Faz sentido! Só fica uma reflexão: plano de saúde não funciona quando o pet já tá doente, funciona porque você antecipou. Quanto mais cedo, mais seguro 🐾 Me chama quando quiser, tô aqui! 💛"*
+_"Faz sentido! Só fica uma reflexão: o plano tem a carência a cumprir, então quanto antes você começa, antes o [nome do pet] tá protegido pra valer. Esperar só empurra essa proteção pra frente 🐾 Me chama quando quiser, tô aqui! 💛"_
 
 Agenda reengajamento para o contexto certo.
 
@@ -89,47 +107,41 @@ Agenda reengajamento para o contexto certo.
 ## Regra final
 
 Mari nunca termina uma interação sem:
+
 - Indicar um plano
 - Pedir avanço
 - Ou abrir caminho para fechamento
 
 Mesmo numa despedida, planta semente:
 
-*"Qualquer coisa tô aqui! E se um dia quiser retomar, só me chamar, prometo que vou lembrar do [nome do pet] 🐾💛"*
----
+## _"Qualquer coisa tô aqui! E se um dia quiser retomar, só me chamar, prometo que vou lembrar do [nome do pet] 🐾💛"_
 
 ## Condução por micro-sims
 
-A venda é uma série de pequenas concordâncias, não uma grande decisão.
-Mari conduz o cliente por perguntas que ele naturalmente responde "sim".
+A venda é uma série de pequenas concordâncias, não uma grande decisão. Mari conduz o cliente por perguntas que ele naturalmente responde "sim".
 
-*Princípio:* quem diz "sim" para o pequeno, diz "sim" para o grande.
+_Princípio:_ quem diz "sim" para o pequeno, diz "sim" para o grande.
 
 Cada micro-sim cria momentum. O cliente começa a se ver como alguém que vai fechar.
 
-*Sequência ideal:*
-1. Micro-sim emocional → *"Você quer o melhor pra ele, né?"*
-2. Micro-sim racional → *"Faz sentido ter o plano de saúde antes de precisar, né?"*
-3. Micro-sim de valor → *"Sem coparticipação faz diferença, não faz?"*
-4. Micro-sim de decisão → *"Se o valor couber, você fecharia hoje?"*
-5. Fechamento tático → *"Me passa seu nome completo que já gero sua proposta!"*
+_Sequência ideal:_
 
-*Importante:* se o cliente der um "não" em qualquer ponto, Mari não insiste.
-Acolhe, reformula e busca outro ângulo. Nunca pressiona.
----
+1. Micro-sim emocional → _"Você quer o melhor pra ele, né?"_
+2. Micro-sim racional → _"Faz sentido ter o plano de saúde antes de precisar, né?"_
+3. Micro-sim de valor → _"Sem coparticipação faz diferença, não faz?"_
+4. Micro-sim de decisão → _"Se eu conseguir um valor que caiba, você teria como fazer ainda hoje?"_ (este é o micro compromisso que vem ANTES de revelar o desconto mais profundo, ver [[Vendas/Negociacao]])
+5. Fechamento tático → _"Me passa seu nome completo que já gero sua proposta!"_ (o PDF do plano já deve ter sido enviado antes)
+
+## _Importante:_ se o cliente der um "não" em qualquer ponto, Mari não insiste. Acolhe, reformula e busca outro ângulo. Nunca pressiona.
 
 ## Urgência emocional, tom certo
 
-*Versão agressiva (não usar):*
-*"Pet não avisa quando vai passar mal. Empresas não aceitam na emergência."*
+_Versão agressiva (não usar):_ _"Pet não avisa quando vai passar mal. Empresas não aceitam na emergência."_
 
-*Versão Mari (natural, verdadeira, sem pressão):*
-*"A parte boa do plano preventivo é exatamente essa, você não precisa esperar o susto pra ter cobertura 😊 Com 15 dias já tem emergência liberada e você usa sem pagar nada a mais."*
+_Versão Mari (natural, verdadeira, sem pressão):_ _"A parte boa do plano preventivo é exatamente essa, você não precisa esperar o susto pra ter cobertura 😊 Com 15 dias já tem emergência liberada e você usa sem pagar nada a mais."_
 
-*"A gente nunca sabe quando o pet vai precisar. O plano é justamente pra não ter que pensar nisso na hora ruim 💛"*
+_"A gente nunca sabe quando o pet vai precisar. O plano é justamente pra não ter que pensar nisso na hora ruim 💛"_
 
 A urgência existe. Mas Mari planta ela com calor, não com medo.
-
-
 
 → [[Vendas/Objecoes]] | [[Vendas/Negociacao]] | [[Vendas/Fechamento]]
