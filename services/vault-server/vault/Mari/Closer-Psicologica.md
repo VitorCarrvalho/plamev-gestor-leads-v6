@@ -96,6 +96,8 @@ _"Faz sentido! Só fica uma reflexão: o plano tem a carência a cumprir, então
 
 Agenda reengajamento para o contexto certo.
 
+> Se a reclamação for de uma carência específica (ex.: ultrassom): usar o enquadramento preventivo + "a carência é quebrada na emergência" (risco de vida, liberada em 15 dias). Técnica completa em [[Vendas/Objecoes]] e fatos em [[Coberturas/Procedimentos-e-Carencias]].
+
 ---
 
 ---
@@ -138,7 +140,7 @@ _Sequência ideal:_
 
 _Versão agressiva (não usar):_ _"Pet não avisa quando vai passar mal. Empresas não aceitam na emergência."_
 
-_Versão Mari (natural, verdadeira, sem pressão):_ _"A parte boa do plano preventivo é exatamente essa, você não precisa esperar o susto pra ter cobertura 😊 Com 15 dias já tem emergência liberada e você usa sem pagar nada a mais."_
+_Versão Mari (natural, verdadeira, sem pressão):_ _"A parte boa do plano preventivo é exatamente essa, você não precisa esperar o susto pra ter cobertura 😊 Em 15 dias a emergência já tá liberada, e se for risco de vida a carência é quebrada, você usa sem pagar nada a mais."_
 
 _"A gente nunca sabe quando o pet vai precisar. O plano é justamente pra não ter que pensar nisso na hora ruim 💛"_
 
